@@ -1,12 +1,7 @@
-#include "CommunityShaderIntegration.h"
 #include "DLSSPreset.h"
-#include "FrameGen/NvidiaHost.h"
-#include "FrameGen/SourceDLSSGBackend.h"
 #include "OverlayFrameView.h"
 #include "OverlayUI.h"
 #include "OverlayUIStyle.h"
-#include "RenderPipeline.h"
-#include "VideoMemoryTelemetry.h"
 #include <PCH.h>
 
 using namespace TheosRenderPipeline::Overlay;
@@ -70,11 +65,11 @@ void ApplyTexturePreset(TextureProviderBridge::Settings& a_settings, int a_prese
 }
 } // namespace
 
-void OverlayUI::DrawHDROutputSettings()
+void OverlayUI::DrawHDROutputSettings(const FrameView& view)
 {
     namespace HDR = TheosRenderPipeline::HDROutput;
     auto& hdr = settingsDraft.sourceDLSSG.hdrOutput;
-    const auto state = TheosRenderPipeline::SourceDLSSG::Backend::Get().HDRState();
+    const auto& state = view.hdr;
     DrawSettingsHeading("HDR output (experimental)", "on/off: Apply");
     ImGui::Checkbox("HDR output", &hdr.enabled);
     DrawSettingsHelp("Expands the finished SDR image (including ENB) to HDR10 and shows the UI at its own "
@@ -146,7 +141,6 @@ void OverlayUI::DrawHDROutputSettings()
 
 void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
 {
-    auto* host = NvidiaHost::GetSingleton();
     if (!ImGui::BeginTabItem("Image", nullptr,
                              requestedPage == SettingsPage::Image ? ImGuiTabItemFlags_SetSelected : 0))
     {
@@ -159,7 +153,7 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
     }
     DrawImageMeasurements(view);
     NextSettingsColumn(tabCardHeight);
-    if (TheosRenderPipeline::CommunityShaders::Active())
+    if (view.communityShaders)
     {
         DrawSettingsHeading("Controlled by Community Shaders", "");
         ImGui::TextWrapped("Community Shaders controls upscaling, render scale, model preset, sharpening and camera "
@@ -172,9 +166,8 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
     }
     else
     {
-        const auto& switchConfiguration = host->SourceUpscalerSettings();
-        const bool warmSwitch = view.sourceDLSSGActive && (switchConfiguration.Startup().mode == DLSS ||
-            (switchConfiguration.Startup().mode == XeSS && TheosRenderPipeline::SourceDLSSG::Backend::Get().NvidiaServicesReady()));
+        const bool warmSwitch = view.sourceDLSSGActive && (view.upscalerStartupMode == DLSS ||
+            (view.upscalerStartupMode == XeSS && view.nvidiaServicesReady));
         ImGui::TextDisabled(warmSwitch ? "DLSS / XeSS: Apply; render scale: restart" : "Mode / scale: save and restart");
         if (ImGui::BeginTable("##resolution", 2, ImGuiTableFlags_SizingStretchSame))
         {
@@ -218,19 +211,18 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
             "After restart, XeSS uses Intel's quality resolutions.");
         if (view.sourceDLSSGActive)
         {
-            const auto& configuration = host->SourceUpscalerSettings();
-            if (configuration.LiveModeRejected()) {
+            if (view.upscalerLiveModeRejected) {
                 ImGui::TextColored(kAmber, "Live switch unavailable; selected mode requires restart");
             }
-            if (configuration.NeedsRestart())
+            if (view.upscalerNeedsRestart)
             {
                 ImGui::TextColored(kAmber, "Mode/render scale awaiting restart");
             }
-            if (configuration.Failed())
+            if (view.upscalerFailed)
             {
                 ImGui::TextColored(kRust, "Feature update failed; restart required");
             }
-            else if (configuration.NeedsLiveChange())
+            else if (view.upscalerChangeQueued)
             {
                 ImGui::TextDisabled("Feature update queued");
             }
@@ -271,7 +263,7 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
         DrawSettingsValue("Sharpening", settingsDraft.sharpening ? std::format("{:.2f}", settingsDraft.sharpness).c_str() : "Off");
         DrawSettingsHelp("Set in the Neural Rendering tab. Applies with or without NR.");
 #endif
-        DrawPresetSharpeningStatus();
+        DrawPresetSharpeningStatus(view);
         ImGui::Separator();
 
         ImGui::BeginDisabled(settingsDraft.upscaleType == XeSS);
@@ -280,7 +272,7 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
         if (settingsDraft.upscaleType == XeSS) { DrawSettingsHelp("XeSS preserves the SDR exposure supplied by the game and ENB."); }
         ImGui::Checkbox("Camera jitter", &settingsDraft.enableJitter);
         ImGui::Separator();
-        DrawHDROutputSettings();
+        DrawHDROutputSettings(view);
 
         if (showDeveloperControls)
         {

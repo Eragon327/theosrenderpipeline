@@ -2,16 +2,86 @@
 
 #include "OverlayUI.h"
 #include "OverlayUIStyle.h"
+#include "FrameTrace.h"
+#include "NvidiaUpscalerConfiguration.h"
+#include "PerformanceTuning.h"
 #include "VideoMemoryTelemetry.h"
+#include "WeatherAppearanceController.h"
+#include "FrameGen/DlssgLiteBlending.h"
+#include "FrameGen/FrameGenerationProvider.h"
+#include "FrameGen/SourceDLSSGHDROutput.h"
+#include "FrameGen/SourceDLSSGMFG.h"
 #include "FrameGen/SourceDLSSGNeuralState.h"
+#include "FrameGen/SourceDLSSGSession.h"
+#include "FrameGen/XeFGPresenter.h"
 
+#include <memory>
+#include <string>
+#include <vector>
+
+// Everything the menu shows about the renderer. CaptureFrameView copies it once
+// per menu frame; DescribeFrameView derives the labels.
 struct OverlayUI::FrameView
 {
+    // Captured renderer state.
     TextureProviderBridge::Telemetry textureTelemetry{};
     bool textureProviderAvailable{};
+    std::string textureProviderStatus;
     VideoMemoryTelemetry::Snapshot memorySnapshot{};
-    float avgMs{};
+    std::string memoryStatus;
+    bool communityShaders{};
     bool nvidiaHostActive{};
+    bool hostStartupConfigured{};
+    bool upscalerReady{};
+    bool dedicatedUITexture{};
+    bool hostFrameGenerationEnabled{};
+    std::uint64_t evaluationCount{};
+    std::int32_t warmupPresentsRemaining{};
+    unsigned renderWidth{}, renderHeight{}, outputWidth{}, outputHeight{};
+    TheosRenderPipeline::Upscaler::Creation upscaler{};
+    bool upscalerNeedsRestart{}, upscalerFailed{}, upscalerChangeQueued{}, upscalerLiveModeRejected{};
+    int upscalerStartupMode{};
+    int renderSizeX{}, renderSizeY{}, displaySizeX{}, displaySizeY{};
+    bool nativeUI{true};
+    bool reShadeBeforeUpscaling{};
+    std::string reShadeStatus;
+    int menuHotkey{0x23};
+    bool frameGenerationRequested{};
+    double refreshRate{};
+    std::string neuralRuntimePath;
+    // nvngx_dlssnr*.dll files NR can switch to, refreshed every few seconds.
+    std::vector<std::string> neuralRuntimes;
+    bool sourceReady{};
+    bool nvidiaServicesReady{};
+    bool nvidiaAdapter{true};
+    bool xessActive{};
+    bool generationActive{};
+    unsigned effectiveMultiplier{1};
+    TheosRenderPipeline::FrameGenerationProvider provider{}, requestedProvider{};
+    std::string providerStatus;
+    bool nvidiaSwitchBlocked{};
+    bool uiRecomposition{};
+    TheosRenderPipeline::XeFGSnapshot xefg{};
+    std::string xefgUnlockStatus;
+    bool xefgUnlockAvailable{};
+    TheosRenderPipeline::SourceDLSSG::LiteBlending::Snapshot liteBlending{};
+    TheosRenderPipeline::SourceDLSSG::SessionSnapshot session{};
+    TheosRenderPipeline::SourceDLSSG::MFGSnapshot mfg{};
+    TheosRenderPipeline::SourceDLSSG::NeuralOptions neuralApplied{};
+    TheosRenderPipeline::SourceDLSSG::NeuralSnapshot neuralState{};
+    std::string neuralObjectStatus;
+    bool neuralObjectCurrent{};
+    TheosRenderPipeline::SourceDLSSG::HDROutputState hdr{};
+    bool timingEnabled{}, timingQuarantined{};
+    PerformanceTuning::TimingSnapshot timings{};
+    FrameTrace::Status trace{};
+    TheosRenderPipeline::Telemetry::OutputRate outputRate{};
+    TheosRenderPipeline::Appearance::Snapshot appearance{};
+    std::shared_ptr<const std::vector<TheosRenderPipeline::Appearance::WeatherEntry>> weatherCatalogue{
+        std::make_shared<const std::vector<TheosRenderPipeline::Appearance::WeatherEntry>>()};
+
+    // Derived by DescribeFrameView.
+    float avgMs{};
     bool sourceDLSSGActive{};
     bool frameGenerationRuntimeActive{};
     unsigned activeDisplayMultiplier{};

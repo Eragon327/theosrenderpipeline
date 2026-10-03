@@ -268,6 +268,10 @@ The Intel fixtures in `tests/xefg` are built and run explicitly against
 identified Intel and NVIDIA runtime directories. Their output counts do not
 establish physical display cadence.
 
+The same build includes `TRPOverlayPreview`, which draws the in-game menu
+offline from sample renderer states and writes PNGs for reviewing menu
+changes without launching Skyrim. See [the preview guide](tools/OverlayPreview/README.md).
+
 The optional ReShade lifecycle fixture compares automatic and exported D3D11
 runtimes, single effect execution, effects-off GUI completion, shared input and
 paired teardown. It needs a supplied x64 ReShade DLL and an accepted hardware

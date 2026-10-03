@@ -1,22 +1,14 @@
 #include "OverlayUI.h"
 #include "OverlayUIStyle.h"
 #include "OverlayFrameView.h"
-
-#include "FrameGen/NvidiaHost.h"
-#include "FrameGen/SourceDLSSGBackend.h"
-#include "FrameGen/DlssgLiteBlending.h"
-#include "FrameGen/FGInputDebugView.h"
-#include "FrameGen/FGMotionRepair.h"
-#include "FrameGen/SourceFrameGeneration.h"
-#include "FrameGen/XeFGUnlock.h"
+#include "OverlayNumericInput.h"
+#include "FrameGen/DlssgPreset.h"
 #include <PCH.h>
 
 using namespace TheosRenderPipeline::Overlay;
 
 void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& view)
 {
-    auto* frameGen = SourceFrameGeneration::GetSingleton();
-    auto* nvidiaHost = NvidiaHost::GetSingleton();
     const auto& sourceDLSSGActive = view.sourceDLSSGActive;
     const auto& frameGenerationRuntimeActive = view.frameGenerationRuntimeActive;
     const auto& activeDisplayMultiplier = view.activeDisplayMultiplier;
@@ -25,16 +17,15 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                             requestedPage == SettingsPage::FrameGeneration ? ImGuiTabItemFlags_SetSelected
                                                                            : ImGuiTabItemFlags_None))
     {
-        auto& sourceBackend = TheosRenderPipeline::SourceDLSSG::Backend::Get();
-        const auto& sourceState = sourceBackend.Snapshot();
-        const bool intel = sourceBackend.Provider() == TheosRenderPipeline::FrameGenerationProvider::XeFG;
+        const auto& sourceState = view.session;
+        const bool intel = view.provider == TheosRenderPipeline::FrameGenerationProvider::XeFG;
         const bool editIntel = settingsDraft.sourceDLSSG.provider == TheosRenderPipeline::FrameGenerationProvider::XeFG;
-        const auto& unlock = sourceBackend.MFGState();
+        const auto& unlock = view.mfg;
         // NVIDIA's limits are known only once DLSS-G has run and answered a state
         // query; before that, leave the list open and let the runtime limit it.
         const bool nvidiaReported = !intel && sourceState.stateQueries > 0;
         // Standard offers Intel's official x2 only; the x3-x6 unlock is in Universal.
-        const auto usableMaximum = editIntel ? (TheosRenderPipeline::XeFGUnlock::Available() ? TheosRenderPipeline::XeFGMaxGeneratedFrames : 1u) :
+        const auto usableMaximum = editIntel ? (view.xefgUnlockAvailable ? TheosRenderPipeline::XeFGMaxGeneratedFrames : 1u) :
             !nvidiaReported ? 5u :
             TheosRenderPipeline::SourceDLSSG::MFGContract::Maximum(
             unlock.UsesCompatibilityUnlock(), unlock.Ready(), sourceState.state.numFramesToGenerateMax);
@@ -50,147 +41,58 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         DrawStatusLabel(frameGenerationRuntimeActive ? (intel ? "XeFG active" : "DLSS-G active") : "Frame generation inactive",
                         frameGenerationRuntimeActive ? UIHealth::kHealthy : UIHealth::kIdle);
         DrawSettingsValue("Multiplier", std::format("x{}", activeDisplayMultiplier).c_str());
-        DrawSettingsValue("Display", std::format("{:.0f} Hz", frameGen->refreshRate).c_str());
+        DrawSettingsValue("Display", std::format("{:.0f} Hz", view.refreshRate).c_str());
         DrawSettingsValue("Latency", intel ? "XeLL" : TheosRenderPipeline::SourceDLSSG::ReflexModeName(sourceState.reflexSubmitted));
-        DrawSettingsValue("Output cap", intel ? (sourceBackend.XeFGState().frameLimitUs ?
-            std::format("{:.1f} FPS", 1000000.0 / sourceBackend.XeFGState().frameLimitUs).c_str() : "Off") :
+        DrawSettingsValue("Output cap", intel ? (view.xefg.frameLimitUs ?
+            std::format("{:.1f} FPS", 1000000.0 / view.xefg.frameLimitUs).c_str() : "Off") :
                           sourceState.frameLimitSubmittedUs
                               ? std::format("{:.1f} FPS", 1000000.0 / sourceState.frameLimitSubmittedUs).c_str()
                               : "Off");
-        const char* intelPath = sourceBackend.XeFGState().unlockReady && sourceBackend.XeFGState().generatedFrames > 1
+        const char* intelPath = view.xefg.unlockReady && view.xefg.generatedFrames > 1
             ? "Experimental XeFG MFG" : "Intel XeFG x2";
         DrawSettingsValue("Path", intel                       ? intelPath
                                   : unlock.UsesTuringUnlock() ? "Turing MFG (experimental)"
                                   : unlock.UsesAmpereUnlock() ? "Ampere MFG (experimental)"
                                   : unlock.UsesAdaUnlock()    ? "Ada MFG"
                                                               : "Native NVIDIA");
-        const auto availableMaximum = intel ? sourceBackend.XeFGState().maxGeneratedFrames : nvidiaReported ? usableMaximum : 0u;
+        const auto availableMaximum = intel ? view.xefg.maxGeneratedFrames : nvidiaReported ? usableMaximum : 0u;
         if (availableMaximum > 1)
             ImGui::Text("Available: x2 to x%u", availableMaximum + 1);
         else
             ImGui::TextUnformatted(availableMaximum == 1 ? "Available: x2" : "Availability: waiting");
-        ImGui::TextWrapped("%s", sourceBackend.ProviderStatus().c_str());
+        ImGui::TextWrapped("%s", view.providerStatus.c_str());
         if (intel)
         {
-            const auto& state = sourceBackend.XeFGState();
+            const auto& state = view.xefg;
             ImGui::Text("Runtime outputs: %u | generated presents: %llu", state.framesPresented,
                 static_cast<unsigned long long>(state.generatedPresents));
-            DrawSettingsValue("UI composition", !sourceBackend.UIRecompositionConfiguration() ? "Off (UI interpolated)"
+            DrawSettingsValue("UI composition", !view.uiRecomposition ? "Off (UI interpolated)"
                                                 : state.uiTexture ? "UI layer + HUD-less"
                                                                   : "Extracted from frame");
             if (state.frameTimeMs > 0)
                 ImGui::Text("Frame time sent: %.2f ms", state.frameTimeMs);
             if (showDeveloperControls)
-            {
-                // Session-only diagnostics: separate generated-frame artifacts from upscaler ones.
-                bool onlyGenerated = sourceBackend.XeFGOnlyGenerated(), tagGenerated = sourceBackend.XeFGTagGenerated();
-                bool changed = ImGui::Checkbox("Show only generated frames (Lab)", &onlyGenerated);
-                changed |= ImGui::Checkbox("Tag generated frames (Lab)", &tagGenerated);
-                if (changed)
-                    sourceBackend.ConfigureXeFGDebugView(onlyGenerated, tagGenerated);
-                DrawSettingsHelp("Intel debug views, not saved. Only generated frames hides every real frame; "
-                                 "tagging marks generated frames with corner boxes.");
-                bool gpuInputWait = sourceBackend.XeFGGpuInputWait();
-                if (ImGui::Checkbox("Input reuse: GPU fence wait (Lab)", &gpuInputWait))
-                    sourceBackend.ConfigureXeFGGpuInputWait(gpuInputWait);
-                DrawSettingsHelp("A/B for the post-Present wait, not saved. Off drains every host lane on the CPU; "
-                                 "on queues a GPU wait for Intel's input copies. The log reports both waits every 600 frames. "
-                                 "With heavy NR, on can make rendered frames alternate long and short.");
-            }
-            ImGui::TextWrapped("%s", sourceBackend.XeFGUnlockStatus().c_str());
-        }
-        if (!intel && showDeveloperControls)
-        {
-            // Session-only diagnostic: an artifact only in generated frames comes from generation.
-            bool onlyGenerated = sourceBackend.XeFGOnlyGenerated();
-            if (ImGui::Checkbox("Show only generated frames (Lab)", &onlyGenerated))
-                sourceBackend.ConfigureXeFGDebugView(onlyGenerated, sourceBackend.XeFGTagGenerated());
-            DrawSettingsHelp("NVIDIA debug view, not saved. Hides every rendered frame, so an artifact still visible here "
-                             "comes from frame generation; one that disappears comes from rendering, the upscaler or NR.");
-            bool overlap = sourceBackend.NvidiaOverlapNextFrame();
-            if (ImGui::Checkbox("Overlap the next frame with generation (Lab)", &overlap))
-                sourceBackend.ConfigureNvidiaOverlapNextFrame(overlap);
-            DrawSettingsHelp("A/B, not saved. Off: the game's next frame waits on the GPU until frame generation has read this "
-                             "frame's inputs. On: it waits only where TRP first writes them, so the world can render meanwhile. "
-                             "Compare FPS and the frame generation time.");
+                DrawLabXeFGControls();
+            ImGui::TextWrapped("%s", view.xefgUnlockStatus.c_str());
         }
         if (showDeveloperControls)
-        {
-            auto& repair = TheosRenderPipeline::FGMotionRepair::Get();
-            bool repairMotion = repair.Enabled();
-            if (ImGui::Checkbox("Repair missing motion (Lab)", &repairMotion))
-                repair.Enable(repairMotion);
-            DrawSettingsHelp("On by default; turning it off lasts until the game restarts. Underwater, Skyrim writes no real motion, "
-                             "and generated frames show an offset copy. When nearly the whole frame disagrees with the camera, "
-                             "NR and generation get the camera's motion instead.");
-            auto& inputs = TheosRenderPipeline::FGInputDebugView::Get();
-            bool showInputs = inputs.Enabled();
-            if (ImGui::Checkbox("Show frame generation inputs (Lab)", &showInputs))
-                inputs.Enable(showInputs);
-            DrawSettingsHelp("Not saved. Shows what generation receives, after any repair. Left: motion vectors (grey = none). Middle: depth (dark = near). "
-                             "Right: where the motion vectors disagree with the camera's own motion at that depth "
-                             "(black = agree, red = 8+ pixels off). Static scenery should stay black while the camera moves.");
-            if (showInputs)
-            {
-                if (auto* strip = inputs.Strip())
-                {
-                    const float width = ImGui::GetContentRegionAvail().x;
-                    const float height = width * float(inputs.PanelHeight()) / float(inputs.PanelWidth() * 3);
-                    ImGui::Image(reinterpret_cast<ImTextureID>(strip), ImVec2(width, height));
-                }
-                else
-                    ImGui::TextWrapped("Inputs: %s", inputs.Status());
-            }
-        }
+            DrawLabGenerationControls(view);
         if (!intel && unlock.UsesCompatibilityUnlock() && !unlock.Ready())
             ImGui::TextWrapped("%s", unlock.status);
         if (!intel && sourceState.stateQueryResult == sl::Result::eWarnOutOfVRAM)
             ImGui::TextColored(kOchre, "NVIDIA VRAM budget warning");
-        if (nvidiaHost->WarmupPresentsRemaining() > 0)
-            ImGui::Text("Warmup: %d frames", nvidiaHost->WarmupPresentsRemaining());
+        if (view.warmupPresentsRemaining > 0)
+            ImGui::Text("Warmup: %d frames", view.warmupPresentsRemaining);
         if (showDeveloperControls && ImGui::CollapsingHeader("Runtime details"))
-        {
-            ImGui::Text("Evaluations: %llu", static_cast<unsigned long long>(nvidiaHost->EvaluationCount()));
-            ImGui::Text("Host Presents: %llu | failures %llu | last 0x%08X",
-                        static_cast<unsigned long long>(nvidiaHost->PresentCount()),
-                        static_cast<unsigned long long>(nvidiaHost->FailedPresentCount()),
-                        static_cast<unsigned int>(nvidiaHost->LastPresentResult()));
-            if (!intel && nvidiaHost->RuntimeStateObservationCount() > 0)
-            {
-                ImGui::Text("Last query: %u outputs | max generated %u | min dimension %u",
-                            nvidiaHost->RuntimeFramesActuallyPresented(), nvidiaHost->RuntimeMaxGeneratedFrames(),
-                            nvidiaHost->RuntimeMinWidthOrHeight());
-                ImGui::Text("DLSS-G status: %u | observations: %llu", nvidiaHost->RuntimeDLSSGStatus(),
-                            static_cast<unsigned long long>(nvidiaHost->RuntimeStateObservationCount()));
-            }
-            else if (!intel)
-            {
-                ImGui::TextDisabled("DLSS-G state: waiting");
-            }
-            if (intel) {
-                const auto& state = sourceBackend.XeFGState();
-                ImGui::Text("XeFG frame: %u | result: %d | warnings: %llu", state.frameId, state.interpolationResult,
-                    static_cast<unsigned long long>(state.warnings));
-                ImGui::Text("XeLL output interval: %u us", state.frameLimitUs);
-            }
-            ImGui::TextWrapped("%s", nvidiaHost->Status().c_str());
-            if (view.sourceDLSSGActive && !intel)
-            {
-                ImGui::Text("Configured multiplier: x%u", sourceBackend.Snapshot().options.numFramesToGenerate + 1);
-                ImGui::Text("Output limit submitted interval: %u us", sourceBackend.Snapshot().frameLimitSubmittedUs);
-                ImGui::TextWrapped("MFG: %s", sourceBackend.MFGState().status);
-            }
-
-            ImGui::Text("Dynamic multiplier: %s", supportsDynamic ? "supported" : "unavailable");
-        }
-        DrawStageMeasurements(SettingsPage::FrameGeneration);
+            DrawLabGenerationDetails(view);
+        DrawStageMeasurements(view, SettingsPage::FrameGeneration);
         NextSettingsColumn(tabCardHeight);
         int provider = static_cast<int>(settingsDraft.sourceDLSSG.provider);
         const char* providers[]{"NVIDIA DLSS-G", "Intel XeFG (experimental)"};
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("Provider", providers[std::clamp(provider, 0, 1)])) {
             for (int i = 0; i < 2; ++i) {
-                ImGui::BeginDisabled(i == 0 && !sourceBackend.NvidiaAdapter());
+                ImGui::BeginDisabled(i == 0 && !view.nvidiaAdapter);
                 if (ImGui::Selectable(providers[i], provider == i)) { settingsDraft.sourceDLSSG.provider = static_cast<TheosRenderPipeline::FrameGenerationProvider>(i); }
                 ImGui::EndDisabled();
             }
@@ -199,21 +101,21 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         DrawSettingsHelp("Apply switches after a completed world frame, with a pause of under a second. Upscaling and NR keep "
                          "their settings. NVIDIA DLSS-G requires NVIDIA hardware; XeFG uses XeLL latency reduction. On NVIDIA "
                          "cards XeFG costs noticeably more GPU time than DLSS-G; it is meant for other GPUs.");
-        if (!editIntel && intel && sourceBackend.NvidiaSwitchBlocked()) {
+        if (!editIntel && intel && view.nvidiaSwitchBlocked) {
             ImGui::PushStyleColor(ImGuiCol_Text, kOchre);
             ImGui::TextWrapped("Switching to NVIDIA needs a restart this session: NR started before NVIDIA's runtime. "
                                "Save as default, then restart Skyrim.");
             ImGui::PopStyleColor();
-        } else if (sourceBackend.RequestedProvider() != sourceBackend.Provider()) {
+        } else if (view.requestedProvider != view.provider) {
             ImGui::TextDisabled("Provider change pending; waiting for world inputs...");
         }
-        bool runtimeInterpolationRequested = frameGen->RuntimeInterpolationRequested();
+        bool runtimeInterpolationRequested = view.frameGenerationRequested;
         if (ImGui::Checkbox("Frame generation##runtime", &runtimeInterpolationRequested))
         {
-            frameGen->RequestRuntimeInterpolation(runtimeInterpolationRequested);
+            RequestFrameGeneration(runtimeInterpolationRequested);
         }
         DrawSettingsHelp("Takes effect immediately. Save as default to keep this choice for the next launch.");
-        if (runtimeInterpolationRequested != nvidiaHost->FrameGenerationEnabled())
+        if (runtimeInterpolationRequested != view.hostFrameGenerationEnabled)
         {
             ImGui::TextDisabled("Waiting for the current GPU frame to retire...");
         }
@@ -251,7 +153,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             }
             if (editIntel)
             {
-                if (TheosRenderPipeline::XeFGUnlock::Available())
+                if (view.xefgUnlockAvailable)
                     DrawSettingsHelp("x2 is Intel's official mode. x3-x6 patch Intel's runtime in memory and are experimental. "
                                      "The first Apply to x3-x6 recreates the Intel presenter; later multiplier changes apply live.");
                 else
@@ -325,7 +227,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                                      "B generates the scene and HUD separately for less HUD ghosting in motion, at a small "
                                      "GPU and VRAM cost. C uses NVIDIA's lighter Lite blending (DLSS-G 310.9.16 or newer) "
                                      "without UI recomposition. Apply to compare live.");
-                    const auto lite = SD::LiteBlending::State();
+                    const auto& lite = view.liteBlending;
                     if (SD::UsesLiteBlending(preset) &&
                         (lite.hook != SD::LiteBlending::HookState::Installed || !lite.runtimeSupports))
                         ImGui::TextColored(kOchre, lite.hook == SD::LiteBlending::HookState::NotInstalled
