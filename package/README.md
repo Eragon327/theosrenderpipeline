@@ -149,9 +149,13 @@ CS upscales instead (FSR on AMD) and TRP adds XeFG. Keep AMD Fluid Motion
 Frames, Anti-Lag, Radeon Chill, Radeon Boost and other frame-generation or
 upscaler mods off. NR requires NVIDIA RTX hardware.
 
-ENB is optional. With Community Shaders, keep CS upscaling enabled and disable
-CS frame generation and CS Reflex. TRP provides FG/Reflex/NR while CS retains
-upscaling, render scale, sharpening and colour. Assign CS a separate menu key,
+ENB is optional. With Community Shaders, keep CS upscaling enabled. TRP provides
+FG/Reflex/NR while CS retains upscaling, render scale, sharpening and colour.
+This package includes a CS settings override that turns CS frame generation and
+CS Reflex off at startup, even if your saved CS settings enable them; it appears
+in CS's Overrides tab as Theo's Render Pipeline. If your CS has no Overrides tab,
+or you disable the override there, turn CS frame generation and CS Reflex off
+yourself. Assign CS a separate menu key,
 such as F8, avoiding keys already assigned to ReShade or capture tools. TRP keeps End
 unless you change it under Advanced > Menu key.
 With CS, HDR is experimental and works only through CS HDR Display (tested with CS 1.9.1,
