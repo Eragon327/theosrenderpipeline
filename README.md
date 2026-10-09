@@ -3,7 +3,7 @@
 Rendering integration for Skyrim: NVIDIA DLSS/DLAA and frame generation,
 experimental Intel XeSS upscaling and XeFG frame generation, optional Neural
 Rendering (NR), and native-resolution menus and HUD. Current version:
-**0.3.7**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
+**0.4.0**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
 
 ## Features
 
@@ -86,8 +86,9 @@ Standard includes the SR/FG and NR runtime bundle. Universal adds the compatibil
 paths and can use Standard's runtimes when installed after it in MO2, or separately
 supplied matching runtimes. Both editions retain NR. Enable only one winning
 renderer DLL. NVIDIA modes initialize the NVIDIA host even when interpolation
-is off; XeSS uses the Intel startup path. Intel's XeSS, XeFG and XeLL runtimes
-go in `Data/SKSE/Plugins/TheosRenderPipeline/Intel` with Intel's license.
+is off; XeSS uses the Intel startup path. Standard includes Intel's XeSS, XeFG
+and XeLL runtimes in `Data/SKSE/Plugins/TheosRenderPipeline/Intel`, with Intel's
+license in `licenses/Intel-XeSS-LICENSE.txt`.
 
 The DLL selects Community Shaders integration when CommunityShaders.dll is loaded;
 otherwise TRP owns upscaling, with optional ENB. With CS, both editions include a
@@ -104,7 +105,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.3.7 package still needs its final game test.
+development builds; the exact 0.4.0 package still needs its final game test.
 
 ## HDR (experimental)
 

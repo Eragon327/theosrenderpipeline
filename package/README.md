@@ -1,4 +1,10 @@
-# Theo's Render Pipeline — Universal, 0.3.7
+# Theo's Render Pipeline — Universal, 0.4.0
+
+Version 0.4.0 adds experimental Intel XeSS upscaling and XeFG frame generation
+(official x2, plus experimental x3-x6), selected automatically on AMD and other
+non-NVIDIA GPUs. Standard includes Intel's runtimes. Both editions include a
+Community Shaders override that keeps CS frame generation and Reflex off. NVIDIA
+runtimes and defaults are unchanged; NR still requires NVIDIA RTX hardware.
 
 Version 0.3.7 adds menu-key rebinding under Advanced > Menu key and live
 experimental HDR output switching with Apply. The first HDR activation briefly
@@ -48,7 +54,7 @@ This package includes the full renderer, configuration and sharpening shader.
 It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
-0.3.7 supplies the runtime bundle (0.2.5 retains the same DLLs). The NR-enabled
+0.4.0 supplies the runtime bundle (0.2.5 retains the same NVIDIA DLLs). The NR-enabled
 Standard download supplies all eight runtimes, including NR. In that setup,
 skip the runtime downloads below.
 
@@ -144,7 +150,8 @@ Visual C++ runtime and a compatible NVIDIA GPU/driver. DLSS-G-compatible hardwar
 is required in DLSS/DLAA modes even with frame generation switched off.
 
 AMD and other non-NVIDIA GPUs use experimental XeSS with Intel XeFG; TRP selects
-XeSS automatically there, so no INI change is needed. With Community Shaders,
+XeSS automatically there, so no INI change is needed. Install the Standard ZIP,
+which includes Intel's runtimes; Universal adds only NVIDIA compatibility paths. With Community Shaders,
 CS upscales instead (FSR on AMD) and TRP adds XeFG. Keep AMD Fluid Motion
 Frames, Anti-Lag, Radeon Chill, Radeon Boost and other frame-generation or
 upscaler mods off. NR requires NVIDIA RTX hardware.
@@ -200,7 +207,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.3.7 package still needs its final game test.
+development builds; the exact 0.4.0 package still needs its final game test.
 
 Keep your existing ReShade installation, preset and hotkeys. **Disable SSE
 ReShade Helper.** TRP supplies the effects and overlay stages. Effects run after

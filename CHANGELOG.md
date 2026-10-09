@@ -1,3 +1,31 @@
+# 0.4.0
+
+- Add experimental Intel XeSS upscaling under Image > Mode > XeSS; save and
+  restart to apply it. Intel's runtime chooses the render resolution for each
+  quality level.
+- Add experimental Intel XeFG frame generation under Frame generation > Provider.
+  Apply switches between NVIDIA DLSS-G and XeFG after the next world frame.
+  Intel XeLL replaces Reflex while XeFG is active. SDR and HDR10 output are
+  supported, and the HUD is composed from the UI layer as with DLSS-G.
+- XeFG offers Intel's official x2 and experimental x3-x6 in the multiplier list.
+  x3-x6 patch `libxess_fg.dll` 1.3.1.78 in memory after strict checks; another
+  runtime version stays at x2. **Send frame time to XeFG** is on by default.
+- AMD and other non-NVIDIA GPUs run XeSS and XeFG automatically, without
+  NVIDIA's runtimes or an INI change. With Community Shaders, CS upscales (FSR
+  on AMD) and TRP adds XeFG. NR still requires NVIDIA RTX hardware.
+- Standard includes Intel's XeSS, XeFG and XeLL runtimes with Intel's license.
+- Both editions include a Community Shaders settings override that keeps CS
+  frame generation and CS Reflex off. CS builds without an Overrides tab still
+  need both turned off by hand.
+- In an XeSS session on NVIDIA where NR has started, a live switch to DLSS-G is
+  refused instead of closing Skyrim; save the NVIDIA provider and restart.
+
+Both editions retain NR and the existing NVIDIA frame-generation routes. NVIDIA
+runtime DLLs and NVIDIA defaults are unchanged from 0.3.7. XeSS, XeFG, HDR and
+RTX 20 compatibility are experimental. XeSS and XeFG have limited AMD testing
+and none on Intel Arc. This release does not resolve the conflict with Bottled's
+experimental NR implementation.
+
 # 0.3.7
 
 - Rebind the settings-menu key under Advanced > Menu key. Apply switches the

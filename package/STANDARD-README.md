@@ -1,4 +1,10 @@
-# Theo's Render Pipeline — Standard, 0.3.7
+# Theo's Render Pipeline — Standard, 0.4.0
+
+Version 0.4.0 adds experimental Intel XeSS upscaling and XeFG frame generation
+(official x2, plus experimental x3-x6), selected automatically on AMD and other
+non-NVIDIA GPUs. Standard includes Intel's runtimes. Both editions include a
+Community Shaders override that keeps CS frame generation and Reflex off. NVIDIA
+runtimes and defaults are unchanged; NR still requires NVIDIA RTX hardware.
 
 Version 0.3.7 adds menu-key rebinding under Advanced > Menu key and live
 experimental HDR output switching with Apply. The first HDR activation briefly
@@ -24,7 +30,8 @@ RTX 20 users need Universal's compatibility path installed after Standard.
 This edition supplies the retained runtime bundle and all 0.2.5 fixes.
 
 DLSS/DLAA, native NVIDIA frame generation, Neural Rendering, NVIDIA Reflex and
-native-resolution menus for Skyrim. All eight NVIDIA runtime DLLs are included.
+native-resolution menus for Skyrim. All eight NVIDIA runtime DLLs are included,
+with Intel's XeSS, XeFG and XeLL runtimes and Intel's license.
 
 Version 0.2.5 improves startup compatibility with existing renderer hooks,
 including SSE Display Tweaks BorderlessUpscale and Community Shaders. Rejected
@@ -158,12 +165,12 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.3.7 package still needs its final game test.
+development builds; the exact 0.4.0 package still needs its final game test.
 
 ## With the Universal edition
 
 For the RTX 40 MFG unlock or experimental RTX 20/30 support, install the matching
-0.3.7 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
+0.4.0 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
 the NVIDIA runtimes included here, including NR.
 
 Both editions contain settings files; the later mod's files win. Switching
