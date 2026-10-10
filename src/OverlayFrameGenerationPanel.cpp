@@ -26,9 +26,13 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         const bool intel = sourceBackend.Provider() == TheosRenderPipeline::FrameGenerationProvider::XeFG;
         const bool editIntel = settingsDraft.sourceDLSSG.provider == TheosRenderPipeline::FrameGenerationProvider::XeFG;
         const auto& unlock = sourceBackend.MFGState();
-        const auto usableMaximum = editIntel ? TheosRenderPipeline::XeFGMaxGeneratedFrames : TheosRenderPipeline::SourceDLSSG::MFGContract::Maximum(
+        // NVIDIA's limits are known only once DLSS-G has run and answered a state
+        // query; before that, leave the list open and let the runtime limit it.
+        const bool nvidiaReported = !intel && sourceState.stateQueries > 0;
+        const auto usableMaximum = editIntel ? TheosRenderPipeline::XeFGMaxGeneratedFrames : !nvidiaReported ? 5u :
+            TheosRenderPipeline::SourceDLSSG::MFGContract::Maximum(
             unlock.UsesCompatibilityUnlock(), unlock.Ready(), sourceState.state.numFramesToGenerateMax);
-        const bool supportsDynamic = !editIntel && TheosRenderPipeline::SourceDLSSG::MFGContract::Dynamic(
+        const bool supportsDynamic = !editIntel && nvidiaReported && TheosRenderPipeline::SourceDLSSG::MFGContract::Dynamic(
                                          unlock.UsesCompatibilityUnlock(), unlock.Ready(),
                                          sourceState.state.bIsDynamicMFGSupported == sl::eTrue) &&
                                      sourceState.state.numFramesToGenerateMax > 1;
@@ -54,7 +58,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                                   : unlock.UsesAmpereUnlock() ? "Ampere MFG (experimental)"
                                   : unlock.UsesAdaUnlock()    ? "Ada MFG"
                                                               : "Native NVIDIA");
-        const auto availableMaximum = intel ? sourceBackend.XeFGState().maxGeneratedFrames : usableMaximum;
+        const auto availableMaximum = intel ? sourceBackend.XeFGState().maxGeneratedFrames : nvidiaReported ? usableMaximum : 0u;
         if (availableMaximum > 1)
             ImGui::Text("Available: x2 to x%u", availableMaximum + 1);
         else
@@ -146,7 +150,12 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         DrawSettingsHelp("Apply switches after a completed world frame, with a pause of under a second. Upscaling and NR keep "
                          "their settings. NVIDIA DLSS-G requires NVIDIA hardware; XeFG uses XeLL latency reduction. On NVIDIA "
                          "cards XeFG costs noticeably more GPU time than DLSS-G; it is meant for other GPUs.");
-        if (sourceBackend.RequestedProvider() != sourceBackend.Provider()) {
+        if (!editIntel && intel && sourceBackend.NvidiaSwitchBlocked()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kOchre);
+            ImGui::TextWrapped("Switching to NVIDIA needs a restart this session: NR started before NVIDIA's runtime. "
+                               "Save as default, then restart Skyrim.");
+            ImGui::PopStyleColor();
+        } else if (sourceBackend.RequestedProvider() != sourceBackend.Provider()) {
             ImGui::TextDisabled("Provider change pending; waiting for world inputs...");
         }
         bool runtimeInterpolationRequested = frameGen->RuntimeInterpolationRequested();
@@ -202,7 +211,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 {
                     ImGui::Checkbox("Dynamic multiplier##sourceMFG", &request.dynamic);
                 }
-                else if (request.dynamic)
+                else if (request.dynamic && nvidiaReported)
                 {
                     ImGui::TextColored(kOchre, "A saved dynamic request is unsupported by this NVIDIA runtime.");
                     if (ImGui::Button("Use fixed multiplier##sourceMFG"))
@@ -222,11 +231,15 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                     }
                     ImGui::TextDisabled("0 = display refresh rate; explicit targets must exceed 60 FPS.");
                 }
-                if (request.generatedFrames > sourceState.state.numFramesToGenerateMax || sourceState.generationLimited)
+                if (!nvidiaReported)
+                {
+                    ImGui::TextDisabled("NVIDIA reports its supported multipliers once DLSS-G is running.");
+                }
+                else if (request.generatedFrames > sourceState.state.numFramesToGenerateMax || sourceState.generationLimited)
                 {
                     ImGui::TextColored(kOchre, "NVIDIA runtime maximum: x%u", sourceState.state.numFramesToGenerateMax + 1);
                 }
-                if (sourceState.generationLimited)
+                if (nvidiaReported && sourceState.generationLimited)
                 {
                     ImGui::TextWrapped("Saved/requested MFG is unsupported here. The runtime uses the supported count; "
                                        "your requested preference is retained.");

@@ -60,6 +60,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		unsigned EffectiveMultiplier() const { return provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().generatedFrames+1 : session_.Snapshot().options.numFramesToGenerate + 1; }
 		std::uint32_t FrameIndex() const { return provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().frameId : nvidiaNeedsPresent_ ? xefg_.Snapshot().frameId + 1 : session_.Snapshot().frameIndex; }
 		bool ApplyProviderSwitch(SwapChain& wrapper);
+		// A live switch to NVIDIA would be refused: NR initialized NGX before
+		// Streamline in this session. Saving NVIDIA and restarting resolves it.
+		bool NvidiaSwitchBlocked() const;
 		// CPU time of one host Present split into its phases: input/output
 		// recording, the presenter's own Present, and retirement/replacement.
 		void ObservePresentTiming(double prepareMs, double presentMs, double finishMs);

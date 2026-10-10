@@ -1072,15 +1072,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 			providerStatus_ = "NVIDIA frame generation requires NVIDIA hardware; Intel presenter retained";
 			RequestProvider(provider_); return false;
 		}
-#if !defined(TRP_NO_NEURAL_RENDERING)
-		if (request == FrameGenerationProvider::NVIDIA &&
-			NvidiaSwitchNeedsRestart(nvidiaInitialized_, NeuralRendering::PublicNGXInitializedInProcess())) {
-			providerStatus_ = "NVIDIA frame generation needs a restart: NR started NVIDIA NGX before Streamline in this "
-				"XeSS session. Intel presenter retained; save NVIDIA and restart, or switch before enabling NR.";
-			logger::warn("[FrameGeneration] {}", providerStatus_);
+		if (request == FrameGenerationProvider::NVIDIA && NvidiaSwitchBlocked()) {
+			providerStatus_ = "NVIDIA switch needs a restart (NR started first); Intel presenter retained";
+			logger::warn("[FrameGeneration] NVIDIA frame generation needs a restart: NR started NVIDIA NGX before "
+				"Streamline in this XeSS session. Intel presenter retained; save NVIDIA and restart, or switch before enabling NR.");
 			RequestProvider(provider_); return false;
 		}
-#endif
 		if (request == FrameGenerationProvider::XeFG) {
 			const bool compatible = XeFGPresenter::SupportsFormat(presenterDesc_.BufferDesc.Format) &&
 				hudless_.texture12 && XeFGPresenter::SupportsFormat(hudless_.desc.Format);
@@ -1174,5 +1171,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 			total, a_prepareMs, a_presentMs, a_finishMs, ProviderName(provider_),
 			intel ? state.epoch : session_.Snapshot().presentationEpoch, presenterPresents_, replaced,
 			GenerationActive(), EffectiveMultiplier(), intel ? state.sleepMs : 0.0f, slowPresent_.TakeSuppressed());
+	}
+	bool Backend::NvidiaSwitchBlocked() const
+	{
+#if !defined(TRP_NO_NEURAL_RENDERING)
+		return NvidiaSwitchNeedsRestart(nvidiaInitialized_, NeuralRendering::PublicNGXInitializedInProcess());
+#else
+		return false;
+#endif
 	}
 }
