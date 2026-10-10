@@ -1,3 +1,74 @@
+# 0.4.0
+
+- Add experimental Intel XeSS upscaling under Image > Mode > XeSS; save and
+  restart to apply it. Intel's runtime chooses the render resolution for each
+  quality level.
+- Add experimental Intel XeFG frame generation under Frame generation > Provider.
+  Apply switches between NVIDIA DLSS-G and XeFG after the next world frame.
+  Intel XeLL replaces Reflex while XeFG is active. SDR and HDR10 output are
+  supported, and the HUD is composed from the UI layer as with DLSS-G.
+- XeFG offers Intel's official x2 and experimental x3-x6 in the multiplier list.
+  x3-x6 patch `libxess_fg.dll` 1.3.1.78 in memory after strict checks; another
+  runtime version stays at x2. The first Apply to x3-x6 recreates the Intel
+  presenter; later multiplier changes apply live. **Send frame time to XeFG** is
+  on by default.
+- Switching provider pauses for under a second. After a switch or loading
+  screen, XeFG waits for frame times to settle before it starts generating, so
+  a slow start does not throw off Intel's frame pacing. TRP caches Intel's
+  compiled shaders in `%LOCALAPPDATA%\TheosRenderPipeline\PipelineCache` to
+  shorten the stutter when XeFG starts generating. On NVIDIA cards XeFG costs noticeably
+  more GPU time than DLSS-G, which remains the better choice there.
+- AMD and other non-NVIDIA GPUs run XeSS and XeFG automatically, without
+  NVIDIA's runtimes or an INI change. With Community Shaders, CS upscales (FSR
+  on AMD) and TRP adds XeFG. NR still requires NVIDIA RTX hardware.
+- Standard includes Intel's XeSS, XeFG and XeLL runtimes with Intel's license.
+- Both editions include a Community Shaders settings override that keeps CS
+  frame generation and CS Reflex off. CS builds without an Overrides tab still
+  need both turned off by hand.
+- In an XeSS session on NVIDIA where NR has started, a live switch to DLSS-G is
+  refused instead of closing Skyrim; save the NVIDIA provider and restart.
+
+Both editions retain NR and the existing NVIDIA frame-generation routes. NVIDIA
+runtime DLLs and NVIDIA defaults are unchanged from 0.3.7. XeSS, XeFG, HDR and
+RTX 20 compatibility are experimental. XeSS and XeFG have limited AMD testing
+and none on Intel Arc. This release does not resolve the conflict with Bottled's
+experimental NR implementation.
+
+# 0.3.7
+
+- Rebind the settings-menu key under Advanced > Menu key. Apply switches the
+  key immediately; Save as default remembers it. Escape cancels picking, and
+  Reset to End restores the default. Function keys and supported navigation
+  keys can close the menu while editing; letter and number bindings keep text
+  editing active until the field loses focus.
+- Switch TRP's experimental HDR output on or off with Apply, without restarting.
+  The first activation in a session briefly pauses frame generation while the
+  native output buffers become 10-bit. Turning HDR off keeps those buffers until
+  restart; subsequent switches change the output colour space immediately.
+  Windows HDR is required. Community Shaders continues to own HDR on its route.
+
+Both editions retain NR and existing frame-generation compatibility routes.
+NVIDIA runtime DLLs and packaged feature defaults are unchanged from 0.3.6.
+HDR and RTX 20 compatibility remain experimental. This release does not resolve
+the conflict with Bottled's experimental NR implementation.
+
+# 0.3.6
+
+- Scale the menu automatically for higher output resolutions, with a bundled
+  Roboto font for sharp text. No separately installed font is required.
+- Add title-bar Zoom controls, automatic reset and an Advanced zoom slider.
+  Save as default remembers zoom, window dimensions and the column divider.
+- Scale the graphs, pipeline diagram, settings columns and preset popups together.
+- Improve GPU failure diagnostics: retain the first fault and report it once,
+  with optional DRED breadcrumb evidence. DRED remains off by default; existing
+  GPU progress waits and resource-retention protections are preserved.
+
+Both editions retain NR and existing frame-generation compatibility routes.
+NVIDIA runtime DLLs are unchanged. HDR and RTX 20 compatibility remain
+experimental. Compatibility between TRP NR and Bottled's new experimental NR
+implementation remains unverified; loading its NR runtime can prevent TRP NR
+from starting. This release does not fix that conflict.
+
 # 0.3.5
 
 - Reduce HUD ghosting in generated frames: DLSS-G now interpolates the HUD-less

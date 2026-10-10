@@ -1,13 +1,16 @@
 # Theo's Render Pipeline
 
-NVIDIA rendering integration for Skyrim: DLSS/DLAA, frame generation, optional
-Neural Rendering (NR), and native-resolution menus and HUD. Current version:
-**0.3.5**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
+Rendering integration for Skyrim: NVIDIA DLSS/DLAA and frame generation,
+experimental Intel XeSS upscaling and XeFG frame generation, optional Neural
+Rendering (NR), and native-resolution menus and HUD. Current version:
+**0.4.0**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
 
 ## Features
 
 - DLSS Super Resolution, DLAA, model presets and sharpening.
 - Frame generation and multi-frame generation (MFG).
+- Experimental Intel XeSS upscaling and XeFG frame generation, including on AMD
+  GPUs. See [XeSS and XeFG](#xess-and-xefg-experimental).
 - NR before or after DLSS/DLAA, one or two independently configured passes,
   input scaling and tuning, in both editions. NR defaults off.
 - Optional peripheral compression and combined NR preparation, both off by default.
@@ -31,6 +34,47 @@ with the game. Your saved pass count, resolution and tuning remain unchanged.
 The second pass stays allocated and its history resets when it resumes. These
 options default off; their effect on responsiveness depends on the workload.
 
+## XeSS and XeFG (experimental)
+
+**Image > Mode > XeSS** selects Intel's upscaler; save and restart to apply it.
+Intel's runtime chooses the render resolution for each quality setting. XeSS
+keeps the SDR exposure from Skyrim or ENB, so the DLSS model and auto-exposure
+settings do not apply. XeSS is available when TRP owns upscaling; with Community
+Shaders, CS upscales.
+
+**Frame generation > Provider** chooses NVIDIA DLSS-G or Intel XeFG. **Apply**
+switches after the next completed world frame and keeps the upscaling and NR
+settings. While XeFG is active, Intel XeLL handles latency instead of Reflex.
+On a GPU other than NVIDIA, TRP starts XeFG directly without loading NVIDIA's
+runtimes, with XeSS or with Community Shaders' upscaling (FSR on AMD). There,
+a saved DLSS mode runs as XeSS at the same quality and DLAA as XeSS Ultra
+Quality; **Save as default** then stores XeSS. DLSS, DLAA, DLSS-G and NR
+require NVIDIA RTX hardware; on NVIDIA, NR also works with XeSS.
+
+XeFG uses Intel's official x2 by default. The multiplier list also offers x3-x6,
+marked experimental, which patch `libxess_fg.dll` 1.3.1.78 in memory; no file
+is changed on disk. The first Apply to x3-x6 recreates the Intel presenter
+without a restart; later changes, including back to x2, apply live. Another
+runtime version, or a patch the check
+refuses, stays at x2. If the patch state is uncertain, XeFG stops until
+the game restarts. **Send frame time to XeFG** (on by default) gives Intel's
+pacing the measured frame time, which it uses as a check on non-Intel GPUs.
+
+Switching provider pauses for under a second. On NVIDIA cards XeFG runs as
+general GPU work and costs noticeably more than DLSS-G, lowering the rendered
+frame rate; DLSS-G remains the better choice there. TRP caches Intel's compiled
+shaders in `%LOCALAPPDATA%\TheosRenderPipeline\PipelineCache`; the first
+generation after installing or a driver update can stutter briefly while they
+compile.
+
+XeFG accepts SDR and HDR10 output, including TRP HDR output. FP16/scRGB output
+is not supported; the current presenter is kept instead.
+
+Evidence is one volunteer RX 7900 XT run at 2560x1440 with XeSS and XeFG x2
+(88 rendered, 176 output FPS) on an earlier development build. x3-x6 have run
+in game only on one RTX 4080 SUPER. Intel Arc GPUs and physical frame cadence
+are untested.
+
 ## Install
 
 Use SKSE64 and Address Library matching your Skyrim executable. Install packages
@@ -41,11 +85,16 @@ DLLs. Follow the [Standard installation guide](package/STANDARD-README.md) or
 Standard includes the SR/FG and NR runtime bundle. Universal adds the compatibility
 paths and can use Standard's runtimes when installed after it in MO2, or separately
 supplied matching runtimes. Both editions retain NR. Enable only one winning
-renderer DLL. The NVIDIA host is required even when interpolation is off.
+renderer DLL. NVIDIA modes initialize the NVIDIA host even when interpolation
+is off; XeSS uses the Intel startup path. Standard includes Intel's XeSS, XeFG
+and XeLL runtimes in `Data/SKSE/Plugins/TheosRenderPipeline/Intel`, with Intel's
+license in `licenses/Intel-XeSS-LICENSE.txt`.
 
 The DLL selects Community Shaders integration when CommunityShaders.dll is loaded;
-otherwise TRP owns upscaling, with optional ENB. With CS, disable its frame
-generation and Reflex; CS retains its shading, upscaling, UI and HDR output.
+otherwise TRP owns upscaling, with optional ENB. With CS, both editions include a
+CS settings override that keeps CS frame generation and Reflex off; CS retains
+its shading, upscaling, UI and HDR output. CS builds without an Overrides tab
+need both turned off by hand.
 Keep SSE ReShade Helper disabled when using TRP's ReShade integration. Use one shading
 setup per profile and disable competing upscaler/frame-generation injectors.
 
@@ -56,7 +105,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.3.5 package still needs its final game test.
+development builds; the exact 0.4.0 package still needs its final game test.
 
 ## HDR (experimental)
 
@@ -153,8 +202,10 @@ data does not exclude a GPU fault, and breadcrumbs do not identify a cause alone
 
 Requires Windows, Visual Studio 2022 C++ tools/Windows SDK, CMake and vcpkg.
 Use CommonLibSSE-NG 8.1.0 at `3c0f5a87c3b166c9a6712d5c3bd180e9ac5ad0fd`,
-Streamline 2.11.1 public headers and NGX SDK headers/import library, and
-Nukem9/detours at `cc5a2e4a58ef462821877b35ad30215f0e16bba1`. CommonLib's
+Streamline 2.11.1 public headers and NGX SDK headers/import library, the
+Intel XeSS SDK at `de0fb9c1c510661c571164e1418ceca8101dab69` (XeSS SR, XeFG 1.3
+and XeLL 1.3 headers), and Nukem9/detours at
+`cc5a2e4a58ef462821877b35ad30215f0e16bba1`. CommonLib's
 patch diagnostics fetch HDE64 from MinHook v1.3.4. Other libraries are listed
 in `vcpkg.json`; runtime DLLs are not needed to compile.
 
@@ -167,7 +218,8 @@ cmake --preset arp-nvidia `
   "-DTRP_COMMONLIBSSE_NG_DIR=C:/deps/CommonLibSSE-NG" `
   "-DTRP_NGX_SDK_DIR=C:/deps/Streamline/external/ngx-sdk" `
   "-DTRP_STREAMLINE_INCLUDE_DIR=C:/deps/Streamline/include" `
-  "-DARP_DETOURS_DIR=C:/deps/detours"
+  "-DARP_DETOURS_DIR=C:/deps/detours" `
+  "-DTRP_XEFG_SDK_DIR=C:/deps/xess"
 cmake --build --preset arp-nvidia --parallel 2
 ```
 
@@ -180,7 +232,7 @@ stay in the build directory. Configure separate directories for Standard
 
 Alternatively, set two environment variables: `VCPKG_ROOT` to your vcpkg
 installation, and `TRP_DEPENDENCY_ROOT` to a directory containing `CommonLibSSE-NG/`,
-`Streamline/`, `detours/`, `hde64/` and a prepared `vcpkg_installed/` tree. The
+`Streamline/`, `detours/`, `hde64/`, `xess/` and a prepared `vcpkg_installed/` tree. The
 `trp-standard` and `trp-universal` presets then configure each edition with the
 standalone checks enabled from any checkout or worktree, without a local preset
 file. They stay hidden until both variables are set, and the generated build
@@ -191,6 +243,10 @@ targets with `cmake --build <build-directory> --config Release`, then run
 `ctest --test-dir <build-directory> -C Release --output-on-failure`. These checks
 do not establish game acceptance. Build output alone is not a complete install;
 use the installation guides for configuration, shaders and required runtimes.
+
+The Intel fixtures in `tests/xefg` are built and run explicitly against
+identified Intel and NVIDIA runtime directories. Their output counts do not
+establish physical display cadence.
 
 The optional ReShade lifecycle fixture compares automatic and exported D3D11
 runtimes, single effect execution, effects-off GUI completion, shared input and

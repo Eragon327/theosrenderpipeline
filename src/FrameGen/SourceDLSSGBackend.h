@@ -15,15 +15,23 @@
 #include "SourceDLSSGMFG.h"
 #include "SourceDLSSGPresentationFeedback.h"
 #include "SourceDLSSGRuntimeDiagnostics.h"
+#include "FrameGenerationProvider.h"
+#include "XeFGPresenter.h"
+#include "XeSSUpscaler.h"
+#include "SlowPresentGate.h"
+#include "PipelineCache.h"
+#include "XeFGSettleGate.h"
 #if defined(ARP_DEVELOPER_DIAGNOSTICS)
 #include "FrameGen/SourceOutputCapture.h"
 #endif
 #include <dxgi1_5.h>
+#include <vector>
 #include <filesystem>
 #include <array>
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <chrono>
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
@@ -34,6 +42,34 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 	public:
 		static Backend& Get();
+		void RequestProvider(FrameGenerationProvider provider) { if (ValidProvider(static_cast<int>(provider))) { requestedProvider_.store(provider); } }
+		FrameGenerationProvider Provider() const { return provider_; }
+		FrameGenerationProvider RequestedProvider() const { return requestedProvider_.load(); }
+		const XeFGSnapshot& XeFGState() const { return xefg_.Snapshot(); }
+		const std::string& XeFGUnlockStatus() const { return xefg_.UnlockStatus(); }
+		void ConfigureXeFG(XeFGOptions options)
+		{
+			options = SanitizeXeFG(options);
+			xefgOptions_.store(options.generatedFrames | (options.experimentalMFG ? 0x100u : 0u));
+		}
+		XeFGOptions XeFGConfiguration() const
+		{
+			const auto value = xefgOptions_.load();
+			return {(value & 0x100u) != 0, value & 0xffu};
+		}
+		const std::string& ProviderStatus() const { return providerStatus_; }
+		bool GenerationActive() const { return Ready() && (provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().enabled : session_.Snapshot().GenerationActive()); }
+		unsigned EffectiveMultiplier() const { return provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().generatedFrames+1 : session_.Snapshot().options.numFramesToGenerate + 1; }
+		std::uint32_t FrameIndex() const { return provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().frameId : nvidiaNeedsPresent_ ? xefg_.Snapshot().frameId + 1 : session_.Snapshot().frameIndex; }
+		bool ApplyProviderSwitch(SwapChain& wrapper);
+		// A live switch to NVIDIA would be refused: NR initialized NGX before
+		// Streamline in this session. Saving NVIDIA and restarting resolves it.
+		bool NvidiaSwitchBlocked() const;
+		// CPU time of one host Present split into its phases: input/output
+		// recording, the presenter's own Present, and retirement/replacement.
+		void ObservePresentTiming(double prepareMs, double presentMs, double finishMs);
+		// After AfterPresent: a switch will replace the presenter at this boundary.
+		bool ProviderSwitchPending() const { return providerSwitchPending_; }
 		void ConfigureMFGUnlock(bool requested) { if (!attempted_) { mfgUnlock_.Configure(requested); } }
 		const MFGSnapshot& MFGState() const { return mfgUnlock_.Snapshot(); }
 		HRESULT CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_device,
@@ -62,6 +98,20 @@ namespace TheosRenderPipeline::SourceDLSSG
 		sl::ReflexMode ReflexConfiguration() const { return reflexMode_.load(std::memory_order_relaxed); }
 		void ConfigureUIRecomposition(bool a_enabled) { uiRecomposition_.store(a_enabled, std::memory_order_relaxed); }
 		bool UIRecompositionConfiguration() const { return uiRecomposition_.load(std::memory_order_relaxed); }
+		void ConfigureXeFGFrameTime(bool a_enabled) { xefgFrameTime_.store(a_enabled, std::memory_order_relaxed); }
+		bool XeFGFrameTimeConfiguration() const { return xefgFrameTime_.load(std::memory_order_relaxed); }
+		// Lab diagnostics, not saved: present only Intel's generated frames, or tag them.
+		void ConfigureXeFGDebugView(bool a_onlyGenerated, bool a_tagGenerated)
+		{
+			xefgOnlyGenerated_.store(a_onlyGenerated, std::memory_order_relaxed);
+			xefgTagGenerated_.store(a_tagGenerated, std::memory_order_relaxed);
+		}
+		bool XeFGOnlyGenerated() const { return xefgOnlyGenerated_.load(std::memory_order_relaxed); }
+		// Lab A/B, not saved: after Present, queue a D3D11 GPU wait for Intel's
+		// input copies instead of draining every host lane on the CPU.
+		void ConfigureXeFGGpuInputWait(bool a_enabled) { xefgGpuInputWait_.store(a_enabled, std::memory_order_relaxed); }
+		bool XeFGGpuInputWait() const { return xefgGpuInputWait_.load(std::memory_order_relaxed); }
+		bool XeFGTagGenerated() const { return xefgTagGenerated_.load(std::memory_order_relaxed); }
 		bool ConfigureOutputFPSLimit(int a_fps)
 		{
 			if (a_fps < 0 || a_fps > 1000) { return false; }
@@ -112,6 +162,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ID3D11Device* Device11() const { return device11_.Get(); }
 		ID3D12CommandQueue* Queue() const { return queue_.Get(); }
 		Interop& Transport() { return interop_; }
+		XeSSUpscaler& XeSS() { return xess_; }
+		// Session pipeline library for XeSS initialization, opened on first use.
+		ID3D12PipelineLibrary* XeSSPipelines() { return IntelPipelines(xessPipelines_, "xess", xess_.Module()); }
+		const XeSSUpscaler& XeSS() const { return xess_; }
+		ID3D12Device* Device12() const { return device12_.Get(); }
+		bool NvidiaAdapter() const { return adapterVendor_ == 0x10DE; }
 		HRESULT BeforePresent(ID3D12Resource* a_source, ID3D12Resource* a_destination, DXGI_COLOR_SPACE_TYPE a_colorSpace);
 		HRESULT AfterPresent(HRESULT a_result);
 #if defined(ARP_DEVELOPER_DIAGNOSTICS)
@@ -123,9 +179,15 @@ namespace TheosRenderPipeline::SourceDLSSG
 		friend class SwapChain; // Transport failures use the same first-error latch.
 		Backend() = default;
 		bool Load(const std::filesystem::path& a_directory);
+		bool InitializeNvidia(const std::filesystem::path& directory);
+		bool UpgradeNvidiaFactory();
+		bool PreflightProviderSwitch();
+		HRESULT CreatePresenter(FrameGenerationProvider provider, IDXGISwapChain** result);
 		bool Check(sl::Result a_result, const char* a_operation);
-		bool Check(HRESULT a_result, const char* a_operation);
+		// a_source tags the log line; Intel SDK failures use XeFG or XeSS.
+		bool Check(HRESULT a_result, const char* a_operation, const char* a_source = "SourceDLSSG");
 		bool CheckSession(bool a_result);
+		bool CheckXeFG(HRESULT result);
 		bool EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair,
 			DXGI_FORMAT a_format = DXGI_FORMAT_UNKNOWN, FrameExtent a_extent = {});
 		bool CopyDepth(ID3D11Texture2D* a_depth);
@@ -157,11 +219,35 @@ namespace TheosRenderPipeline::SourceDLSSG
 		PFun_slUpgradeInterface* upgrade_{};
 		SessionAPI api_{};
 		Session session_;
+		XeFGPresenter xefg_;
+		std::atomic<std::uint32_t> xefgOptions_{1};
+		XeSSUpscaler xess_;
+		UINT adapterVendor_{};
+		bool nvidiaInitialized_{}, nvidiaSessionStarted_{};
+		FrameGenerationProvider provider_{FrameGenerationProvider::NVIDIA};
+		std::atomic<FrameGenerationProvider> requestedProvider_{FrameGenerationProvider::NVIDIA};
+		Microsoft::WRL::ComPtr<IDXGIFactory> nativeFactory_, streamlineFactory_;
+		DXGI_SWAP_CHAIN_DESC presenterDesc_{};
+		std::string providerStatus_{"NVIDIA presenter"};
+		bool providerSwitchPending_{}, cameraAvailable_{}, recreateXeFG_{}, nvidiaNeedsPresent_{};
 		sl::Result reportedStateQueryResult_{ sl::Result::eOk };
 		sl::Result reportedOptionsResult_{ sl::Result::eOk };
 		MFGUnlock mfgUnlock_;
 		std::atomic<sl::ReflexMode> reflexMode_{ sl::ReflexMode::eLowLatency };
 		std::atomic<bool> uiRecomposition_{ true };
+		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
+		// Per-window CPU samples for the input-reuse A/B; logged and cleared every 600 presents.
+		std::vector<float> xefgReuseMs_, xefgSleepMs_;
+		bool xefgReuseWindowGpu_{};
+		SlowPresentGate slowPresent_;
+		ID3D12PipelineLibrary* IntelPipelines(PipelineCache& cache, const char* name, HMODULE runtime);
+		PipelineCache xefgPipelines_, xessPipelines_;
+		XeFGSettleGate xefgSettle_;
+		std::chrono::steady_clock::time_point lastHostFrame_{};
+		UINT adapterDevice_{};
+		LARGE_INTEGER adapterDriver_{};
+		std::uint64_t presenterPresents_{}; // Since the current presenter was created.
+		bool presenterReplaced_{}; // ApplyProviderSwitch replaced it during this Present.
 		std::atomic<int> outputFPSLimit_{ 0 };
 		mutable std::mutex presentationFeedbackMutex_;
 		PresentationFeedbackTracker presentationFeedback_;

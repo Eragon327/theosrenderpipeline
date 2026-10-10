@@ -16,9 +16,20 @@ namespace TheosRenderPipeline::Upscaler
 
     inline Creation Sanitize(Creation value)
     {
-        value.mode = value.mode == 3 ? 3 : 0;
+        value.mode = value.mode == 3 || value.mode == 4 ? value.mode : 0;
         value.quality = std::clamp(value.quality, 0, 4);
         value.preset = TheosRenderPipeline::DLSSPreset::Sanitize(value.preset);
+        return value;
+    }
+
+    // DLSS and DLAA need an NVIDIA GPU. Elsewhere XeSS runs for the session,
+    // keeping the quality index (same order); DLAA takes Ultra Quality.
+    inline Creation ForAdapter(Creation value, bool nvidiaAdapter)
+    {
+        value = Sanitize(value);
+        if (nvidiaAdapter || value.mode == 4) { return value; }
+        if (value.mode == 3) { value.quality = 4; }
+        value.mode = 4;
         return value;
     }
 

@@ -1,4 +1,22 @@
-# Theo's Render Pipeline — Standard, 0.3.5
+# Theo's Render Pipeline — Standard, 0.4.0
+
+Version 0.4.0 adds experimental Intel XeSS upscaling and XeFG frame generation
+(official x2, plus experimental x3-x6), selected automatically on AMD and other
+non-NVIDIA GPUs. Standard includes Intel's runtimes. Both editions include a
+Community Shaders override that keeps CS frame generation and Reflex off. NVIDIA
+runtimes and defaults are unchanged; NR still requires NVIDIA RTX hardware.
+
+Version 0.3.7 adds menu-key rebinding under Advanced > Menu key and live
+experimental HDR output switching with Apply. The first HDR activation briefly
+pauses frame generation; later switches are immediate. Save as default remembers
+the menu key and HDR setting. Both editions retain NR and their existing
+frame-generation routes, with unchanged NVIDIA runtime DLLs and feature defaults.
+
+Version 0.3.6 adds automatic menu scaling and title-bar Zoom controls, with
+an embedded font; no separate font installation is required. Save as default
+remembers zoom, window geometry and the divider. GPU failure diagnostics retain
+the first fault and support optional DRED evidence (off by default). Both editions
+retain NR and existing compatibility routes; NVIDIA runtime DLLs are unchanged.
 
 Version 0.3.5 enables DLSS-G UI recomposition by default to reduce HUD
 ghosting; toggle it live under Frame generation. GPU retirement waits now
@@ -12,7 +30,8 @@ RTX 20 users need Universal's compatibility path installed after Standard.
 This edition supplies the retained runtime bundle and all 0.2.5 fixes.
 
 DLSS/DLAA, native NVIDIA frame generation, Neural Rendering, NVIDIA Reflex and
-native-resolution menus for Skyrim. All eight NVIDIA runtime DLLs are included.
+native-resolution menus for Skyrim. All eight NVIDIA runtime DLLs are included,
+with Intel's XeSS, XeFG and XeLL runtimes and Intel's license.
 
 Version 0.2.5 improves startup compatibility with existing renderer hooks,
 including SSE Display Tweaks BorderlessUpscale and Community Shaders. Rejected
@@ -40,12 +59,15 @@ fix for saved 78% Ultra Quality DLSS is retained.
 
 Use matching SKSE64 and Address Library for Steam Skyrim 1.5.97, 1.6.640,
 1.6.1170 or 1.7.104, the x64 Microsoft Visual C++ runtime and a compatible
-NVIDIA GPU/driver. Standard requires native DLSS-G hardware support even with
-frame generation off. RTX 40-series uses x2; higher multipliers require native
-hardware/runtime support. RTX 30 requires Universal installed after Standard,
-even with frame generation off; Standard alone cannot initialize its host there.
-AMD/Intel are not supported. ENB is optional. Community Shaders and optional
-ReShade setup are described below.
+NVIDIA GPU/driver. In DLSS/DLAA modes, Standard requires native DLSS-G hardware
+support even with frame generation off. RTX 40-series uses x2; higher
+multipliers require native hardware/runtime support. RTX 30 requires Universal
+installed after Standard, even with frame generation off; Standard alone cannot
+initialize its host there. AMD and other non-NVIDIA GPUs use experimental XeSS
+with Intel XeFG, selected automatically (with Community Shaders, CS upscales
+with FSR on AMD and TRP adds XeFG). Keep AMD Fluid Motion Frames, Anti-Lag and
+other frame-generation or upscaler mods off. NR requires NVIDIA RTX hardware. ENB is optional. Community Shaders and optional ReShade
+setup are described below.
 
 ## Settings
 
@@ -81,9 +103,13 @@ inference cost. See [preset files and weather/time controls](APPEARANCE-PROFILES
 
 ## Community Shaders
 
-Keep CS upscaling enabled. Disable CS frame generation and CS Reflex: TRP supplies
-both. CS controls upscaling, render scale, sharpening and colour; TRP controls FG
-and NR. Assign CS a separate menu key, such as F8, to avoid End conflicts with
+Keep CS upscaling enabled. TRP supplies frame generation and Reflex, so this
+package includes a CS settings override that turns CS frame generation and CS
+Reflex off at startup, even if your saved CS settings enable them. It appears in
+CS's Overrides tab as Theo's Render Pipeline. If your CS has no Overrides tab, or
+you disable the override there, turn CS frame generation and CS Reflex off
+yourself. CS controls upscaling, render scale, sharpening and colour; TRP controls
+FG and NR. Assign CS a separate menu key, such as F8, to avoid End conflicts with
 TRP or KreatE, or change TRP's key under Advanced > Menu key. Do not use F8 if
 it is already assigned to ReShade or a capture tool.
 
@@ -106,6 +132,12 @@ restarting. Clipped highlights cannot be recovered. It has one ENB game test
 for its scope. Standard HDR gameplay is still unverified. Recurring NVIDIA
 flip-queue errors remain unresolved; physical frame cadence and other GPUs are
 unverified.
+
+Bottled's new experimental NR implementation is not yet validated alongside
+TRP NR. Its runtime can remain loaded even with its NR checkbox off, preventing
+TRP NR from starting. Do not switch between the two NR implementations in the
+same launch; a restart and isolated runtime ownership are required. This release
+does not resolve that conflict.
 
 ## ReShade (optional)
 
@@ -133,12 +165,12 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.3.5 package still needs its final game test.
+development builds; the exact 0.4.0 package still needs its final game test.
 
 ## With the Universal edition
 
 For the RTX 40 MFG unlock or experimental RTX 20/30 support, install the matching
-0.3.5 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
+0.4.0 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
 the NVIDIA runtimes included here, including NR.
 
 Both editions contain settings files; the later mod's files win. Switching

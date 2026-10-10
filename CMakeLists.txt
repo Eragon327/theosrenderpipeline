@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	TheosRenderPipeline
-	VERSION 0.3.5
+	VERSION 0.4.0
 	LANGUAGES C CXX
 )
 
@@ -190,6 +190,13 @@ if(NOT EXISTS "${TRP_STREAMLINE_INCLUDE_DIR}/sl_core_api.h")
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE "${TRP_STREAMLINE_INCLUDE_DIR}")
+set(TRP_XEFG_SDK_DIR "${PROJECT_SOURCE_DIR}/.dependencies/xess" CACHE PATH "Intel XeFG 1.3 / XeLL 1.3 SDK")
+if(NOT EXISTS "${TRP_XEFG_SDK_DIR}/inc/xess_fg/xefg_swapchain_d3d12.h" OR
+   NOT EXISTS "${TRP_XEFG_SDK_DIR}/inc/xess/xess_d3d12.h")
+    message(FATAL_ERROR "Set TRP_XEFG_SDK_DIR to the pinned Intel XeSS SDK with SR, XeFG 1.3 and XeLL 1.3 headers")
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE "${TRP_XEFG_SDK_DIR}/inc")
+set_source_files_properties(src/FrameGen/XeFGPresenter.cpp src/FrameGen/XeFGUnlock.cpp src/FrameGen/XeSSUpscaler.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
 find_path(TRP_SIMPLEINI_INCLUDE_DIR SimpleIni.h REQUIRED)
 
 target_include_directories(
@@ -229,6 +236,11 @@ add_custom_target(ARPBaseline DEPENDS TheosRenderPipeline)
 option(TRP_BUILD_COMPATIBILITY_TESTS "Build offline runtime and frame contract checks" OFF)
 if(TRP_BUILD_COMPATIBILITY_TESTS)
     enable_testing()
+    add_executable(TRPSourceHostLifecycleTests tests/SourceHostLifecycleTests.cpp)
+    target_compile_features(TRPSourceHostLifecycleTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPSourceHostLifecycleTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPSourceHostLifecycleTests PRIVATE src "${TRP_SIMPLEINI_INCLUDE_DIR}" "${TRP_STREAMLINE_INCLUDE_DIR}")
+    add_test(NAME SourceHostLifecycle COMMAND TRPSourceHostLifecycleTests)
     add_subdirectory(tests/ui-blend)
     add_executable(TRPWeatherAppearanceTests tests/WeatherAppearanceTests.cpp)
     target_compile_features(TRPWeatherAppearanceTests PRIVATE cxx_std_23)
@@ -278,6 +290,9 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_include_directories(TRPStartupPreferencesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${TRP_SIMPLEINI_INCLUDE_DIR}")
     add_test(NAME StartupPreferences COMMAND TRPStartupPreferencesTests "${CMAKE_CURRENT_SOURCE_DIR}/package/SKSE/Plugins/TheosRenderPipeline.ini")
+    add_test(NAME CommunityShadersOverride COMMAND "${CMAKE_COMMAND}"
+        "-DOVERRIDE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/package/SKSE/Plugins/CommunityShaders/Overrides/TheosRenderPipeline_Upscaling.json"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/CommunityShadersOverrideTest.cmake")
     add_executable(TRPRendererSettingsActionTests tests/RendererSettingsActionTests.cpp)
     target_compile_features(TRPRendererSettingsActionTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPRendererSettingsActionTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -325,6 +340,12 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_include_directories(TRPDLSSQualityTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${TRP_NGX_SDK_DIR}/include" "${TRP_STREAMLINE_INCLUDE_DIR}")
     add_test(NAME DLSSQuality COMMAND TRPDLSSQualityTests)
+    add_executable(TRPPipelineCacheTests tests/PipelineCacheTests.cpp src/FrameGen/PipelineCache.cpp)
+    target_compile_features(TRPPipelineCacheTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPPipelineCacheTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+    target_include_directories(TRPPipelineCacheTests PRIVATE src)
+    target_link_libraries(TRPPipelineCacheTests PRIVATE d3d12 dxgi d3dcompiler shell32 ole32)
+    add_test(NAME PipelineCache COMMAND TRPPipelineCacheTests)
     add_executable(TRPReShadeIntegrationTests tests/ReShadeIntegrationTests.cpp src/ReShadeIntegration.cpp)
     target_compile_features(TRPReShadeIntegrationTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPReShadeIntegrationTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
