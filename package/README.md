@@ -151,8 +151,9 @@ is required in DLSS/DLAA modes even with frame generation switched off.
 
 AMD and other non-NVIDIA GPUs use experimental XeSS with Intel XeFG; TRP selects
 XeSS automatically there, so no INI change is needed. Install the Standard ZIP,
-which includes Intel's runtimes; Universal adds only NVIDIA compatibility paths. With Community Shaders,
-CS upscales instead (FSR on AMD) and TRP adds XeFG. Keep AMD Fluid Motion
+which includes Intel's runtimes and XeFG x2. Universal, installed after it, adds
+the experimental XeFG x3-x6 as well as the NVIDIA compatibility paths. With
+Community Shaders, CS upscales instead (FSR on AMD) and TRP adds XeFG. Keep AMD Fluid Motion
 Frames, Anti-Lag, Radeon Chill, Radeon Boost and other frame-generation or
 upscaler mods off. NR requires NVIDIA RTX hardware.
 

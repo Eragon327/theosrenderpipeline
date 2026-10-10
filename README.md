@@ -51,9 +51,11 @@ a saved DLSS mode runs as XeSS at the same quality and DLAA as XeSS Ultra
 Quality; **Save as default** then stores XeSS. DLSS, DLAA, DLSS-G and NR
 require NVIDIA RTX hardware; on NVIDIA, NR also works with XeSS.
 
-XeFG uses Intel's official x2 by default. The multiplier list also offers x3-x6,
-marked experimental, which patch `libxess_fg.dll` 1.3.1.78 in memory; no file
-is changed on disk. The first Apply to x3-x6 recreates the Intel presenter
+XeFG uses Intel's official x2 by default. With the Universal edition the
+multiplier list also offers x3-x6, marked experimental, which patch
+`libxess_fg.dll` 1.3.1.78 in memory; no file is changed on disk. Standard ships
+Intel's runtimes unmodified and offers x2 only, as it ships NVIDIA's runtimes
+without the NVIDIA MFG unlocks. The first Apply to x3-x6 recreates the Intel presenter
 without a restart; later changes, including back to x2, apply live. Another
 runtime version, or a patch the check
 refuses, stays at x2. If the patch state is uncertain, XeFG stops until

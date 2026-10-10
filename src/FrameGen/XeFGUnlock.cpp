@@ -554,6 +554,7 @@ namespace TheosRenderPipeline::XeFGUnlock
         reason = "checked patches already resident";
         return PatchResult::Applied;
     }
+    bool Available() { return true; }
     void NewContextEpoch() { ++epoch; }
     Stats Snapshot()
     {

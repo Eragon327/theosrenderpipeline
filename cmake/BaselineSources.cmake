@@ -113,7 +113,6 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/SourceDLSSGBackend.cpp
     src/FrameGen/PipelineCache.cpp
     src/FrameGen/XeFGPresenter.cpp
-    src/FrameGen/XeFGUnlock.cpp
     src/FrameGen/XeSSUpscaler.cpp
     src/FrameGen/XeSSUpscaler.h
     src/FrameGen/XeFGPresenter.h
