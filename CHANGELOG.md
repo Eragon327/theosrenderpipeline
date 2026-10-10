@@ -9,7 +9,13 @@
   supported, and the HUD is composed from the UI layer as with DLSS-G.
 - XeFG offers Intel's official x2 and experimental x3-x6 in the multiplier list.
   x3-x6 patch `libxess_fg.dll` 1.3.1.78 in memory after strict checks; another
-  runtime version stays at x2. **Send frame time to XeFG** is on by default.
+  runtime version stays at x2. The first Apply to x3-x6 recreates the Intel
+  presenter; later multiplier changes apply live. **Send frame time to XeFG** is
+  on by default.
+- Switching provider pauses for under a second. TRP caches Intel's compiled
+  shaders in `%LOCALAPPDATA%\TheosRenderPipeline\PipelineCache` to shorten the
+  stutter when XeFG starts generating. On NVIDIA cards XeFG costs noticeably
+  more GPU time than DLSS-G, which remains the better choice there.
 - AMD and other non-NVIDIA GPUs run XeSS and XeFG automatically, without
   NVIDIA's runtimes or an INI change. With Community Shaders, CS upscales (FSR
   on AMD) and TRP adds XeFG. NR still requires NVIDIA RTX hardware.
