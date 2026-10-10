@@ -1,6 +1,7 @@
 #include "FrameGen/SourceHostLifecycle.h"
 #include "FrameGen/SourceDLSSGSettings.h"
 #include "FrameGen/SlowPresentGate.h"
+#include "FrameGen/XeFGSettleGate.h"
 #include <SimpleIni.h>
 #include <cstdio>
 #include <cstdlib>
@@ -97,5 +98,17 @@ int main()
         Require(gate.Admit(120.0, 1500) && gate.TakeSuppressed() == 2, "the next line reports the slow Presents it skipped");
         Require(gate.TakeSuppressed() == 0, "the skipped count resets once reported");
     }
-    std::puts("PASS host failure retention, resize/destruction ordering, saved provider startup and slow Present reporting");
+    {
+        // RC3 CS route: ~550 ms frames after a new presenter, then normal frames.
+        XeFGSettleGate gate;
+        for (int i = 0; i < 6; ++i) Require(!gate.Observe(550.0), "slow frames keep XeFG in passthrough");
+        for (unsigned i = 1; i < XeFGSettleGate::kRequired; ++i) Require(!gate.Observe(30.0), "fewer than ten settled frames still wait");
+        Require(gate.Observe(30.0) && gate.Held() == 6 + XeFGSettleGate::kRequired, "ten settled frames start generation");
+        Require(gate.Observe(800.0) && gate.Settled(), "a later hitch does not toggle generation off mid-play");
+        gate.Reset();
+        Require(!gate.Settled() && gate.Held() == 0, "a new presenter or transition waits again");
+        for (unsigned i = 0; i + 1 < XeFGSettleGate::kRequired; ++i) gate.Observe(30.0);
+        Require(!gate.Observe(0.0) && !gate.Observe(150.0), "an unknown or slow interval restarts the count");
+    }
+    std::puts("PASS host failure retention, resize/destruction ordering, saved provider startup, slow Present reporting and XeFG settling");
 }

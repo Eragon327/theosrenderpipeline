@@ -617,7 +617,19 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		const bool transitionBlocked = TransitionBlocked();
 		const auto transitionWarmup = transitionWarmupPresents_.load(std::memory_order_acquire);
-		const bool generationAllowed = enabled_ && !transitionBlocked && transitionWarmup == 0;
+		// XeFG starts generating only once frames have settled after a new
+		// presenter or transition; see XeFGSettleGate.
+		const auto frameStart = std::chrono::steady_clock::now();
+		const double frameInterval = lastHostFrame_ == std::chrono::steady_clock::time_point{} ? 0.0 :
+			std::chrono::duration<double, std::milli>(frameStart - lastHostFrame_).count();
+		lastHostFrame_ = frameStart;
+		if (transitionBlocked || transitionWarmup != 0) { xefgSettle_.Reset(); }
+		bool xefgSettled = true;
+		if (provider_ == FrameGenerationProvider::XeFG && !transitionBlocked && transitionWarmup == 0 && !xefgSettle_.Settled()) {
+			xefgSettled = xefgSettle_.Observe(frameInterval);
+			if (xefgSettled) { logger::info("[XeFG] frames settled after {} warm-up frames; generation may start", xefgSettle_.Held()); }
+		}
+		const bool generationAllowed = enabled_ && !transitionBlocked && transitionWarmup == 0 && xefgSettled;
 		if (provider_ == FrameGenerationProvider::XeFG) {
 			const bool hdrLayers = hdrNative_ && hdrDisplay_ && hdrOutputPass_;
 			auto* intelHudless = hdrLayers ? hdrOutputPass_->HudlessTarget() : hudless_.texture12.Get();

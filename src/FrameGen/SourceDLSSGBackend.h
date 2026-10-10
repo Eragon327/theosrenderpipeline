@@ -20,6 +20,7 @@
 #include "XeSSUpscaler.h"
 #include "SlowPresentGate.h"
 #include "PipelineCache.h"
+#include "XeFGSettleGate.h"
 #if defined(ARP_DEVELOPER_DIAGNOSTICS)
 #include "FrameGen/SourceOutputCapture.h"
 #endif
@@ -30,6 +31,7 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <chrono>
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
@@ -240,6 +242,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		SlowPresentGate slowPresent_;
 		ID3D12PipelineLibrary* IntelPipelines(PipelineCache& cache, const char* name, HMODULE runtime);
 		PipelineCache xefgPipelines_, xessPipelines_;
+		XeFGSettleGate xefgSettle_;
+		std::chrono::steady_clock::time_point lastHostFrame_{};
 		UINT adapterDevice_{};
 		LARGE_INTEGER adapterDriver_{};
 		std::uint64_t presenterPresents_{}; // Since the current presenter was created.

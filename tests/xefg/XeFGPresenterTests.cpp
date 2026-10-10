@@ -109,6 +109,13 @@ int wmain(int argc, wchar_t** argv)
     }
     // Production Lab A/B: queue a D3D11 GPU wait for the input copies instead of CPU drains.
     const bool gpuInputWait = GetEnvironmentVariableW(L"TRP_XEFG_GPU_INPUT_WAIT", nullptr, 0) != 0;
+    // Pacing experiment (TRP_XEFG_STALL_TEST, round 0, prints Present times; not asserted):
+    // 1 = six 500 ms frames while generating (9-14); 2 = the same during passthrough
+    // before generation (2-7); 3 = like 1, then passthrough for frames 15-24.
+    // Intel's pacing remembers 1 for ~25 slow Presents, ignores 2, and keeps 1's
+    // memory through 3's passthrough: see XeFGSettleGate.
+    wchar_t stallText[4]{};
+    const unsigned stallMode = GetEnvironmentVariableW(L"TRP_XEFG_STALL_TEST", stallText, 4) ? stallText[0] - L'0' : 0u;
     std::printf("owner cycles=%u releaseRetiredNvidia=%u experimental=%u inputReuse=%s\n", cycles, releaseNvidia,
         experimental, gpuInputWait ? "gpu-fence" : "cpu-drain");
     for (unsigned round = 0; round < cycles; ++round) {
@@ -185,7 +192,8 @@ int wmain(int argc, wchar_t** argv)
                 ComPtr<ID3D12Resource> back;
                 Check(proxy->GetBuffer(proxy3->GetCurrentBackBufferIndex(), IID_PPV_ARGS(&back)), "backbuffer");
                 Check(Interop::RecordCopy(list, input.color.texture12.Get(), back.Get()), "source copy");
-                const bool enable = frame >= 8 && frame < 112;
+                const bool holdAfterStall = stallMode == 3 && round == 0 && frame >= 15 && frame < 25;
+                const bool enable = frame >= 8 && frame < 112 && !holdAfterStall;
                 // Round 0 tags the UI layer, then offers a mismatched layer that must be
                 // rejected; later rounds provide none, leaving AUTO to extract from the frame.
                 auto* ui = round == 0 ? (frame < 45 ? input.ui.texture12.Get() : input.depth.texture12.Get()) : nullptr;
@@ -203,9 +211,14 @@ int wmain(int argc, wchar_t** argv)
                 Check(interop.Submit(Work::SwapChain), "submit SDK copies");
                 back.Reset();
                 Check(presenter.FinalizePresent(), "markers after queue submission");
+                if (round == 0 && ((stallMode == 1 || stallMode == 3) ? frame >= 9 && frame < 15 : stallMode == 2 && frame >= 2 && frame < 8))
+                    Sleep(500);
                 const auto presentStart = std::chrono::steady_clock::now();
                 const auto result = proxy->Present(0, 0);
                 const auto presentEnd = std::chrono::steady_clock::now();
+                if (stallMode && round == 0 && frame < 60)
+                    std::printf("stall-test frame=%u present=%.1f ms\n", frame,
+                        std::chrono::duration<double, std::milli>(presentEnd - presentStart).count());
                 Check(result, "Intel present");
                 Require(result == S_OK, "visible present");
                 Check(presenter.AfterPresent(result), "production completion");
