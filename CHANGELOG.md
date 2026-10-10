@@ -12,9 +12,11 @@
   runtime version stays at x2. The first Apply to x3-x6 recreates the Intel
   presenter; later multiplier changes apply live. **Send frame time to XeFG** is
   on by default.
-- Switching provider pauses for under a second. TRP caches Intel's compiled
-  shaders in `%LOCALAPPDATA%\TheosRenderPipeline\PipelineCache` to shorten the
-  stutter when XeFG starts generating. On NVIDIA cards XeFG costs noticeably
+- Switching provider pauses for under a second. After a switch or loading
+  screen, XeFG waits for frame times to settle before it starts generating, so
+  a slow start does not throw off Intel's frame pacing. TRP caches Intel's
+  compiled shaders in `%LOCALAPPDATA%\TheosRenderPipeline\PipelineCache` to
+  shorten the stutter when XeFG starts generating. On NVIDIA cards XeFG costs noticeably
   more GPU time than DLSS-G, which remains the better choice there.
 - AMD and other non-NVIDIA GPUs run XeSS and XeFG automatically, without
   NVIDIA's runtimes or an INI change. With Community Shaders, CS upscales (FSR
