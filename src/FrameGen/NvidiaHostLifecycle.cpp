@@ -135,6 +135,7 @@ HRESULT NvidiaHost::ReleaseSourceUpscaler()
     EndNativeUIPass();
     startupOverlay_.ResetAfterRetirement();
     previewDraw_.ResetAfterRetirement();
+    uiBlendCoverage_.Reset();
     TheosRenderPipeline::LoadingArtwork::ResetAfterRetirement();
     loadingScreenUpscaler_.ResetAfterRetirement();
     loadingScreenRoute_.ResetAfterRetirement();

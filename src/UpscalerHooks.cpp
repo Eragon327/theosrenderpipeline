@@ -377,7 +377,7 @@ void WINAPI hk_ID3D11DeviceContext_PSSetShaderResources(ID3D11DeviceContext* Thi
 	(This->*ptrPSSetShaderResources)(StartSlot, NumViews, views);
 }
 
-void WINAPI hk_ID3D11DeviceContext_OMSetRenderTargets(ID3D11DeviceContext* This, UINT NumViews, ID3D11RenderTargetView* const* ppRenderTargetViews, ID3D11DepthStencilView* pDepthStencilView)
+static void RouteRenderTargets(ID3D11DeviceContext* This, UINT NumViews, ID3D11RenderTargetView* const* ppRenderTargetViews, ID3D11DepthStencilView* pDepthStencilView)
 {
 	auto* nvidiaHost = NvidiaHost::GetSingleton();
 	nvidiaHost->LogSourceContextHook(0, This);
@@ -544,21 +544,85 @@ void WINAPI hk_ID3D11DeviceContext_RSSetViewports(ID3D11DeviceContext* This, UIN
 	(This->*ptrRSSetViewports)(NumViewports, pViewports);
 }
 
-// Scaleform clips masked HUD elements (compass strip, lists) with scissor
-// rects in render-size space; they need the same scaling as viewports while
-// the UI pass rasterizes at native.
+// Render target 0 is the dedicated, transparent UI layer.
+static bool UILayerBound(NvidiaHost* host, ID3D11DeviceContext* context)
+{
+    auto* layer = host->CoverageUITarget();
+    if (!layer || !host->NativeUIPassActive()) { return false; }
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> first;
+    context->OMGetRenderTargets(1, &first, nullptr);
+    return first.Get() == layer;
+}
+
+// Each distinct producer state on the UI layer, once: which ones are corrected,
+// and which unblended ones would need a coverage replay instead.
+static void LogUIBlend(ID3D11BlendState* state, TheosRenderPipeline::UIBlendCoverage kind)
+{
+    static unsigned logged = 0;
+    if (!state || logged >= 32) { return; }
+    ++logged;
+    D3D11_BLEND_DESC desc{};
+    state->GetDesc(&desc);
+    const auto& rt = desc.RenderTarget[0];
+    auto* ui = RE::UI::GetSingleton();
+    const bool stats = ui && ui->IsMenuOpen(RE::StatsMenu::MENU_NAME);
+    const bool levelUp = ui && ui->IsMenuOpen(RE::LevelUpMenu::MENU_NAME);
+    logger::info("[NativeUI] UI layer blend {} blend={} rgb={}/{}/op{} alpha={}/{}/op{} mask=0x{:X} a2c={} stats={} levelUp={}",
+        kind == TheosRenderPipeline::UIBlendCoverage::SourceOver ? "source-over alpha corrected to coverage" :
+        kind == TheosRenderPipeline::UIBlendCoverage::Additive ? "additive alpha corrected to keep coverage" : "unchanged",
+        static_cast<bool>(rt.BlendEnable), static_cast<int>(rt.SrcBlend), static_cast<int>(rt.DestBlend), static_cast<int>(rt.BlendOp),
+        static_cast<int>(rt.SrcBlendAlpha), static_cast<int>(rt.DestBlendAlpha), static_cast<int>(rt.BlendOpAlpha),
+        rt.RenderTargetWriteMask, static_cast<bool>(desc.AlphaToCoverageEnable), stats, levelUp);
+}
+
 void WINAPI hk_ID3D11DeviceContext_OMSetBlendState(ID3D11DeviceContext* This, ID3D11BlendState* state, const FLOAT factors[4], UINT mask)
 {
     auto* host = NvidiaHost::GetSingleton();
     auto* mapped = state;
-    if (host->SourceContext(This)) { mapped = host->StartupOverlay().ForegroundBlend(This, state); }
-    if (mapped != state) {
-        static unsigned logged = 0;
-        if (logged++ < 3) { logger::info("[StartupOverlay] legacy ImGui alpha corrected for transparent foreground; RGB unchanged"); }
+    if (host->SourceContext(This)) {
+        mapped = host->StartupOverlay().ForegroundBlend(This, state);
+        if (mapped != state) {
+            static unsigned logged = 0;
+            if (logged++ < 3) { logger::info("[StartupOverlay] legacy ImGui alpha corrected for transparent foreground; RGB unchanged"); }
+        } else if (host->NativeUIInternalBind()) {
+            host->UIBlendCoverage().Internal(state);
+        } else {
+            const bool layer = UILayerBound(host, This);
+            Microsoft::WRL::ComPtr<ID3D11Device> device;
+            if (layer) { This->GetDevice(&device); }
+            const auto result = host->UIBlendCoverage().Producer(device.Get(), state, layer);
+            mapped = result.state;
+            if (result.firstSeen) { LogUIBlend(state, result.kind); }
+        }
     }
     (This->*ptrOMSetBlendState)(mapped, factors, mask);
 }
 
+// After any render-target change on the source context: bind the coverage-correct
+// blend state only while the UI layer is target 0. Cheap outside the UI pass.
+static void SyncUIBlend(NvidiaHost* host, ID3D11DeviceContext* context)
+{
+    auto& coverage = host->UIBlendCoverage();
+    if (!host->NativeUIPassActive() && !coverage.CorrectedBound()) { return; }
+    coverage.Sync(context, host->CoverageUITarget(), [context](ID3D11BlendState* state, const FLOAT* factors, UINT mask) {
+        (context->*ptrOMSetBlendState)(state, factors, mask);
+    });
+}
+
+void WINAPI hk_ID3D11DeviceContext_OMSetRenderTargets(ID3D11DeviceContext* This, UINT NumViews, ID3D11RenderTargetView* const* ppRenderTargetViews, ID3D11DepthStencilView* pDepthStencilView)
+{
+    RouteRenderTargets(This, NumViews, ppRenderTargetViews, pDepthStencilView);
+    // Producer bindings, and the UI pass's own Enter/End: ending the pass must
+    // restore the producer's state. Other host passes restore their own bindings.
+    auto* host = NvidiaHost::GetSingleton();
+    if (host->SourceContext(This) && (!host->NativeUIInternalBind() || host->NativeUIPassInternalBind())) {
+        SyncUIBlend(host, This);
+    }
+}
+
+// Scaleform clips masked HUD elements (compass strip, lists) with scissor
+// rects in render-size space; they need the same scaling as viewports while
+// the UI pass rasterizes at native.
 void WINAPI hk_ID3D11DeviceContext_RSSetScissorRects(ID3D11DeviceContext* This, UINT NumRects, const D3D11_RECT* pRects)
 {
 	auto* nvidiaHost = NvidiaHost::GetSingleton();

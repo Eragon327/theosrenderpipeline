@@ -17,6 +17,7 @@
 #include "SourceHostBoundary.h"
 #include "StartupOverlayPass.h"
 #include "InventoryPreviewDraw.h"
+#include "NativeUIBlendCoverage.h"
 #include "LoadingScreenState.h"
 #include "LoadingScreenUpscaler.h"
 #include "LoadingFadeIn.h"
@@ -91,7 +92,12 @@ class NvidiaHost
     ID3D11RenderTargetView* NativeUIRenderRTV() const { return nativeUI_.Dedicated() ? nativeUI_.RenderRTV() : presentation_.RTV(); }
     ID3D11DepthStencilView* NativeUIDepthDSV() const { return presentation_.DepthDSV(); }
     bool DedicatedUITextureMode() const { return nativeUI_.Dedicated(); }
+    // The transparent UI layer whose alpha is composed as coverage; null when UI
+    // draws straight onto the presentation image.
+    ID3D11RenderTargetView* CoverageUITarget() const { return nativeUI_.Dedicated() ? nativeUI_.RenderRTV() : nullptr; }
+    TheosRenderPipeline::NativeUIBlendCoverage& UIBlendCoverage() { return uiBlendCoverage_; }
     bool NativeUIPassActive() const { return nativeUIPass_.Active(); }
+    bool NativeUIPassInternalBind() const { return nativeUIPass_.InternalBind(); }
     bool NativeUIInternalBind() const { return nativeUIPass_.InternalBind() || sourceUIInternal_ || startupOverlay_.Internal() || previewDraw_.Internal() || TheosRenderPipeline::ReShadeIntegration::Get().Internal(); }
     ID3D11DepthStencilView* NativeUIBackgroundDepth() const { return nativeUIPass_.BackgroundDepth(); }
     bool NativeUITargetBound() const { return nativeUIPass_.TargetBound(); }
@@ -148,6 +154,7 @@ class NvidiaHost
     TheosRenderPipeline::SourceFrameCoordinator sourceFrameCoordinator_{nativeUIPass_};
     TheosRenderPipeline::StartupOverlayPass startupOverlay_;
     TheosRenderPipeline::InventoryPreviewDraw previewDraw_;
+    TheosRenderPipeline::NativeUIBlendCoverage uiBlendCoverage_;
     TheosRenderPipeline::LoadingScreenUpscaler loadingScreenUpscaler_;
     TheosRenderPipeline::LoadingScreenRoute loadingScreenRoute_;
     TheosRenderPipeline::LoadingFadeIn loadingFade_;
