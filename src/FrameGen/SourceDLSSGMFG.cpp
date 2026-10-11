@@ -2,6 +2,7 @@
 #include "SourceDLSSGMFG.h"
 #include "../PluginPaths.h"
 #include "CommunityShaderIntegration.h"
+#include "../StartupHints.h"
 #include "../../extern/dlssg-turing/src/SourceDLSSGMFGPatch.h"
 #include "../../extern/dlssg-turing/extern/RTX40MFG/midpoint_fix.h"
 #include "../../extern/dlssg-turing/extern/RTX40MFG/dlssg_provider_policy.h"
@@ -34,10 +35,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 			std::format("Temporal error: {}. Attempts: {}.\n\n"
 				"Set SourceDLSSGMFGUnlock=false in SKSE/Plugins/TheosRenderPipeline.ini to use the unmodified NVIDIA runtime.\n",
 				state_.temporalFailure, state_.attempts);
+		const auto hint = StartupHints::HintFor(reason, StartupHints::CurrentFacts(reason));
+		if (!hint.empty()) { spdlog::info("[SourceDLSSG MFG] {}", hint); }
 		util::report_and_fail(std::format(
 			"Theo's Render Pipeline: MFG startup or patch verification failed.\n\n"
-			"{}\n\n{}"
-			"See TheosRenderPipeline.log for details. Skyrim will close after this message.", reason, guidance));
+			"{}\n\n{}{}{}"
+			"See TheosRenderPipeline.log for details. Skyrim will close after this message.", reason, guidance, hint, hint.empty() ? "" : "\n"));
 	}
 	void MFGUnlock::EnterStartupScope() noexcept { trp::ampere::EnterStartupScope(); }
 	void MFGUnlock::LeaveStartupScope() noexcept { trp::ampere::LeaveStartupScope(); }

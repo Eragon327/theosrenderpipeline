@@ -184,6 +184,7 @@ set(ARP_BASELINE_SOURCES
     src/UpscalerHooks.cpp
     src/UpscalerHooks.h
     src/UpscalerDeviceHooks.cpp
+    src/StartupHints.cpp
     src/UpscalerDeviceHooks.h
     src/UpscalerSamplerHooks.cpp
     src/UpscalerSamplerHooks.h

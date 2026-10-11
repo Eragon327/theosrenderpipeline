@@ -158,6 +158,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const SessionSnapshot& Snapshot() const { return session_.Snapshot(); }
 		PresentationFeedbackSnapshot PresentationFeedback() const;
 		RuntimeDiagnosticsSnapshot RuntimeDiagnosticState() const { return runtimeDiagnostics_.Snapshot(); }
+		bool FrameGenerationOverrideReported() const { return runtimeDiagnostics_.FrameGenerationOverrideObserved(); }
+		bool FrameGenerationUnsupportedReported() const { return runtimeDiagnostics_.FrameGenerationUnsupportedObserved(); }
 		const std::string& Status() const { return status_; }
 		ID3D11Device* Device11() const { return device11_.Get(); }
 		ID3D12CommandQueue* Queue() const { return queue_.Get(); }

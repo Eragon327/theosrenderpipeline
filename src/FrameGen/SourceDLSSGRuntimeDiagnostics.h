@@ -74,12 +74,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (a_message.find("Feature dlssg override enabled") != std::string_view::npos) {
 				frameGenerationOverrideObserved_.store(true, std::memory_order_relaxed);
 			}
+			// Streamline's own reason before slSetFeatureLoaded(DLSS-G) fails.
+			if (a_message.find("Disabling DLSS-G since it is not supported") != std::string_view::npos ||
+				a_message.find("Ignoring plugin 'sl.dlss_g' since it is not supported") != std::string_view::npos) {
+				frameGenerationUnsupportedObserved_.store(true, std::memory_order_relaxed);
+			}
 			if (const auto event = ClassifyRuntimeMessage(a_message)) {
 				counts_[static_cast<std::size_t>(*event)].fetch_add(1, std::memory_order_relaxed);
 			}
 		}
 
 		bool FrameGenerationOverrideObserved() const { return frameGenerationOverrideObserved_.load(std::memory_order_relaxed); }
+		bool FrameGenerationUnsupportedObserved() const { return frameGenerationUnsupportedObserved_.load(std::memory_order_relaxed); }
 
 		RuntimeDiagnosticsSnapshot Snapshot() const
 		{
@@ -91,7 +97,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 
 	private:
-		std::atomic_bool frameGenerationOverrideObserved_{};
+		std::atomic_bool frameGenerationOverrideObserved_{}, frameGenerationUnsupportedObserved_{};
 		std::array<std::atomic<std::uint64_t>,
 			static_cast<std::size_t>(RuntimeDiagnosticEvent::Count)> counts_{};
 	};
