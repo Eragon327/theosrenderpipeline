@@ -1,0 +1,7 @@
+#pragma once
+// Generated at configure time from package/SKSE/Plugins/TheosRenderPipeline.ini.
+// Used for migration and saving differences without treating legacy edits as defaults.
+namespace TheosRenderPipeline::UserSettings
+{
+inline constexpr const char* PackagedDefaults = R"TRPDEFAULTS(@TRP_PACKAGED_DEFAULTS_INI@)TRPDEFAULTS";
+}

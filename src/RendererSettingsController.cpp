@@ -162,7 +162,8 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     {
         const bool saved = upscaler_.SaveINI(layout);
         actionMessage =
-            saved ? "Startup defaults saved." : "Could not write TheosRenderPipeline.ini; settings remain active for this session.";
+            saved ? "Saved to TheosRenderPipeline.User.ini; updates keep these settings." :
+                    "Could not write TheosRenderPipeline.User.ini; settings remain active for this session.";
         actionMessageIsError = !saved;
     }
     else

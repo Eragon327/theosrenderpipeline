@@ -107,6 +107,15 @@ Newer runtimes use the same filenames and folders; compatibility may vary.
 also saves settings and window layout; **Discard** drops unapplied edits. DLSS/DLAA mode
 and render scale changes take effect after restarting Skyrim.
 
+Saved settings are written to `SKSE/Plugins/TheosRenderPipeline.User.ini`, which
+holds only the values you changed. No TRP package contains it (MO2 puts it in
+Overwrite), so installing an update keeps your settings; `TheosRenderPipeline.ini`
+holds the packaged defaults and updates replace it. Delete a line from the user
+file to return that setting to its default. On first start, any custom values in
+the winning `TheosRenderPipeline.ini` are imported into the user file once.
+Keep your existing INI for that first start; values already overwritten by an
+update cannot be recovered. Then use the new packaged INI for future updates.
+
 To change the menu key, open **Advanced**, click the **Menu key** button and
 press a new key, then Apply or Save as default. Escape cancels; **Reset to End**
 restores the default. Pick a key your other mods and Skyrim controls don't use.
@@ -254,8 +263,8 @@ See [PR #33](https://github.com/theosw/theosrenderpipeline/pull/33) for the inpu
 
 The NR menu checkbox works independently of keyboard shortcuts. Bracket
 shortcuts are disabled by default, including for older INIs without the new key.
-To opt in, set `EnableNRHotkeys=true` under `[Hotkeys]` in the winning
-`TheosRenderPipeline.ini` and restart Skyrim. On a US keyboard, `[` turns NR
+To opt in, add `EnableNRHotkeys=true` under `[Hotkeys]` in
+`TheosRenderPipeline.User.ini` (create it if needed) and restart Skyrim. On a US keyboard, `[` turns NR
 off and `]` turns it on for the session, even with the TRP menu closed.
 They are suppressed while editing text in TRP's menu. Other mods can share
 these keys. Use Save as default to retain an NR state for future launches.

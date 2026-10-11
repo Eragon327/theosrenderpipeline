@@ -1,4 +1,5 @@
 #include "PerformanceTuning.h"
+#include "UserSettings.h"
 
 #include "FrameTrace.h"
 #include "FrameTelemetry.h"
@@ -55,7 +56,7 @@ void PerformanceTuning::LoadStartupINI()
 {
 	CSimpleIniA ini;
 	ini.SetUnicode();
-	const auto loadResult = ini.LoadFile(L"Data\\SKSE\\Plugins\\TheosRenderPipeline.ini");
+	const auto loadResult = TheosRenderPipeline::UserSettings::Load(ini);
 	if (loadResult < 0) {
 		logger::warn("[Performance] early INI load failed (rc={}); using default startup telemetry settings",
 			static_cast<int>(loadResult));

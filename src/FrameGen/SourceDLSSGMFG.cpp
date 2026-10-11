@@ -33,7 +33,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			std::string("RTX 20/30-series frame generation requires the Universal compatibility path.\n"
 				"Keep SourceDLSSGMFGUnlock=true and include TheosRenderPipeline.log when reporting this startup failure.\n") :
 			std::format("Temporal error: {}. Attempts: {}.\n\n"
-				"Set SourceDLSSGMFGUnlock=false in SKSE/Plugins/TheosRenderPipeline.ini to use the unmodified NVIDIA runtime.\n",
+				"Set SourceDLSSGMFGUnlock=false under [Experimental] in SKSE/Plugins/TheosRenderPipeline.User.ini to use the unmodified NVIDIA runtime.\n",
 				state_.temporalFailure, state_.attempts);
 		const auto hint = StartupHints::HintFor(reason, StartupHints::CurrentFacts(reason));
 		if (!hint.empty()) { spdlog::info("[SourceDLSSG MFG] {}", hint); }

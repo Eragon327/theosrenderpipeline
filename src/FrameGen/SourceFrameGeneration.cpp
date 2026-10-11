@@ -1,4 +1,5 @@
 #include "SourceFrameGeneration.h"
+#include "../UserSettings.h"
 #include <PCH.h>
 #include <SimpleIni.h>
 
@@ -6,9 +7,9 @@ void SourceFrameGeneration::LoadINI()
 {
     CSimpleIniA ini;
     ini.SetUnicode();
-    const auto result = ini.LoadFile(L"Data\\SKSE\\Plugins\\TheosRenderPipeline.ini");
+    const auto result = TheosRenderPipeline::UserSettings::Load(ini);
     LoadStartupPreferences(ini);
-    logger::info("[NvidiaHost] startup INI=Data/SKSE/Plugins/TheosRenderPipeline.ini readResult={} SourceDLSSGMFGUnlock={} origin={} raw={}",
+    logger::info("[NvidiaHost] startup settings=TheosRenderPipeline.ini + TheosRenderPipeline.User.ini readResult={} SourceDLSSGMFGUnlock={} origin={} raw={}",
         static_cast<int>(result), settings.sourceDLSSGMFGUnlock,
         settings.sourceDLSSGMFGUnlockPresent ? "INI" : "packaged-default",
         ini.GetValue("Experimental", "SourceDLSSGMFGUnlock", "<missing>"));

@@ -79,6 +79,19 @@ configure_file(
 	@ONLY
 )
 
+# The packaged defaults, embedded for legacy migration and saved-setting differences.
+set(TRP_PACKAGED_DEFAULTS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/package/SKSE/Plugins/TheosRenderPipeline.ini")
+file(READ "${TRP_PACKAGED_DEFAULTS_FILE}" TRP_PACKAGED_DEFAULTS_INI)
+if(TRP_PACKAGED_DEFAULTS_INI MATCHES "[)]TRPDEFAULTS")
+	message(FATAL_ERROR "Packaged INI contains the raw-string delimiter")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TRP_PACKAGED_DEFAULTS_FILE}")
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackagedDefaults.h.in
+	${CMAKE_CURRENT_BINARY_DIR}/cmake/PackagedDefaults.h
+	@ONLY
+)
+
 set(TRP_OVERLAY_FONT "${CMAKE_CURRENT_SOURCE_DIR}/extern/Roboto/Roboto-Medium.ttf")
 configure_file(
 	${CMAKE_CURRENT_SOURCE_DIR}/cmake/Resources.rc.in
@@ -358,6 +371,11 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_compile_definitions(TRPXeFGUnlockEditionTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
     target_include_directories(TRPXeFGUnlockEditionTests PRIVATE src)
     add_test(NAME XeFGUnlockEdition COMMAND TRPXeFGUnlockEditionTests ${TRP_XEFG_UNLOCK_EDITION})
+    add_executable(TRPUserSettingsTests tests/UserSettingsTests.cpp)
+    target_compile_features(TRPUserSettingsTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPUserSettingsTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPUserSettingsTests PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/cmake" "${TRP_SIMPLEINI_INCLUDE_DIR}")
+    add_test(NAME UserSettings COMMAND TRPUserSettingsTests "${TRP_PACKAGED_DEFAULTS_FILE}")
     add_executable(TRPPipelineCacheTests tests/PipelineCacheTests.cpp src/FrameGen/PipelineCache.cpp)
     target_compile_features(TRPPipelineCacheTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPPipelineCacheTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)

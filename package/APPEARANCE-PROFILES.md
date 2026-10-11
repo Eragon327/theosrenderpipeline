@@ -169,7 +169,8 @@ true/false. Pass 2 settings apply only while Pass 2 has its own settings,
 
 ## Persistence and compatibility
 
-`Data/SKSE/Plugins/TheosRenderPipeline.ini` keeps `[Appearance]` format 4: the time
+The saved settings (`Data/SKSE/Plugins/TheosRenderPipeline.User.ini`, over the
+packaged `TheosRenderPipeline.ini`) keep `[Appearance]` format 4: the time
 schedule, smoothing and `PresetOrder`, the list order by file name. Files it does
 not list, such as newly added packs, follow in name order. `Enabled` is written as
 whether any preset is in use, for older builds; this build derives it on load.

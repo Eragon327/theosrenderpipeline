@@ -22,6 +22,8 @@
 #include <SolFGStartupOverlayAPI.h>
 #include "FrameGen/NvidiaHost.h"
 #include <SimpleIni.h>
+#include "UserSettings.h"
+#include "PackagedDefaults.h"
 #include <process.h>
 
 namespace
@@ -182,13 +184,36 @@ extern "C" DLLEXPORT bool __cdecl SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	logger::info("[Runtime] Skyrim {}", a_skse->RuntimeVersion().string());
 	SKSE::Init(a_skse);
 
+	// Before any settings are read: carry a customized packaged INI into the user file once.
+	{
+		std::vector<std::string> imported;
+		switch (TheosRenderPipeline::UserSettings::Migrate(TheosRenderPipeline::UserSettings::PackagedDefaults,
+			TheosRenderPipeline::UserSettings::GamePaths(), &imported)) {
+		case TheosRenderPipeline::UserSettings::Migration::Imported: {
+			std::string keys;
+			for (const auto& key : imported) { keys += (keys.empty() ? "" : ", ") + key; }
+			logger::info("[Settings] imported {} customized values from TheosRenderPipeline.ini into TheosRenderPipeline.User.ini: {}",
+				imported.size(), keys);
+			break;
+		}
+		case TheosRenderPipeline::UserSettings::Migration::Failed:
+			logger::warn("[Settings] could not write TheosRenderPipeline.User.ini; customized TheosRenderPipeline.ini values still apply this session");
+			break;
+		default: break;
+		}
+	}
 	CSimpleIniA baselineIni;
 	baselineIni.SetUnicode();
-	if (baselineIni.LoadFile(L"Data\\SKSE\\Plugins\\TheosRenderPipeline.ini") < 0) {
+	SI_Error userLoad = SI_OK;
+	if (TheosRenderPipeline::UserSettings::Load(baselineIni, TheosRenderPipeline::UserSettings::GamePaths(), &userLoad) < 0) {
 		util::report_and_fail("Theo's Render Pipeline: SKSE/Plugins/TheosRenderPipeline.ini is missing or unreadable. Install the packaged TheosRenderPipeline.ini and restart Skyrim.");
 	}
+	if (userLoad < 0) {
+		logger::warn("[Settings] TheosRenderPipeline.User.ini is unreadable (rc={}); using the packaged defaults", static_cast<int>(userLoad));
+	}
 	if (const auto* error = TheosRenderPipeline::ValidateNvidiaBaseline(baselineIni)) {
-		util::report_and_fail(std::format("Theo's Render Pipeline configuration error:\n\n{}\n\nCorrect SKSE/Plugins/TheosRenderPipeline.ini and restart Skyrim.", error));
+		util::report_and_fail(std::format("Theo's Render Pipeline configuration error:\n\n{}\n\nCorrect SKSE/Plugins/TheosRenderPipeline.User.ini "
+			"(your saved settings) or TheosRenderPipeline.ini and restart Skyrim.", error));
 	}
 	xeSSStartup = baselineIni.GetLongValue("Settings", "UpscaleType", DLSS) == XeSS;
 	logger::info("{} {}", Plugin::DISPLAY_NAME, Plugin::RELEASE_VERSION);
