@@ -1,3 +1,21 @@
+# 0.4.1
+
+- Keep experimental Intel XeFG x3-x6 in Universal only. Standard retains XeSS
+  and official XeFG x2; a saved higher multiplier runs at x2 and is retained
+  for Universal. Standard's multiplier list explains the edition requirement.
+- Correct alpha coverage for source-over and additive draws into TRP's separate
+  UI layer, including legacy ImGui producers, while preserving their RGB blend
+  equations and restoring their blend state when leaving the layer.
+- Save settings and menu layout to `TheosRenderPipeline.User.ini`, which is
+  never shipped in update packages. Import custom values from a winning legacy
+  INI once, preserving them through subsequent saves and updates. See the
+  installation guide for the first-update migration steps.
+- Add likely causes and suggested fixes to common rendering and MFG startup
+  errors, alongside the original technical error and log details.
+
+Both editions retain NR and their existing frame-generation routes. Vendor
+runtime files and packaged settings defaults are unchanged from 0.4.0.
+
 # 0.4.0
 
 - Add experimental Intel XeSS upscaling under Image > Mode > XeSS; save and
