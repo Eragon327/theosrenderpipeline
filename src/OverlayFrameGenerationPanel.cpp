@@ -5,6 +5,7 @@
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceDLSSGBackend.h"
 #include "FrameGen/FGInputDebugView.h"
+#include "FrameGen/FGMotionRepair.h"
 #include "FrameGen/SourceFrameGeneration.h"
 #include "FrameGen/XeFGUnlock.h"
 #include <PCH.h>
@@ -108,11 +109,18 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         }
         if (showDeveloperControls)
         {
+            auto& repair = TheosRenderPipeline::FGMotionRepair::Get();
+            bool repairMotion = repair.Enabled();
+            if (ImGui::Checkbox("Repair missing motion (Lab)", &repairMotion))
+                repair.Enable(repairMotion);
+            DrawSettingsHelp("Not saved; on by default in this test build. Underwater, Skyrim writes no real motion, "
+                             "and generated frames show an offset copy. When nearly the whole frame disagrees with the camera, "
+                             "generation gets the camera's motion instead.");
             auto& inputs = TheosRenderPipeline::FGInputDebugView::Get();
             bool showInputs = inputs.Enabled();
             if (ImGui::Checkbox("Show frame generation inputs (Lab)", &showInputs))
                 inputs.Enable(showInputs);
-            DrawSettingsHelp("Not saved. Left: motion vectors (grey = none). Middle: depth (dark = near). "
+            DrawSettingsHelp("Not saved. Shows what generation receives, after any repair. Left: motion vectors (grey = none). Middle: depth (dark = near). "
                              "Right: where the motion vectors disagree with the camera's own motion at that depth "
                              "(black = agree, red = 8+ pixels off). Static scenery should stay black while the camera moves.");
             if (showInputs)

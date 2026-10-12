@@ -38,6 +38,8 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/NativeUIBlend.cpp
     src/FrameGen/FGInputDebugView.h
     src/FrameGen/FGInputDebugView.cpp
+    src/FrameGen/FGMotionRepair.h
+    src/FrameGen/FGMotionRepair.cpp
     src/FrameGen/NativeUIPass.h
     src/FrameGen/SourceFrameCoordinator.h
     src/FrameGen/SourceNvidiaFrameEvaluator.h
