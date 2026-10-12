@@ -229,6 +229,23 @@ int main()
         Require(r.optionsCalls == calls + 1 && r.submitted.enableUserInterfaceRecomposition == sl::eFalse,
             "live disable is submitted on the next generated frame");
     }
+    // Lab "only generated frames" is a flag change, submitted live and only while generating.
+    {
+        Runtime r; Session s; Require(s.Start(API(r), 7), "debug view scenario starts");
+        auto only = [&] { return (r.submitted.flags & sl::DLSSGFlags::eShowOnlyInterpolatedFrame) == sl::DLSSGFlags::eShowOnlyInterpolatedFrame; };
+        auto retain = [&] { return (r.submitted.flags & sl::DLSSGFlags::eRetainResourcesWhenOff) == sl::DLSSGFlags::eRetainResourcesWhenOff; };
+        Frame(s, 2, true, true);
+        Require(!only() && retain(), "debug view starts off");
+        s.RequestOnlyGenerated(true);
+        Frame(s, 2, true, true);
+        Require(only() && retain() && r.submitted.mode == sl::DLSSGMode::eOn, "debug view is submitted with generation");
+        Frame(s, 1, false, false);
+        Require(!only() && retain() && r.submitted.mode == sl::DLSSGMode::eOff, "no generation never hides rendered frames");
+        s.RequestOnlyGenerated(false);
+        const auto calls = r.optionsCalls;
+        Frame(s, 2, true, true);
+        Require(r.optionsCalls == calls + 1 && !only(), "debug view clears live");
+    }
     // Startup, no-world pass-through, and resize also use the same options boundary.
     {
         Runtime r; Session s;

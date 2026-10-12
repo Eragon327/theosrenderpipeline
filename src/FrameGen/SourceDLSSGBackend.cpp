@@ -344,6 +344,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		};
 		session_.RequestReflexMode(ReflexConfiguration());
 		session_.RequestUIRecomposition(UIRecompositionConfiguration());
+		session_.RequestOnlyGenerated(XeFGOnlyGenerated());
 		session_.RequestOutputFPSLimit(outputFPSLimit_.load(std::memory_order_relaxed));
 		if (!intelStartup) {
 			if (!CheckSession(session_.Start(api_, 1))) { return fault_; }
@@ -558,6 +559,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		session_.RequestGeneration(GenerationConfiguration());
 		session_.RequestReflexMode(ReflexConfiguration());
 		session_.RequestUIRecomposition(UIRecompositionConfiguration());
+		session_.RequestOnlyGenerated(XeFGOnlyGenerated());
 		session_.RequestOutputFPSLimit(outputFPSLimit_.load(std::memory_order_relaxed));
 		const bool prepared = provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().prepared :
 			session_.Snapshot().stage == SessionStage::Rendering;

@@ -96,6 +96,15 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             }
             ImGui::TextWrapped("%s", sourceBackend.XeFGUnlockStatus().c_str());
         }
+        if (!intel && showDeveloperControls)
+        {
+            // Session-only diagnostic: an artifact only in generated frames comes from generation.
+            bool onlyGenerated = sourceBackend.XeFGOnlyGenerated();
+            if (ImGui::Checkbox("Show only generated frames (Lab)", &onlyGenerated))
+                sourceBackend.ConfigureXeFGDebugView(onlyGenerated, sourceBackend.XeFGTagGenerated());
+            DrawSettingsHelp("NVIDIA debug view, not saved. Hides every rendered frame, so an artifact still visible here "
+                             "comes from frame generation; one that disappears comes from rendering, the upscaler or NR.");
+        }
         if (!intel && unlock.UsesCompatibilityUnlock() && !unlock.Ready())
             ImGui::TextWrapped("%s", unlock.status);
         if (!intel && sourceState.stateQueryResult == sl::Result::eWarnOutOfVRAM)
