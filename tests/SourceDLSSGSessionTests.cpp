@@ -232,8 +232,9 @@ int main()
     // Lab "only generated frames" is a flag change, submitted live and only while generating.
     {
         Runtime r; Session s; Require(s.Start(API(r), 7), "debug view scenario starts");
-        auto only = [&] { return (r.submitted.flags & sl::DLSSGFlags::eShowOnlyInterpolatedFrame) == sl::DLSSGFlags::eShowOnlyInterpolatedFrame; };
-        auto retain = [&] { return (r.submitted.flags & sl::DLSSGFlags::eRetainResourcesWhenOff) == sl::DLSSGFlags::eRetainResourcesWhenOff; };
+        // Streamline's flag operator& already returns bool.
+        auto only = [&]() -> bool { return r.submitted.flags & sl::DLSSGFlags::eShowOnlyInterpolatedFrame; };
+        auto retain = [&]() -> bool { return r.submitted.flags & sl::DLSSGFlags::eRetainResourcesWhenOff; };
         Frame(s, 2, true, true);
         Require(!only() && retain(), "debug view starts off");
         s.RequestOnlyGenerated(true);
