@@ -100,7 +100,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool UIRecompositionConfiguration() const { return uiRecomposition_.load(std::memory_order_relaxed); }
 		void ConfigureXeFGFrameTime(bool a_enabled) { xefgFrameTime_.store(a_enabled, std::memory_order_relaxed); }
 		bool XeFGFrameTimeConfiguration() const { return xefgFrameTime_.load(std::memory_order_relaxed); }
-		// Lab diagnostics, not saved: present only Intel's generated frames, or tag them.
+		// Lab diagnostics, not saved: present only generated frames (Intel and NVIDIA), or tag them (Intel).
 		void ConfigureXeFGDebugView(bool a_onlyGenerated, bool a_tagGenerated)
 		{
 			xefgOnlyGenerated_.store(a_onlyGenerated, std::memory_order_relaxed);

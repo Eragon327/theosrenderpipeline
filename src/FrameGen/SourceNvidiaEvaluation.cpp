@@ -5,6 +5,8 @@
 #include "SourceFrameGeneration.h"
 #include "SourceDLSSGBackend.h"
 #include "SourceDLSSGCamera.h"
+#include "FGInputDebugView.h"
+#include "FGMotionRepair.h"
 #include "SourceNvidiaFrameEvaluator.h"
 #include "SourceGenerationPolicy.h"
 #include "PerformanceTuning.h"
@@ -17,6 +19,21 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
     RenderPipeline& upscaler;
     TheosRenderPipeline::SourceDLSSG::NeuralOptions neuralOptions;
     sl::Constants constants{};
+    ID3D11Texture2D* repairedMotion{};
+
+    // Underwater frames carry no real motion; NR and generation get camera
+    // motion instead. Repaired once, at whichever stage reads it first.
+    template <class Frame>
+    ID3D11Texture2D* Motion(const Frame& frame, const sl::Constants& camera)
+    {
+        if (repairedMotion) { return repairedMotion; }
+        float clipToPrevClip[16];
+        static_assert(sizeof(camera.clipToPrevClip) == sizeof(clipToPrevClip));
+        std::memcpy(clipToPrevClip, &camera.clipToPrevClip, sizeof(clipToPrevClip));
+        repairedMotion = TheosRenderPipeline::FGMotionRepair::Get().Apply(host.context_.Get(), frame.motion, frame.depth,
+            clipToPrevClip, camera.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight);
+        return repairedMotion;
+    }
 
     bool NeuralEligible(const TheosRenderPipeline::SourceNvidiaFrameGuides& frame) const
     {
@@ -38,7 +55,7 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
                 frame.renderWidth, frame.renderHeight, frame.jitterX, frame.jitterY,
                 frame.reset, frame.jitterEnabled, preview, false);
         return backend.EvaluateNeuralBeforeUpscaling(options, cameraValid ? &preview : nullptr,
-            eligible, frame.input, frame.motion, frame.depth, {frame.renderWidth, frame.renderHeight}, frame.reset);
+            eligible, frame.input, cameraValid ? Motion(frame, preview) : frame.motion, frame.depth, {frame.renderWidth, frame.renderHeight}, frame.reset);
 #else
         (void)frame;
         return true;
@@ -115,7 +132,14 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
     bool Prepare(const TheosRenderPipeline::SourceNvidiaFrameGuides& frame)
     {
         ScopedD3D11PerformanceStage timer{host.context_.Get(), PerformanceTuning::D3D11Stage::kFrameGenInputs};
-        return TheosRenderPipeline::SourceDLSSG::Backend::Get().Prepare(constants, frame.motion, frame.depth,
+        auto* motion = Motion(frame, constants);
+        if (TheosRenderPipeline::FGInputDebugView::Get().Enabled()) {
+            float clipToPrevClip[16];
+            std::memcpy(clipToPrevClip, &constants.clipToPrevClip, sizeof(clipToPrevClip));
+            TheosRenderPipeline::FGInputDebugView::Get().Record(host.context_.Get(), motion, frame.depth, clipToPrevClip,
+                constants.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight);
+        }
+        return TheosRenderPipeline::SourceDLSSG::Backend::Get().Prepare(constants, motion, frame.depth,
             frame.uiColorAndAlpha, frame.hudLessColor, {frame.renderWidth, frame.renderHeight},
             frame.outputWidth, frame.outputHeight, NeuralEligible(frame));
     }

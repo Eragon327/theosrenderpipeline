@@ -105,7 +105,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (optionsPendingPresent_ && submittedMode_ == snapshot_.options.mode &&
 			submittedGeneratedFrames_ == snapshot_.options.numFramesToGenerate &&
 			submittedDynamicTarget_ == snapshot_.options.dynamicTargetFrameRate &&
-			submittedUIRecomposition_ == snapshot_.options.enableUserInterfaceRecomposition) { return true; }
+			submittedUIRecomposition_ == snapshot_.options.enableUserInterfaceRecomposition &&
+			submittedFlags_ == snapshot_.options.flags) { return true; }
 		const auto result = api_.setOptions(viewport_, snapshot_.options);
 		snapshot_.optionsResult = result;
 		// NVIDIA stores the options before appending this advisory budget result.
@@ -117,6 +118,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		submittedGeneratedFrames_ = snapshot_.options.numFramesToGenerate;
 		submittedDynamicTarget_ = snapshot_.options.dynamicTargetFrameRate;
 		submittedUIRecomposition_ = snapshot_.options.enableUserInterfaceRecomposition;
+		submittedFlags_ = snapshot_.options.flags;
 		optionsPendingPresent_ = true;
 		return true;
 	}
@@ -304,6 +306,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			snapshot_.options.enableUserInterfaceRecomposition =
 				snapshot_.uiRecompositionRequested && layers ? sl::eTrue : sl::eFalse;
 		}
+		snapshot_.options.flags = enable && snapshot_.onlyGeneratedRequested ?
+			sl::DLSSGFlags::eRetainResourcesWhenOff | sl::DLSSGFlags::eShowOnlyInterpolatedFrame : sl::DLSSGFlags::eRetainResourcesWhenOff;
 		if (!SubmitOptions("DLSS-G options") ||
 			!Mark(sl::PCLMarker::ePresentStart, "PresentStart")) { return false; }
 		snapshot_.stage = SessionStage::PresentPending;
