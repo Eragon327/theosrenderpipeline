@@ -1,4 +1,5 @@
 #include "OverlayUI.h"
+#include "UserSettings.h"
 #include "OverlayFrameView.h"
 #include "RendererSettingsController.h"
 #include "OverlayUIStyle.h"
@@ -60,7 +61,7 @@ void OverlayUI::Init(IDXGISwapChain* a_swapChain, ID3D11Device* a_device, ID3D11
     io.ConfigWindowsResizeFromEdges = true;
     CSimpleIniA menuIni;
     menuIni.SetUnicode();
-    if (menuIni.LoadFile(L"Data\\SKSE\\Plugins\\TheosRenderPipeline.ini") >= 0)
+    if (TheosRenderPipeline::UserSettings::Load(menuIni) >= 0)
         layout = LoadLayout(menuIni);
 	// The first frame refits this to the output; DX11 builds the atlas lazily.
 	ApplyRendererStyle(1.0f);

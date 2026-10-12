@@ -97,7 +97,7 @@ set(ARP_BASELINE_SOURCES
     src/ScreenshotFile.cpp
     src/ScreenshotFile.h
     src/ScreenshotWorker.h
-    src/SettingsFile.h
+    src/UserSettings.h
     src/PluginPaths.h
     src/SkyrimRuntime.h
     src/UpscaleType.h
@@ -113,7 +113,6 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/SourceDLSSGBackend.cpp
     src/FrameGen/PipelineCache.cpp
     src/FrameGen/XeFGPresenter.cpp
-    src/FrameGen/XeFGUnlock.cpp
     src/FrameGen/XeSSUpscaler.cpp
     src/FrameGen/XeSSUpscaler.h
     src/FrameGen/XeFGPresenter.h
@@ -185,6 +184,7 @@ set(ARP_BASELINE_SOURCES
     src/UpscalerHooks.cpp
     src/UpscalerHooks.h
     src/UpscalerDeviceHooks.cpp
+    src/StartupHints.cpp
     src/UpscalerDeviceHooks.h
     src/UpscalerSamplerHooks.cpp
     src/UpscalerSamplerHooks.h

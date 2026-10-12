@@ -33,6 +33,8 @@ struct Stats { std::uint64_t presents{}, scheduled{}, refused{}, wallWaits{}, de
 // the module/code while patched. The host permits exactly one active SDK owner.
 PatchResult Install(HMODULE runtime, Observer observer, std::string& reason, bool forceSchedulerRefusal=false);
 PatchResult EnsureInstalled(HMODULE runtime, std::string& reason);
+// Universal builds the unlock; Standard's XeFGUnlockNative.cpp refuses it.
+bool Available();
 void NewContextEpoch();
 Stats Snapshot();
 void SaveEvents(const char* path);

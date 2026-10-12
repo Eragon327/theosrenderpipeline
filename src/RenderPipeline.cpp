@@ -8,7 +8,8 @@
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceDLSSGBackend.h"
 #include "PerformanceTuning.h"
-#include "SettingsFile.h"
+#include "UserSettings.h"
+#include "PackagedDefaults.h"
 #include "OverlayHotkeys.h"
 #include "OverlayLayout.h"
 #include "WeatherAppearanceINI.h"
@@ -27,7 +28,7 @@ void RenderPipeline::LoadINI()
 {
 	CSimpleIniA ini;
 	ini.SetUnicode();
-	const auto loadResult = ini.LoadFile(L"Data\\SKSE\\Plugins\\TheosRenderPipeline.ini");
+	const auto loadResult = TheosRenderPipeline::UserSettings::Load(ini);
 	if (loadResult < 0) {
 		logger::warn("Could not load Data\\SKSE\\Plugins\\TheosRenderPipeline.ini (rc={}), using defaults", static_cast<int>(loadResult));
 	}
@@ -92,9 +93,11 @@ bool RenderPipeline::SaveINI(const TheosRenderPipeline::Overlay::Layout* layout)
 {
 	CSimpleIniA ini;
 	ini.SetUnicode();
-	const auto loadResult = TheosRenderPipeline::SettingsFile::LoadForUpdate(ini, L"Data\\SKSE\\Plugins\\TheosRenderPipeline.ini");
-	if (loadResult < 0) {
-		logger::error("Could not read Data\\SKSE\\Plugins\\TheosRenderPipeline.ini before saving (rc={}); file left unchanged", static_cast<int>(loadResult));
+	// Start from the defaults plus the existing user file; only differences are written back.
+	SI_Error userLoad = SI_OK;
+	TheosRenderPipeline::UserSettings::Load(ini, TheosRenderPipeline::UserSettings::GamePaths(), &userLoad);
+	if (userLoad < 0) {
+		logger::error("Could not read TheosRenderPipeline.User.ini before saving (rc={}); file left unchanged", static_cast<int>(userLoad));
 		return false;
 	}
 	auto* sourceHost = NvidiaHost::GetSingleton();
@@ -138,12 +141,13 @@ bool RenderPipeline::SaveINI(const TheosRenderPipeline::Overlay::Layout* layout)
 	ini.SetBoolValue("Debug", "LogMenuMetrics", mLogMenuMetrics);
 	TheosRenderPipeline::Overlay::StoreMenuHotkey(ini, mToggleOverlayHotkey);
     if (layout) { TheosRenderPipeline::Overlay::StoreLayout(ini, *layout); }
-	const auto rc = ini.SaveFile(L"Data\\SKSE\\Plugins\\TheosRenderPipeline.ini");
-	if (rc < 0) {
-		logger::error("Could not save Data\\SKSE\\Plugins\\TheosRenderPipeline.ini (rc={})", static_cast<int>(rc));
+	std::vector<std::string> changed;
+	if (!TheosRenderPipeline::UserSettings::Save(ini, TheosRenderPipeline::UserSettings::GamePaths(),
+			TheosRenderPipeline::UserSettings::PackagedDefaults, &changed)) {
+		logger::error("Could not save Data\\SKSE\\Plugins\\TheosRenderPipeline.User.ini");
 		return false;
 	}
-	logger::info("Settings saved (rc={})", static_cast<int>(rc));
+	logger::info("Settings saved to TheosRenderPipeline.User.ini ({} values differ from the packaged defaults)", changed.size());
 	if (sourceHost->StartupConfigured()) { sourceHost->SourceUpscalerSettingsSaved(); }
 	return presetsSaved;
 }

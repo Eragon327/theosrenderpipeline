@@ -1,4 +1,8 @@
-# Theo's Render Pipeline — Universal, 0.4.0
+# Theo's Render Pipeline — Universal, 0.4.1
+
+Version 0.4.1 saves user settings separately so updates preserve them, corrects
+UI alpha coverage, and adds startup troubleshooting hints. Experimental XeFG
+x3-x6 is now included in Universal only.
 
 Version 0.4.0 adds experimental Intel XeSS upscaling and XeFG frame generation
 (official x2, plus experimental x3-x6), selected automatically on AMD and other
@@ -54,7 +58,7 @@ This package includes the full renderer, configuration and sharpening shader.
 It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
-0.4.0 supplies the runtime bundle (0.2.5 retains the same NVIDIA DLLs). The NR-enabled
+0.4.1 supplies the runtime bundle (0.2.5 retains the same NVIDIA DLLs). The NR-enabled
 Standard download supplies all eight runtimes, including NR. In that setup,
 skip the runtime downloads below.
 
@@ -107,6 +111,15 @@ Newer runtimes use the same filenames and folders; compatibility may vary.
 also saves settings and window layout; **Discard** drops unapplied edits. DLSS/DLAA mode
 and render scale changes take effect after restarting Skyrim.
 
+Saved settings are written to `SKSE/Plugins/TheosRenderPipeline.User.ini`, which
+holds only the values you changed. No TRP package contains it (MO2 puts it in
+Overwrite), so installing an update keeps your settings; `TheosRenderPipeline.ini`
+holds the packaged defaults and updates replace it. Delete a line from the user
+file to return that setting to its default. On first start, any custom values in
+the winning `TheosRenderPipeline.ini` are imported into the user file once.
+Keep your existing INI for that first start; values already overwritten by an
+update cannot be recovered. Then use the new packaged INI for future updates.
+
 To change the menu key, open **Advanced**, click the **Menu key** button and
 press a new key, then Apply or Save as default. Escape cancels; **Reset to End**
 restores the default. Pick a key your other mods and Skyrim controls don't use.
@@ -151,8 +164,9 @@ is required in DLSS/DLAA modes even with frame generation switched off.
 
 AMD and other non-NVIDIA GPUs use experimental XeSS with Intel XeFG; TRP selects
 XeSS automatically there, so no INI change is needed. Install the Standard ZIP,
-which includes Intel's runtimes; Universal adds only NVIDIA compatibility paths. With Community Shaders,
-CS upscales instead (FSR on AMD) and TRP adds XeFG. Keep AMD Fluid Motion
+which includes Intel's runtimes and XeFG x2. Universal, installed after it, adds
+the experimental XeFG x3-x6 as well as the NVIDIA compatibility paths. With
+Community Shaders, CS upscales instead (FSR on AMD) and TRP adds XeFG. Keep AMD Fluid Motion
 Frames, Anti-Lag, Radeon Chill, Radeon Boost and other frame-generation or
 upscaler mods off. NR requires NVIDIA RTX hardware.
 
@@ -207,7 +221,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.0 package still needs its final game test.
+development builds; the exact 0.4.1 package still needs its final game test.
 
 Keep your existing ReShade installation, preset and hotkeys. **Disable SSE
 ReShade Helper.** TRP supplies the effects and overlay stages. Effects run after
@@ -253,8 +267,8 @@ See [PR #33](https://github.com/theosw/theosrenderpipeline/pull/33) for the inpu
 
 The NR menu checkbox works independently of keyboard shortcuts. Bracket
 shortcuts are disabled by default, including for older INIs without the new key.
-To opt in, set `EnableNRHotkeys=true` under `[Hotkeys]` in the winning
-`TheosRenderPipeline.ini` and restart Skyrim. On a US keyboard, `[` turns NR
+To opt in, add `EnableNRHotkeys=true` under `[Hotkeys]` in
+`TheosRenderPipeline.User.ini` (create it if needed) and restart Skyrim. On a US keyboard, `[` turns NR
 off and `]` turns it on for the session, even with the TRP menu closed.
 They are suppressed while editing text in TRP's menu. Other mods can share
 these keys. Use Save as default to retain an NR state for future launches.

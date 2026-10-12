@@ -5,6 +5,7 @@
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceDLSSGBackend.h"
 #include "FrameGen/SourceFrameGeneration.h"
+#include "FrameGen/XeFGUnlock.h"
 #include <PCH.h>
 
 using namespace TheosRenderPipeline::Overlay;
@@ -29,7 +30,9 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         // NVIDIA's limits are known only once DLSS-G has run and answered a state
         // query; before that, leave the list open and let the runtime limit it.
         const bool nvidiaReported = !intel && sourceState.stateQueries > 0;
-        const auto usableMaximum = editIntel ? TheosRenderPipeline::XeFGMaxGeneratedFrames : !nvidiaReported ? 5u :
+        // Standard offers Intel's official x2 only; the x3-x6 unlock is in Universal.
+        const auto usableMaximum = editIntel ? (TheosRenderPipeline::XeFGUnlock::Available() ? TheosRenderPipeline::XeFGMaxGeneratedFrames : 1u) :
+            !nvidiaReported ? 5u :
             TheosRenderPipeline::SourceDLSSG::MFGContract::Maximum(
             unlock.UsesCompatibilityUnlock(), unlock.Ready(), sourceState.state.numFramesToGenerateMax);
         const bool supportsDynamic = !editIntel && nvidiaReported && TheosRenderPipeline::SourceDLSSG::MFGContract::Dynamic(
@@ -202,8 +205,12 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             }
             if (editIntel)
             {
-                DrawSettingsHelp("x2 is Intel's official mode. x3-x6 patch Intel's runtime in memory and are experimental. "
-                                 "The first Apply to x3-x6 recreates the Intel presenter; later multiplier changes apply live.");
+                if (TheosRenderPipeline::XeFGUnlock::Available())
+                    DrawSettingsHelp("x2 is Intel's official mode. x3-x6 patch Intel's runtime in memory and are experimental. "
+                                     "The first Apply to x3-x6 recreates the Intel presenter; later multiplier changes apply live.");
+                else
+                    DrawSettingsHelp("x2 is Intel's official mode. The experimental x3-x6 patch Intel's runtime in memory and "
+                                     "need the Universal edition installed below Standard; a saved x3-x6 runs at x2.");
             }
             if (!editIntel)
             {

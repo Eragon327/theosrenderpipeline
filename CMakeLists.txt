@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	TheosRenderPipeline
-	VERSION 0.4.0
+	VERSION 0.4.1
 	LANGUAGES C CXX
 )
 
@@ -46,9 +46,10 @@ else()
 endif()
 if(TRP_ENABLE_OPTIONAL_FEATURES)
     set(TRP_EDITION "Universal")
-    target_sources(TheosRenderPipeline PRIVATE src/FrameGen/SourceDLSSGMFG.cpp)
+    # Runtime unlocks live in Universal; Standard ships the vendor runtimes unmodified.
+    target_sources(TheosRenderPipeline PRIVATE src/FrameGen/SourceDLSSGMFG.cpp src/FrameGen/XeFGUnlock.cpp)
 else()
-    target_sources(TheosRenderPipeline PRIVATE src/FrameGen/SourceDLSSGMFGNative.cpp)
+    target_sources(TheosRenderPipeline PRIVATE src/FrameGen/SourceDLSSGMFGNative.cpp src/FrameGen/XeFGUnlockNative.cpp)
     set(TRP_EDITION "Standard")
 endif()
 
@@ -75,6 +76,19 @@ configure_file(
 configure_file(
 	${CMAKE_CURRENT_SOURCE_DIR}/cmake/Version.rc.in
 	${CMAKE_CURRENT_BINARY_DIR}/cmake/Version.rc
+	@ONLY
+)
+
+# The packaged defaults, embedded for legacy migration and saved-setting differences.
+set(TRP_PACKAGED_DEFAULTS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/package/SKSE/Plugins/TheosRenderPipeline.ini")
+file(READ "${TRP_PACKAGED_DEFAULTS_FILE}" TRP_PACKAGED_DEFAULTS_INI)
+if(TRP_PACKAGED_DEFAULTS_INI MATCHES "[)]TRPDEFAULTS")
+	message(FATAL_ERROR "Packaged INI contains the raw-string delimiter")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TRP_PACKAGED_DEFAULTS_FILE}")
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackagedDefaults.h.in
+	${CMAKE_CURRENT_BINARY_DIR}/cmake/PackagedDefaults.h
 	@ONLY
 )
 
@@ -196,7 +210,7 @@ if(NOT EXISTS "${TRP_XEFG_SDK_DIR}/inc/xess_fg/xefg_swapchain_d3d12.h" OR
     message(FATAL_ERROR "Set TRP_XEFG_SDK_DIR to the pinned Intel XeSS SDK with SR, XeFG 1.3 and XeLL 1.3 headers")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${TRP_XEFG_SDK_DIR}/inc")
-set_source_files_properties(src/FrameGen/XeFGPresenter.cpp src/FrameGen/XeFGUnlock.cpp src/FrameGen/XeSSUpscaler.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
+set_source_files_properties(src/FrameGen/XeFGPresenter.cpp src/FrameGen/XeFGUnlock.cpp src/FrameGen/XeFGUnlockNative.cpp src/FrameGen/XeSSUpscaler.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
 find_path(TRP_SIMPLEINI_INCLUDE_DIR SimpleIni.h REQUIRED)
 
 target_include_directories(
@@ -241,6 +255,10 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_compile_definitions(TRPSourceHostLifecycleTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_include_directories(TRPSourceHostLifecycleTests PRIVATE src "${TRP_SIMPLEINI_INCLUDE_DIR}" "${TRP_STREAMLINE_INCLUDE_DIR}")
     add_test(NAME SourceHostLifecycle COMMAND TRPSourceHostLifecycleTests)
+    add_executable(TRPStartupHintsTests tests/StartupHintsTests.cpp)
+    target_compile_features(TRPStartupHintsTests PRIVATE cxx_std_23)
+    target_include_directories(TRPStartupHintsTests PRIVATE src)
+    add_test(NAME StartupHints COMMAND TRPStartupHintsTests)
     add_subdirectory(tests/ui-blend)
     add_executable(TRPWeatherAppearanceTests tests/WeatherAppearanceTests.cpp)
     target_compile_features(TRPWeatherAppearanceTests PRIVATE cxx_std_23)
@@ -340,6 +358,24 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_include_directories(TRPDLSSQualityTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${TRP_NGX_SDK_DIR}/include" "${TRP_STREAMLINE_INCLUDE_DIR}")
     add_test(NAME DLSSQuality COMMAND TRPDLSSQualityTests)
+    # The XeFG x3-x6 unlock is Universal-only; each edition links its own variant.
+    if(TRP_ENABLE_OPTIONAL_FEATURES)
+        add_executable(TRPXeFGUnlockEditionTests tests/XeFGUnlockEditionTests.cpp src/FrameGen/XeFGUnlock.cpp)
+        target_link_libraries(TRPXeFGUnlockEditionTests PRIVATE bcrypt)
+        set(TRP_XEFG_UNLOCK_EDITION universal)
+    else()
+        add_executable(TRPXeFGUnlockEditionTests tests/XeFGUnlockEditionTests.cpp src/FrameGen/XeFGUnlockNative.cpp)
+        set(TRP_XEFG_UNLOCK_EDITION standard)
+    endif()
+    target_compile_features(TRPXeFGUnlockEditionTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPXeFGUnlockEditionTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+    target_include_directories(TRPXeFGUnlockEditionTests PRIVATE src)
+    add_test(NAME XeFGUnlockEdition COMMAND TRPXeFGUnlockEditionTests ${TRP_XEFG_UNLOCK_EDITION})
+    add_executable(TRPUserSettingsTests tests/UserSettingsTests.cpp)
+    target_compile_features(TRPUserSettingsTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPUserSettingsTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPUserSettingsTests PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/cmake" "${TRP_SIMPLEINI_INCLUDE_DIR}")
+    add_test(NAME UserSettings COMMAND TRPUserSettingsTests "${TRP_PACKAGED_DEFAULTS_FILE}")
     add_executable(TRPPipelineCacheTests tests/PipelineCacheTests.cpp src/FrameGen/PipelineCache.cpp)
     target_compile_features(TRPPipelineCacheTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPPipelineCacheTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
