@@ -113,9 +113,9 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             bool repairMotion = repair.Enabled();
             if (ImGui::Checkbox("Repair missing motion (Lab)", &repairMotion))
                 repair.Enable(repairMotion);
-            DrawSettingsHelp("Not saved; on by default in this test build. Underwater, Skyrim writes no real motion, "
+            DrawSettingsHelp("On by default; turning it off lasts until the game restarts. Underwater, Skyrim writes no real motion, "
                              "and generated frames show an offset copy. When nearly the whole frame disagrees with the camera, "
-                             "generation gets the camera's motion instead.");
+                             "NR and generation get the camera's motion instead.");
             auto& inputs = TheosRenderPipeline::FGInputDebugView::Get();
             bool showInputs = inputs.Enabled();
             if (ImGui::Checkbox("Show frame generation inputs (Lab)", &showInputs))
