@@ -5,6 +5,7 @@
 #include "SourceFrameGeneration.h"
 #include "SourceDLSSGBackend.h"
 #include "SourceDLSSGCamera.h"
+#include "FGInputDebugView.h"
 #include "SourceNvidiaFrameEvaluator.h"
 #include "SourceGenerationPolicy.h"
 #include "PerformanceTuning.h"
@@ -115,6 +116,13 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
     bool Prepare(const TheosRenderPipeline::SourceNvidiaFrameGuides& frame)
     {
         ScopedD3D11PerformanceStage timer{host.context_.Get(), PerformanceTuning::D3D11Stage::kFrameGenInputs};
+        if (TheosRenderPipeline::FGInputDebugView::Get().Enabled()) {
+            float clipToPrevClip[16];
+            static_assert(sizeof(constants.clipToPrevClip) == sizeof(clipToPrevClip));
+            std::memcpy(clipToPrevClip, &constants.clipToPrevClip, sizeof(clipToPrevClip));
+            TheosRenderPipeline::FGInputDebugView::Get().Record(host.context_.Get(), frame.motion, frame.depth, clipToPrevClip,
+                constants.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight);
+        }
         return TheosRenderPipeline::SourceDLSSG::Backend::Get().Prepare(constants, frame.motion, frame.depth,
             frame.uiColorAndAlpha, frame.hudLessColor, {frame.renderWidth, frame.renderHeight},
             frame.outputWidth, frame.outputHeight, NeuralEligible(frame));

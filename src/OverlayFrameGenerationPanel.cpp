@@ -4,6 +4,7 @@
 
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceDLSSGBackend.h"
+#include "FrameGen/FGInputDebugView.h"
 #include "FrameGen/SourceFrameGeneration.h"
 #include "FrameGen/XeFGUnlock.h"
 #include <PCH.h>
@@ -104,6 +105,27 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 sourceBackend.ConfigureXeFGDebugView(onlyGenerated, sourceBackend.XeFGTagGenerated());
             DrawSettingsHelp("NVIDIA debug view, not saved. Hides every rendered frame, so an artifact still visible here "
                              "comes from frame generation; one that disappears comes from rendering, the upscaler or NR.");
+        }
+        if (showDeveloperControls)
+        {
+            auto& inputs = TheosRenderPipeline::FGInputDebugView::Get();
+            bool showInputs = inputs.Enabled();
+            if (ImGui::Checkbox("Show frame generation inputs (Lab)", &showInputs))
+                inputs.Enable(showInputs);
+            DrawSettingsHelp("Not saved. Left: motion vectors (grey = none). Middle: depth (dark = near). "
+                             "Right: where the motion vectors disagree with the camera's own motion at that depth "
+                             "(black = agree, red = 8+ pixels off). Static scenery should stay black while the camera moves.");
+            if (showInputs)
+            {
+                if (auto* strip = inputs.Strip())
+                {
+                    const float width = ImGui::GetContentRegionAvail().x;
+                    const float height = width * float(inputs.PanelHeight()) / float(inputs.PanelWidth() * 3);
+                    ImGui::Image(reinterpret_cast<ImTextureID>(strip), ImVec2(width, height));
+                }
+                else
+                    ImGui::TextWrapped("Inputs: %s", inputs.Status());
+            }
         }
         if (!intel && unlock.UsesCompatibilityUnlock() && !unlock.Ready())
             ImGui::TextWrapped("%s", unlock.status);
