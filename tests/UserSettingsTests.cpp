@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
+#include <process.h>
 #include <fstream>
 #include <sstream>
 
@@ -27,7 +29,7 @@ static constexpr const char* Defaults =
 int main(int argc, char** argv)
 {
     Require(argc == 2, "packaged INI path");
-    const auto root = std::filesystem::temp_directory_path() / L"TRPUserSettingsTests";
+    const auto root = std::filesystem::temp_directory_path() / std::format(L"TRPUserSettingsTests-{}", _getpid());
     std::error_code error;
     std::filesystem::remove_all(root, error);
     std::filesystem::create_directories(root);
