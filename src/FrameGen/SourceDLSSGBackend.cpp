@@ -5,6 +5,7 @@
 #include "CommunityShaderIntegration.h"
 #include "SourceDLSSGSwapChain.h"
 #include "SourceRuntimeModuleDiagnostic.h"
+#include "DlssgOverride.h"
 #include "../PluginPaths.h"
 #include "../ScreenshotFile.h"
 #include "../RenderPipeline.h"
@@ -182,6 +183,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		for (std::size_t index = 0; index < kStreamlineModules.size(); ++index) {
 			const auto* name = kStreamlineModules[index];
 			runtimeModules_[index] = TheosRenderPipeline::PluginPaths::RetainLoadedModule(directory_ / name);
+			if (!runtimeModules_[index] && std::wstring_view(name) == L"nvngx_dlssg.dll" &&
+				(runtimeModules_[index] = RetainNvidiaOverrideDlssg())) {
+				// NVIDIA app's Frame Generation override supplied its own DLSS-G build.
+				logger::warn("[SourceDLSSG] NVIDIA app frame generation override: DLSS-G loaded from {} instead of {}",
+					PluginPaths::ModulePath(runtimeModules_[index]).string(), (directory_ / name).string());
+				continue;
+			}
 			if (!runtimeModules_[index]) {
 				const auto configured = directory_ / name;
 				const auto attributes = GetFileAttributesW(configured.c_str());

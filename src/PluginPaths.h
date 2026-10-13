@@ -39,6 +39,33 @@ namespace TheosRenderPipeline::PluginPaths
 
 	// Select an already loaded module by its configured path. The caller owns
 	// the returned reference; a same-named DLL in another directory is unrelated.
+	// The first loaded module, retained, for which `a_match(path, module)` holds.
+	template <class Match> HMODULE RetainLoadedModuleIf(Match&& a_match)
+	{
+		std::vector<HMODULE> modules(128);
+		DWORD bytes{};
+		for (;;) {
+			if (!::K32EnumProcessModules(::GetCurrentProcess(), modules.data(),
+				static_cast<DWORD>(modules.size() * sizeof(HMODULE)), &bytes)) { return nullptr; }
+			if (bytes <= modules.size() * sizeof(HMODULE)) { break; }
+			modules.resize(bytes / sizeof(HMODULE));
+		}
+		modules.resize(bytes / sizeof(HMODULE));
+		for (const auto module : modules) {
+			HMODULE retained{};
+			if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+				reinterpret_cast<LPCWSTR>(module), &retained)) { continue; }
+			try {
+				if (a_match(ModulePath(retained), retained)) { return retained; }
+			} catch (...) {
+				::FreeLibrary(retained);
+				throw;
+			}
+			::FreeLibrary(retained);
+		}
+		return nullptr;
+	}
+
 	inline HMODULE RetainLoadedModule(const std::filesystem::path& a_path)
 	{
 		if (!a_path.is_absolute()) { return nullptr; }
