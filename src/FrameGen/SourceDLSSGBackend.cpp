@@ -27,10 +27,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		};
 	}
 	using Microsoft::WRL::ComPtr;
-	void Backend::ConfigureLiteBlending(bool a_enabled)
+	void Backend::ConfigurePreset(DlssgPreset a_preset)
 	{
-		liteBlending_.store(a_enabled, std::memory_order_relaxed);
-		LiteBlending::Configure(a_enabled);
+		const auto old = preset_.exchange(a_preset, std::memory_order_relaxed);
+		LiteBlending::Configure(UsesLiteBlending(a_preset));
+		if (old != a_preset && UsesUIRecomposition(old) == UsesUIRecomposition(a_preset)) {
+			releaseForPreset_.store(true, std::memory_order_relaxed);
+		}
 	}
 	Backend& Backend::Get()
 	{
@@ -576,6 +579,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		session_.RequestGeneration(GenerationConfiguration());
 		session_.RequestReflexMode(ReflexConfiguration());
 		session_.RequestUIRecomposition(UIRecompositionConfiguration());
+		if (releaseForPreset_.exchange(false, std::memory_order_relaxed) && provider_ == FrameGenerationProvider::NVIDIA) {
+			session_.RequestFeatureRelease();
+			logger::info("[SourceDLSSG] frame generation preset {}: releasing DLSS-G for one Present to recreate it",
+				PresetLabel(PresetConfiguration()));
+		}
 		session_.RequestOnlyGenerated(XeFGOnlyGenerated());
 		session_.RequestOutputFPSLimit(outputFPSLimit_.load(std::memory_order_relaxed));
 		const bool prepared = provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().prepared :

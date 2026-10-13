@@ -1,5 +1,6 @@
 #include <PCH.h>
 #include "DlssgLiteBlending.h"
+#include "DlssgPreset.h"
 #include "../PluginPaths.h"
 #include <nvsdk_ngx.h>
 #include <nvsdk_ngx_defs.h>
@@ -69,6 +70,11 @@ namespace TheosRenderPipeline::SourceDLSSG::LiteBlending
 		if (gState.hook == HookState::Installed) { return true; }
 		if (!provider) { gState.hook = HookState::Failed; return false; }
 		gState.runtimeSupports = RuntimeNamesParameter(provider);
+		gState.driverPreset = ReadDriverPreset();
+		if (gState.driverPreset) {
+			spdlog::info("[SourceDLSSG] NVIDIA driver profile sets Frame Generation preset {} (0x{:X}); DLSS-G prefers it over TRP's preset",
+				DriverPresetName(gState.driverPreset), gState.driverPreset);
+		}
 		auto* site = reinterpret_cast<std::uint8_t*>(GetProcAddress(provider, "NVSDK_NGX_D3D12_CreateFeature"));
 		std::array<std::uint8_t, kPrologueBytes> prologue{};
 		if (!site) { gState.hook = HookState::Failed; return false; }
@@ -107,12 +113,60 @@ namespace TheosRenderPipeline::SourceDLSSG::LiteBlending
 		return state;
 	}
 
-	const char* Describe(const Snapshot& state, bool enabled)
+	std::uint32_t ReadDriverPreset()
 	{
-		if (state.hook == HookState::NotInstalled) { return "Waiting for DLSS-G"; }
-		if (state.hook != HookState::Installed) { return "Unavailable for this DLSS-G build"; }
-		if (!state.runtimeSupports) { return "This DLSS-G build has no Lite blending (needs 310.9.16 or newer)"; }
-		if (!enabled) { return "Off"; }
-		return state.requests ? "Requested from DLSS-G" : "Applies when frame generation next starts";
+		// NvAPI DRS through nvapi_QueryInterface; the public SDK is not a TRP dependency.
+		constexpr std::uint32_t kFrameGenerationPreset = 0x10E41DF1;
+		struct Setting
+		{
+			std::uint32_t version;
+			wchar_t name[2048];
+			std::uint32_t id, type, location, isCurrentPredefined, isPredefinedValid;
+			union Value { std::uint32_t u32; std::uint8_t binary[4100]; wchar_t text[2048]; } predefined, current;
+		};
+		struct Application
+		{
+			std::uint32_t version, isPredefined;
+			wchar_t appName[2048], friendlyName[2048], launcher[2048], fileInFolder[2048];
+			std::uint32_t flags;
+			wchar_t commandLine[2048];
+		};
+		const auto nvapi = GetModuleHandleW(L"nvapi64.dll") ? GetModuleHandleW(L"nvapi64.dll") : LoadLibraryW(L"nvapi64.dll");
+		const auto query = nvapi ? reinterpret_cast<void* (*)(std::uint32_t)>(GetProcAddress(nvapi, "nvapi_QueryInterface")) : nullptr;
+		if (!query) { return 0; }
+		using Init = int (*)();
+		using Create = int (*)(void**);
+		using Load = int (*)(void*);
+		using FindApp = int (*)(void*, const wchar_t*, void**, Application*);
+		using Base = int (*)(void*, void**);
+		using Get = int (*)(void*, void*, std::uint32_t, Setting*);
+		using Destroy = int (*)(void*);
+		const auto init = reinterpret_cast<Init>(query(0x0150E828));
+		const auto create = reinterpret_cast<Create>(query(0x0694D52E));
+		const auto load = reinterpret_cast<Load>(query(0x375DBD6B));
+		const auto findApp = reinterpret_cast<FindApp>(query(0xEEE566B2));
+		const auto base = reinterpret_cast<Base>(query(0xDA8466A0));
+		const auto get = reinterpret_cast<Get>(query(0x73BF8338));
+		const auto destroy = reinterpret_cast<Destroy>(query(0xDAD9CFF8));
+		if (!init || !create || !load || !findApp || !base || !get || !destroy || init() != 0) { return 0; }
+		void* session{};
+		if (create(&session) != 0) { return 0; }
+		std::uint32_t value{};
+		if (load(session) == 0) {
+			auto setting = std::make_unique<Setting>();
+			auto application = std::make_unique<Application>();
+			auto read = [&](void* profile) {
+				*setting = {};
+				setting->version = sizeof(Setting) | (1u << 16);
+				return profile && get(session, profile, kFrameGenerationPreset, setting.get()) == 0 && setting->type == 0;
+			};
+			const auto exe = PluginPaths::ModulePath(GetModuleHandleW(nullptr)).filename();
+			void* profile{};
+			application->version = sizeof(Application) | (4u << 16);
+			if (findApp(session, exe.c_str(), &profile, application.get()) == 0 && read(profile)) { value = setting->current.u32; }
+			else if (base(session, &profile) == 0 && read(profile)) { value = setting->current.u32; }
+		}
+		destroy(session);
+		return value;
 	}
 }

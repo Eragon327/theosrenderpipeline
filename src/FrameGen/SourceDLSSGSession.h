@@ -100,6 +100,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool generationLimited{};
 		bool uiRecompositionRequested{};
 		bool onlyGeneratedRequested{};  // Lab debug view, never saved
+		std::uint32_t featureReleases{};
 		bool mfgUnlockRequested{}, mfgUnlockReady{};
 
 		// Submitted options alone do not establish an active session: also check
@@ -143,6 +144,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		// Submitted only while generating with both HUD-less and UI layers tagged.
 		void RequestUIRecomposition(bool a_enabled) { snapshot_.uiRecompositionRequested = a_enabled; }
+		// One Present with generation off and without eRetainResourcesWhenOff:
+		// Streamline releases DLSS-G and the next generating Present recreates it,
+		// re-reading create-time choices such as Lite blending.
+		void RequestFeatureRelease() { releaseRequested_ = true; }
 		// Lab: NVIDIA presents only its generated frames, to tell generation artifacts from rendered ones.
 		void RequestOnlyGenerated(bool a_enabled) { snapshot_.onlyGeneratedRequested = a_enabled; }
 		bool RequestOutputFPSLimit(int a_fps)
@@ -188,6 +193,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		sl::DLSSGFlags submittedFlags_{};
 		bool started_{ false };
 		bool needsReset_{ true };
+		bool releaseRequested_{ false };
 		ReflexTelemetryTracker reflexTelemetry_;
 		OutputBatchTracker outputBatches_;
 	};

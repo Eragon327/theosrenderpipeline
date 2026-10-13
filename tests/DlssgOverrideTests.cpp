@@ -1,5 +1,6 @@
 #include "FrameGen/DlssgOverride.h"
 #include "FrameGen/DlssgLiteBlending.h"
+#include "FrameGen/DlssgPreset.h"
 #include <string>
 #include <cstdio>
 #include <cstdlib>
@@ -29,5 +30,14 @@ int main()
     const std::string old = "DLSSG.UserInterfaceRecompositionEnabled";
     Require(!NamesParameter({ reinterpret_cast<const std::uint8_t*>(old.data()), old.size() }), "older builds do not");
     std::puts("PASS DLSS-G Lite blending: prologue and support detection");
+    using namespace TheosRenderPipeline::SourceDLSSG;
+    Require(UsesUIRecomposition(DlssgPreset::B) && !UsesUIRecomposition(DlssgPreset::A) && !UsesUIRecomposition(DlssgPreset::C),
+        "only Preset B recomposes the UI");
+    Require(UsesLiteBlending(DlssgPreset::C) && !UsesLiteBlending(DlssgPreset::A) && !UsesLiteBlending(DlssgPreset::B),
+        "only Preset C uses Lite blending");
+    Require(ValidPreset(1) && ValidPreset(3) && !ValidPreset(0) && !ValidPreset(4), "presets A to C are valid");
+    Require(DriverPresetName(3) == "C" && DriverPresetName(0xFFFFFF) == "Latest" && DriverPresetName(0).empty() &&
+        DriverPresetName(16).empty(), "driver preset values name their letter");
+    std::puts("PASS DLSS-G presets: A/B/C mapping and driver preset names");
     std::puts("PASS DLSS-G override path: NVIDIA model store recognised, TRP and other folders not");
 }

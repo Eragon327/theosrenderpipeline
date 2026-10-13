@@ -33,6 +33,9 @@ namespace TheosRenderPipeline::SourceDLSSG::LiteBlending
 		HookState hook{ HookState::NotInstalled };
 		bool runtimeSupports{};
 		std::uint32_t requests{};
+		// NVIDIA driver profile Frame Generation preset (0x10E41DF1); 0 = none.
+		// DLSS-G gives it priority over the preset TRP requests.
+		std::uint32_t driverPreset{};
 	};
 
 	// Install once on the retained DLSS-G module, before frame generation is created.
@@ -40,5 +43,6 @@ namespace TheosRenderPipeline::SourceDLSSG::LiteBlending
 	bool Install(HMODULE provider);
 	void Configure(bool enabled);
 	Snapshot State();
-	const char* Describe(const Snapshot& state, bool enabled);
+	// Read-only NvAPI lookup of this executable's profile, then the base profile.
+	std::uint32_t ReadDriverPreset();
 }

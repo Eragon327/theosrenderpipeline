@@ -4,6 +4,7 @@
 #include "SourceDLSSGDeviceLoss.h"
 #include "D3D11FrameCopy.h"
 #include "SourceDLSSGSession.h"
+#include "DlssgPreset.h"
 #include "SourceDLSSGNeuralState.h"
 #if !defined(TRP_NO_NEURAL_RENDERING)
 #include "SourceDLSSGNeuralRendering.h"
@@ -96,10 +97,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 			return true;
 		}
 		sl::ReflexMode ReflexConfiguration() const { return reflexMode_.load(std::memory_order_relaxed); }
-		void ConfigureUIRecomposition(bool a_enabled) { uiRecomposition_.store(a_enabled, std::memory_order_relaxed); }
-		bool UIRecompositionConfiguration() const { return uiRecomposition_.load(std::memory_order_relaxed); }
-		void ConfigureLiteBlending(bool a_enabled);
-		bool LiteBlendingConfiguration() const { return liteBlending_.load(std::memory_order_relaxed); }
+		// A<->B and B<->C change UI recomposition, which Streamline recreates for;
+		// A<->C changes only Lite blending, so DLSS-G is released for one Present.
+		void ConfigurePreset(DlssgPreset a_preset);
+		DlssgPreset PresetConfiguration() const { return preset_.load(std::memory_order_relaxed); }
+		bool UIRecompositionConfiguration() const { return UsesUIRecomposition(PresetConfiguration()); }
 		void ConfigureXeFGFrameTime(bool a_enabled) { xefgFrameTime_.store(a_enabled, std::memory_order_relaxed); }
 		bool XeFGFrameTimeConfiguration() const { return xefgFrameTime_.load(std::memory_order_relaxed); }
 		// Lab diagnostics, not saved: present only generated frames (Intel and NVIDIA), or tag them (Intel).
@@ -238,7 +240,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		sl::Result reportedOptionsResult_{ sl::Result::eOk };
 		MFGUnlock mfgUnlock_;
 		std::atomic<sl::ReflexMode> reflexMode_{ sl::ReflexMode::eLowLatency };
-		std::atomic<bool> uiRecomposition_{ true }, liteBlending_{};
+		std::atomic<DlssgPreset> preset_{ DlssgPreset::B };
+		std::atomic<bool> releaseForPreset_{};
 		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
 		// Per-window CPU samples for the input-reuse A/B; logged and cleared every 600 presents.
 		std::vector<float> xefgReuseMs_, xefgSleepMs_;

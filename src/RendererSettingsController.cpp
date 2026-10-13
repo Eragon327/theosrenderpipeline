@@ -138,8 +138,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         auto& source = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         source.RequestProvider(frameGen_.settings.sourceDLSSG.provider);
         source.ConfigureReflex(static_cast<sl::ReflexMode>(frameGen_.settings.sourceDLSSG.reflexMode));
-        source.ConfigureUIRecomposition(frameGen_.settings.sourceDLSSG.uiRecomposition);
-        source.ConfigureLiteBlending(frameGen_.settings.sourceDLSSG.liteBlending);
+        source.ConfigurePreset(frameGen_.settings.sourceDLSSG.preset);
         source.ConfigureXeFGFrameTime(frameGen_.settings.sourceDLSSG.xefgFrameTime);
         source.ConfigureOutputFPSLimit(frameGen_.settings.sourceDLSSG.outputFPSLimit);
         source.ConfigureGeneration(frameGen_.settings.sourceDLSSG.generation);
