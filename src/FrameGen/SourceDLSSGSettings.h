@@ -20,6 +20,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		int outputFPSLimit{ 0 };
 		// Interpolate the HUD-less scene and UI layer separately. Live toggle.
 		bool uiRecomposition{ true };
+		// Ask DLSS-G 310.9.16+ for NVIDIA's lighter candidate blending (Frame
+		// Generation Preset C). Read when frame generation is created.
+		bool liteBlending{ false };
 		// Give Intel XeFG the measured application frame time; on non-Intel GPUs
 		// its software pacing uses this as a sanity check. Live toggle.
 		bool xefgFrameTime{ true };
@@ -71,6 +74,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.generation.dynamic = ini.GetBoolValue(section, "DynamicMFG", false);
 		value.generation.dynamicTargetFPS = static_cast<std::uint32_t>(ini.GetLongValue(section, "DynamicTargetFPS", 0));
 		value.uiRecomposition = ini.GetBoolValue(section, "UIRecomposition", true);
+		value.liteBlending = ini.GetBoolValue(section, "LiteBlending", false);
 		value.neuralEnabled = ini.GetBoolValue(section, "NeuralRenderingEnabled", false);
 		value.neuralBeforeUpscaling = ini.GetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		value.neuralPasses = static_cast<int>(ini.GetLongValue(section, "NRPasses", 1));
@@ -106,6 +110,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ini.SetBoolValue(section, "DynamicMFG", value.generation.dynamic);
 		ini.SetLongValue(section, "DynamicTargetFPS", value.generation.dynamicTargetFPS);
 		ini.SetBoolValue(section, "UIRecomposition", value.uiRecomposition);
+		ini.SetBoolValue(section, "LiteBlending", value.liteBlending);
 		ini.SetBoolValue(section, "NeuralRenderingEnabled", value.neuralEnabled);
 		ini.SetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		ini.SetLongValue(section, "NRPasses", value.neuralPasses);

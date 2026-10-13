@@ -56,6 +56,16 @@ void Generation()
     }
     {
         CSimpleIniA ini;
+        Require(!LoadPreferences(ini).liteBlending, "existing INIs without the key keep Lite blending off");
+        Preferences preferences; preferences.liteBlending = true;
+        StorePreferences(ini, preferences);
+        Require(LoadPreferences(ini).liteBlending, "a saved Lite blending opt-in round trips");
+        RendererSettingsDraft current; current.valid = true;
+        auto draft = current; draft.sourceDLSSG.liteBlending = true;
+        Require(CountRendererSettingsChanges(draft, current) == 1, "Lite blending participates in Apply/Discard");
+    }
+    {
+        CSimpleIniA ini;
         Require(LoadPreferences(ini).xefgFrameTime, "existing INIs without the key send XeFG the frame time");
         Preferences preferences; preferences.xefgFrameTime = false;
         StorePreferences(ini, preferences);

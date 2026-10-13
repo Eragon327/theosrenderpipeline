@@ -4,6 +4,7 @@
 
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceDLSSGBackend.h"
+#include "FrameGen/DlssgLiteBlending.h"
 #include "FrameGen/FGInputDebugView.h"
 #include "FrameGen/FGMotionRepair.h"
 #include "FrameGen/SourceFrameGeneration.h"
@@ -300,6 +301,14 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                     ImGui::TextDisabled("Submitted to DLSS-G");
                 else
                     ImGui::TextColored(kOchre, "Waiting for HUD-less and UI layers");
+            }
+            if (!editIntel)
+            {
+                ImGui::Checkbox("Lite blending (Preset C)##sourceDLSSG", &settingsDraft.sourceDLSSG.liteBlending);
+                DrawSettingsHelp("NVIDIA's lighter frame generation blending, the same as Frame Generation Preset C in "
+                                 "the NVIDIA app. Needs DLSS-G 310.9.16 or newer. Applies when frame generation next starts.");
+                ImGui::TextDisabled("%s", TheosRenderPipeline::SourceDLSSG::LiteBlending::Describe(
+                    TheosRenderPipeline::SourceDLSSG::LiteBlending::State(), sourceBackend.LiteBlendingConfiguration()));
             }
             if (editIntel)
             {

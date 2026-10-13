@@ -6,6 +6,7 @@
 #include "SourceDLSSGSwapChain.h"
 #include "SourceRuntimeModuleDiagnostic.h"
 #include "DlssgOverride.h"
+#include "DlssgLiteBlending.h"
 #include "../PluginPaths.h"
 #include "../ScreenshotFile.h"
 #include "../RenderPipeline.h"
@@ -26,6 +27,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		};
 	}
 	using Microsoft::WRL::ComPtr;
+	void Backend::ConfigureLiteBlending(bool a_enabled)
+	{
+		liteBlending_.store(a_enabled, std::memory_order_relaxed);
+		LiteBlending::Configure(a_enabled);
+	}
 	Backend& Backend::Get()
 	{
 		// Streamline owns background work and DXGI proxies. Keep its module and
@@ -203,6 +209,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 			logger::info("[SourceDLSSG] loaded {}", (directory_ / name).string());
 		}
+		// Before slDLSSGSetOptions creates the feature; harmless on builds without Lite blending.
+		LiteBlending::Install(runtimeModules_[0]);
 		auto resolve = [&](sl::Feature feature, const char* name, auto& function) {
 			void* address = nullptr;
 			if (!Check(featureFunction_(feature, name, address), name) || !address) { return Check(E_NOINTERFACE, name); }
