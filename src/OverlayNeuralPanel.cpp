@@ -6,6 +6,9 @@
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceDLSSGBackend.h"
 #include "FrameGen/SourceFrameGeneration.h"
+#include "FrameGen/NeuralRuntimeFiles.h"
+#include "PluginPaths.h"
+#include <chrono>
 #include <PCH.h>
 
 using namespace TheosRenderPipeline::Overlay;
@@ -311,6 +314,45 @@ void DrawNeuralSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bo
     }
 }
 
+// Which nvngx_dlssnr*.dll NR loads. Editable even while NR is unavailable, so a
+// missing runtime can be swapped for an installed one. Apply switches it.
+void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
+{
+    using Clock = std::chrono::steady_clock;
+    static std::vector<std::string> runtimes;
+    static std::string listedFor;
+    static Clock::time_point listed{};
+    // Folder listings go through MO2's virtual file system; refresh every few seconds.
+    if (listedFor != draft.neuralRuntime || Clock::now() - listed > std::chrono::seconds(3)) {
+        runtimes = TheosRenderPipeline::SourceDLSSG::ListNeuralRuntimes(TheosRenderPipeline::PluginPaths::Directory(), draft.neuralRuntime);
+        listedFor = draft.neuralRuntime;
+        listed = Clock::now();
+    }
+    auto name = [](const std::string& path) {
+        const auto utf8 = std::filesystem::u8path(path).filename().u8string();
+        return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+    };
+    if (BeginSettingRows("nrRuntime", LabelWidth({"One pass while weapons are drawn", "Input colour is linear HDR", "NR input resolution"})))
+    {
+        SettingRow("Runtime", "NeuralRenderingRuntimePath", true, false, [&] {
+            bool changed = false;
+            if (ImGui::BeginCombo("##v", name(draft.neuralRuntime).c_str())) {
+                for (const auto& runtime : runtimes) {
+                    const bool selected = runtime == draft.neuralRuntime;
+                    if (ImGui::Selectable(name(runtime).c_str(), selected) && !selected) { draft.neuralRuntime = runtime; changed = true; }
+                    if (selected) { ImGui::SetItemDefaultFocus(); }
+                }
+                ImGui::EndCombo();
+            }
+            DrawSettingsHelp("Any nvngx_dlssnr*.dll in Data/SKSE/Plugins/TheosRenderPipeline/NVIDIA. nvngx_dlssnr.dll is NVIDIA's runtime; "
+                             "other files, such as community builds, load by their file version (310 or later). "
+                             "Community builds do not come from NVIDIA. Apply switches it; the log records each file's version and hash.");
+            return changed;
+        });
+        ImGui::EndTable();
+    }
+}
+
 void DrawSourceNeuralControls(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bool& sharpening,
                               float& sharpness, int upscaleType, bool nrRuntimePresent)
 {
@@ -328,6 +370,7 @@ void DrawSourceNeuralControls(TheosRenderPipeline::SourceDLSSG::Preferences& dra
     {
         ImGui::TextWrapped("%s", state.status.c_str());
     }
+    DrawNeuralRuntime(draft);
     DrawNeuralSettings(draft, sharpening, sharpness, unavailable);
 }
 } // namespace

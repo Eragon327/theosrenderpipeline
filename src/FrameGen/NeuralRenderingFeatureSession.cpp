@@ -182,17 +182,17 @@ namespace TheosRenderPipeline::NeuralRendering
 
 		const auto identity = VerifySource(a_info.runtimePath, a_info.allowReconstructionRuntime);
 		if (!identity.matched) {
-			state.status = "source session runtime identity does not match the pinned build";
+			state.status = "NR runtime is not a supported build (file version 310 or later, or a known runtime)";
 			return false;
 		}
-		state.contract = MakeFeatureContract(MatchRuntime(identity.size, identity.sha256, a_info.allowReconstructionRuntime),
+		state.contract = MakeFeatureContract(MatchRuntime(identity.size, identity.sha256, identity.version, a_info.allowReconstructionRuntime),
 			a_info.displayWidth, a_info.displayHeight, a_info.renderWidth, a_info.renderHeight, a_info.networkPreset);
 		if (!state.contract.Valid()) {
 			state.status = "source session feature contract is invalid";
 			return false;
 		}
-		logger::info("[DLSSNR Source] pinned runtime build={} sha256={} path={}",
-			RuntimeName(state.contract.build), identity.sha256, identity.path.string());
+		logger::info("[DLSSNR Source] runtime build={} version={} size={} sha256={} path={}",
+			RuntimeName(state.contract.build), identity.version, identity.size, identity.sha256, identity.path.string());
 		if (const auto existing = ::GetModuleHandleW(L"nvngx_dlssnr.dll")) {
 			if (!EqualPath(ModulePath(existing), identity.path)) {
 				state.status = "a different nvngx_dlssnr.dll is already resident";

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <string_view>
+
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralRenderingReconstruction.h"
 #include "NeuralCombatPolicy.h"
@@ -10,8 +13,12 @@
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
-	// Live runtime preferences. Presenter changes commit after Present; DLL paths
-	// remain startup-owned and the NVIDIA test host still supplies DLSS and NR.
+	// The NR runtime DLL, relative to Data/SKSE/Plugins unless absolute. Users
+	// pick any nvngx_dlssnr*.dll in the NVIDIA folder; the version decides how it is driven.
+	inline constexpr std::string_view kDefaultNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr.dll";
+
+	// Live runtime preferences. Presenter changes commit after Present. The NR
+	// runtime file is chosen here; the Streamline directory remains startup-owned.
 	struct Preferences
 	{
 		FrameGenerationProvider provider{FrameGenerationProvider::NVIDIA};
@@ -25,6 +32,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool xefgFrameTime{ true };
 		GenerationRequest generation{};
 		bool neuralEnabled{ false };
+		std::string neuralRuntime{ kDefaultNeuralRuntime };
 		bool neuralBeforeUpscaling{ true };
 		int neuralPasses{ 1 };
 		NeuralRendering::CombatSettings neuralCombat{};
@@ -45,6 +53,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.outputFPSLimit = std::clamp(value.outputFPSLimit, 0, 1000);
 		value.generation = SanitizeGenerationRequest(value.generation);
 		value.neuralTuning = NeuralRendering::SanitizeBuild14Tuning(value.neuralTuning);
+		if (value.neuralRuntime.empty()) { value.neuralRuntime = kDefaultNeuralRuntime; }
 		value.neuralPasses = std::clamp(value.neuralPasses, 1, 2);
 		value.neuralCombat = NeuralRendering::SanitizeCombatSettings(value.neuralCombat);
 		value.neuralReconstruction = NeuralRendering::SanitizeReconstruction(value.neuralReconstruction);
@@ -72,6 +81,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.generation.dynamicTargetFPS = static_cast<std::uint32_t>(ini.GetLongValue(section, "DynamicTargetFPS", 0));
 		value.uiRecomposition = ini.GetBoolValue(section, "UIRecomposition", true);
 		value.neuralEnabled = ini.GetBoolValue(section, "NeuralRenderingEnabled", false);
+		value.neuralRuntime = ini.GetValue("Experimental", "NeuralRenderingRuntimePath", std::string(kDefaultNeuralRuntime).c_str());
 		value.neuralBeforeUpscaling = ini.GetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		value.neuralPasses = static_cast<int>(ini.GetLongValue(section, "NRPasses", 1));
 		value.neuralCombat.inCombat = ini.GetBoolValue(section, "NROnePassInCombat", false);
@@ -107,6 +117,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ini.SetLongValue(section, "DynamicTargetFPS", value.generation.dynamicTargetFPS);
 		ini.SetBoolValue(section, "UIRecomposition", value.uiRecomposition);
 		ini.SetBoolValue(section, "NeuralRenderingEnabled", value.neuralEnabled);
+		ini.SetValue("Experimental", "NeuralRenderingRuntimePath", value.neuralRuntime.c_str());
 		ini.SetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		ini.SetLongValue(section, "NRPasses", value.neuralPasses);
 		ini.SetBoolValue(section, "NROnePassInCombat", value.neuralCombat.inCombat);

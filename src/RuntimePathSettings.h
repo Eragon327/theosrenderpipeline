@@ -25,8 +25,8 @@ namespace TheosRenderPipeline
 
         template<class Ini> void Store(Ini& ini) const
         {
-            // No menu control edits these startup paths. Retain an on-disk
-            // edit made during this session; only seed missing values.
+            // Seed missing values only. The NR runtime is a menu choice that
+            // StorePreferences writes afterwards; Streamline stays startup-owned.
             if (!ini.GetValue("Experimental", "SourceDLSSGStreamlineDirectory", nullptr)) {
                 ini.SetValue("Experimental", "SourceDLSSGStreamlineDirectory", streamline.c_str());
             }

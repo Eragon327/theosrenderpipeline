@@ -7,7 +7,10 @@
 namespace TheosRenderPipeline::NeuralRendering
 {
 	// Distinct inference binaries may share the same NGX parameter contract.
-	enum class RuntimeBuild { Unknown, Legacy, Build14, Nexus3108 };
+	// Version310 is any other runtime reporting file version 310 or later: community
+	// or newer NVIDIA builds load by version, not by an exact hash.
+	enum class RuntimeBuild { Unknown, Legacy, Build14, Nexus3108, Version310 };
+	inline constexpr unsigned kMinimumContractVersion = 310;
 	inline constexpr std::uint64_t kRuntimeSize = 165840496ull;
 	inline constexpr std::string_view kLegacyRuntimeSha256 =
 		"CEB6432F6FBDF44D886014BCD47241932BF8B67439FEEF9BBDD0961436662650";
@@ -18,19 +21,36 @@ namespace TheosRenderPipeline::NeuralRendering
 
 	inline bool UsesReconstructionContract(RuntimeBuild build)
 	{
-		return build == RuntimeBuild::Build14 || build == RuntimeBuild::Nexus3108;
+		return build == RuntimeBuild::Build14 || build == RuntimeBuild::Nexus3108 || build == RuntimeBuild::Version310;
 	}
-	inline RuntimeBuild MatchRuntime(std::uint64_t size, std::string_view hash, bool allowReconstruction)
+	// The major number of a "major.minor.build.revision" file version; 0 if unreadable.
+	inline unsigned MajorVersion(std::string_view version)
 	{
-		if (size != kRuntimeSize) { return RuntimeBuild::Unknown; }
-		if (hash == kLegacyRuntimeSha256) { return RuntimeBuild::Legacy; }
-		if (allowReconstruction && hash == kBuild14RuntimeSha256) { return RuntimeBuild::Build14; }
-		if (allowReconstruction && hash == kNexusRuntimeSha256) { return RuntimeBuild::Nexus3108; }
+		unsigned major = 0;
+		bool digits = false;
+		for (const char c : version) {
+			if (c < '0' || c > '9') { break; }
+			digits = true;
+			major = major * 10 + static_cast<unsigned>(c - '0');
+			if (major > 100000) { return 0; }
+		}
+		return digits ? major : 0;
+	}
+	// Known builds by exact identity; any other runtime by its file version.
+	inline RuntimeBuild MatchRuntime(std::uint64_t size, std::string_view hash, std::string_view version, bool allowReconstruction)
+	{
+		if (size == kRuntimeSize) {
+			if (hash == kLegacyRuntimeSha256) { return RuntimeBuild::Legacy; }
+			if (allowReconstruction && hash == kBuild14RuntimeSha256) { return RuntimeBuild::Build14; }
+			if (allowReconstruction && hash == kNexusRuntimeSha256) { return RuntimeBuild::Nexus3108; }
+		}
+		if (allowReconstruction && MajorVersion(version) >= kMinimumContractVersion) { return RuntimeBuild::Version310; }
 		return RuntimeBuild::Unknown;
 	}
 	inline const char* RuntimeName(RuntimeBuild build)
 	{
 		if (build == RuntimeBuild::Nexus3108) { return "Nexus 310.8"; }
+		if (build == RuntimeBuild::Version310) { return "310.x"; }
 		return build == RuntimeBuild::Build14 ? "Build14" : build == RuntimeBuild::Legacy ? "legacy" : "unknown";
 	}
 
