@@ -77,8 +77,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 	}
 
-	// Dark: no finite colour channel above 0.001 (zero, tiny, negative, NaN or
-	// infinite all count). Lit: the brightest channel exceeds 2% of white.
+	// Dark: every colour channel is zero, NaN or infinite. Lit: the brightest
+	// channel exceeds 2% of white.
 	inline PatchStats ClassifyPatch(DXGI_FORMAT format, const std::uint8_t* data, std::uint32_t width, std::uint32_t height,
 		std::uint32_t rowPitch)
 	{
@@ -90,12 +90,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 			for (std::uint32_t x = 0; x < width; ++x) {
 				float rgb[3];
 				NeuralGuardDetail::Rgb(format, data + y * rowPitch + x * bytes, rgb);
+				bool dark = true;
 				float brightest = 0;
 				for (const float value : rgb) {
+					if (std::isfinite(value) && value != 0) { dark = false; }
 					if (std::isfinite(value)) { brightest = (std::max)(brightest, value); }
 				}
 				++stats.texels;
-				stats.dark += brightest <= 0.001f;
+				stats.dark += dark;
 				stats.lit += brightest > 0.02f;
 			}
 		}
@@ -129,24 +131,16 @@ namespace TheosRenderPipeline::SourceDLSSG
 		static constexpr std::uint32_t kBox = 16;
 		static constexpr std::uint64_t kInterval = 15;
 
-		// Why the last due sample was not recorded, or nullptr.
-		const char* Skipped() const { return skipped_; }
-		DXGI_FORMAT InputFormat() const { return patches_[0].format; }
-		DXGI_FORMAT OutputFormat() const { return patches_[1].format; }
-
 		bool Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, ID3D12Resource* input, ID3D12Resource* output)
 		{
-			if (recorded_ || submitted_ || ++frames_ % kInterval) { return false; }
-			skipped_ = nullptr;
-			if (!device || !list || !input || !output) { skipped_ = "missing resource"; return false; }
-			if (!fence_ && FAILED(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)))) { skipped_ = "fence"; return false; }
+			if (recorded_ || submitted_ || ++frames_ % kInterval || !device || !list || !input || !output) { return false; }
+			if (!fence_ && FAILED(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)))) { return false; }
 			for (int i = 0; i < 2; ++i) {
 				auto& patch = patches_[i];
 				auto* resource = i ? output : input;
 				const auto desc = resource->GetDesc();
 				if (desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D || desc.SampleDesc.Count != 1 ||
-					desc.Width < kBox || desc.Height < kBox) { skipped_ = "unsupported resource shape"; return false; }
-				if (!NeuralGuardDetail::Bytes(desc.Format)) { patch.format = desc.Format; skipped_ = "unsupported format"; return false; }
+					!NeuralGuardDetail::Bytes(desc.Format) || desc.Width < kBox || desc.Height < kBox) { return false; }
 				if (!patch.buffer || patch.format != desc.Format) {
 					auto box = desc; box.Width = kBox; box.Height = kBox; box.MipLevels = 1; box.DepthOrArraySize = 1;
 					box.Flags = D3D12_RESOURCE_FLAG_NONE;
@@ -158,7 +152,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 					buffer.SampleDesc.Count = 1; buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 					patch.buffer.Reset();
 					if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &buffer,
-						D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&patch.buffer)))) { skipped_ = "readback allocation"; return false; }
+						D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&patch.buffer)))) { return false; }
 					patch.format = desc.Format;
 				}
 				patch.left = static_cast<UINT>((desc.Width - kBox) / 2);
@@ -225,6 +219,5 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
 		std::uint64_t value_{}, frames_{};
 		bool recorded_{}, submitted_{};
-		const char* skipped_{};
 	};
 }
