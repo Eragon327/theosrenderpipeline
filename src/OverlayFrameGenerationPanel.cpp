@@ -4,6 +4,7 @@
 
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceDLSSGBackend.h"
+#include "FrameGen/DlssgLiteBlending.h"
 #include "FrameGen/FGInputDebugView.h"
 #include "FrameGen/FGMotionRepair.h"
 #include "FrameGen/SourceFrameGeneration.h"
@@ -291,9 +292,44 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                                        "your requested preference is retained.");
                 }
             }
-            ImGui::Checkbox("UI recomposition##sourceDLSSG", &settingsDraft.sourceDLSSG.uiRecomposition);
-            DrawSettingsHelp("Generates the scene and HUD separately to reduce HUD ghosting in motion. "
-                             "Small GPU and VRAM cost. Apply to compare live.");
+            {
+                namespace SD = TheosRenderPipeline::SourceDLSSG;
+                auto& preset = settingsDraft.sourceDLSSG.preset;
+                if (editIntel)
+                {
+                    // XeFG reads only the UI choice; off is Preset A, on is Preset B.
+                    bool recompose = SD::UsesUIRecomposition(preset);
+                    if (ImGui::Checkbox("UI recomposition##sourceDLSSG", &recompose))
+                        preset = recompose ? SD::DlssgPreset::B : SD::DlssgPreset::A;
+                    DrawSettingsHelp("Generates the scene and HUD separately to reduce HUD ghosting in motion. "
+                                     "Small GPU and VRAM cost. Apply to compare live.");
+                }
+                else
+                {
+                    ImGui::TextUnformatted("Frame generation preset");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    if (ImGui::BeginCombo("##sourcePreset", SD::PresetLabel(preset)))
+                    {
+                        for (const auto option : { SD::DlssgPreset::A, SD::DlssgPreset::B, SD::DlssgPreset::C })
+                            if (ImGui::Selectable(SD::PresetLabel(option), preset == option))
+                                preset = option;
+                        ImGui::EndCombo();
+                    }
+                    DrawSettingsHelp("NVIDIA's Frame Generation presets. A interpolates the HUD with the scene. "
+                                     "B generates the scene and HUD separately for less HUD ghosting in motion, at a small "
+                                     "GPU and VRAM cost. C uses NVIDIA's lighter Lite blending (DLSS-G 310.9.16 or newer) "
+                                     "without UI recomposition. Apply to compare live.");
+                    const auto lite = SD::LiteBlending::State();
+                    if (SD::UsesLiteBlending(preset) &&
+                        (lite.hook != SD::LiteBlending::HookState::Installed || !lite.runtimeSupports))
+                        ImGui::TextColored(kOchre, lite.hook == SD::LiteBlending::HookState::NotInstalled
+                                                       ? "Preset C is checked when DLSS-G loads"
+                                                       : "This DLSS-G build has no Preset C; it runs as Preset A");
+                    if (lite.driverPreset)
+                        ImGui::TextColored(kOchre, "NVIDIA driver profile sets Preset %s; DLSS-G uses it instead",
+                                           SD::DriverPresetName(lite.driverPreset).c_str());
+                }
+            }
             if (!intel && frameGenerationRuntimeActive && sourceState.uiRecompositionRequested)
             {
                 if (sourceState.options.enableUserInterfaceRecomposition == sl::eTrue)

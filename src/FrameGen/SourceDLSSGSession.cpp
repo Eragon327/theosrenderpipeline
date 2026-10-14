@@ -308,6 +308,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		snapshot_.options.flags = enable && snapshot_.onlyGeneratedRequested ?
 			sl::DLSSGFlags::eRetainResourcesWhenOff | sl::DLSSGFlags::eShowOnlyInterpolatedFrame : sl::DLSSGFlags::eRetainResourcesWhenOff;
+		if (releaseRequested_) {
+			releaseRequested_ = false;
+			snapshot_.options.mode = sl::DLSSGMode::eOff;
+			snapshot_.options.flags = sl::DLSSGFlags{};
+			++snapshot_.featureReleases;
+		}
 		if (!SubmitOptions("DLSS-G options") ||
 			!Mark(sl::PCLMarker::ePresentStart, "PresentStart")) { return false; }
 		snapshot_.stage = SessionStage::PresentPending;

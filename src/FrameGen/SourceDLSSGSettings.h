@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <string_view>
+
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralRenderingReconstruction.h"
 #include "NeuralCombatPolicy.h"
@@ -7,24 +10,31 @@
 #include "HDROutput.h"
 #include "FrameGenerationProvider.h"
 #include "XeFGOptions.h"
+#include "DlssgPreset.h"
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
-	// Live runtime preferences. Presenter changes commit after Present; DLL paths
-	// remain startup-owned and the NVIDIA test host still supplies DLSS and NR.
+	// The NR runtime DLL, relative to Data/SKSE/Plugins unless absolute. Users
+	// pick any nvngx_dlssnr*.dll in the NVIDIA folder; the version decides how it is driven.
+	inline constexpr std::string_view kDefaultNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr.dll";
+
+	// Live runtime preferences. Presenter changes commit after Present. The NR
+	// runtime file is chosen here; the Streamline directory remains startup-owned.
 	struct Preferences
 	{
 		FrameGenerationProvider provider{FrameGenerationProvider::NVIDIA};
 		XeFGOptions xefg{};
 		int reflexMode{ 1 };
 		int outputFPSLimit{ 0 };
-		// Interpolate the HUD-less scene and UI layer separately. Live toggle.
-		bool uiRecomposition{ true };
+		// NVIDIA's Frame Generation preset: B recomposes the UI (also XeFG's
+		// UI layer), C uses DLSS-G 310.9.16+ Lite blending. Live; recreates DLSS-G.
+		DlssgPreset preset{ DlssgPreset::B };
 		// Give Intel XeFG the measured application frame time; on non-Intel GPUs
 		// its software pacing uses this as a sanity check. Live toggle.
 		bool xefgFrameTime{ true };
 		GenerationRequest generation{};
 		bool neuralEnabled{ false };
+		std::string neuralRuntime{ kDefaultNeuralRuntime };
 		bool neuralBeforeUpscaling{ true };
 		int neuralPasses{ 1 };
 		NeuralRendering::CombatSettings neuralCombat{};
@@ -44,7 +54,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (value.reflexMode < 0 || value.reflexMode > 2) { value.reflexMode = 1; }
 		value.outputFPSLimit = std::clamp(value.outputFPSLimit, 0, 1000);
 		value.generation = SanitizeGenerationRequest(value.generation);
+		if (!ValidPreset(static_cast<int>(value.preset))) { value.preset = DlssgPreset::B; }
 		value.neuralTuning = NeuralRendering::SanitizeBuild14Tuning(value.neuralTuning);
+		if (value.neuralRuntime.empty()) { value.neuralRuntime = kDefaultNeuralRuntime; }
 		value.neuralPasses = std::clamp(value.neuralPasses, 1, 2);
 		value.neuralCombat = NeuralRendering::SanitizeCombatSettings(value.neuralCombat);
 		value.neuralReconstruction = NeuralRendering::SanitizeReconstruction(value.neuralReconstruction);
@@ -70,8 +82,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.generation.generatedFrames = static_cast<std::uint32_t>(ini.GetLongValue(section, "GeneratedFrames", 1));
 		value.generation.dynamic = ini.GetBoolValue(section, "DynamicMFG", false);
 		value.generation.dynamicTargetFPS = static_cast<std::uint32_t>(ini.GetLongValue(section, "DynamicTargetFPS", 0));
-		value.uiRecomposition = ini.GetBoolValue(section, "UIRecomposition", true);
+		// Earlier INIs saved only UIRecomposition: on is Preset B, off is A.
+		value.preset = static_cast<DlssgPreset>(ini.GetLongValue(section, "FrameGenerationPreset",
+			ini.GetBoolValue(section, "UIRecomposition", true) ? 2 : 1));
 		value.neuralEnabled = ini.GetBoolValue(section, "NeuralRenderingEnabled", false);
+		value.neuralRuntime = ini.GetValue("Experimental", "NeuralRenderingRuntimePath", std::string(kDefaultNeuralRuntime).c_str());
 		value.neuralBeforeUpscaling = ini.GetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		value.neuralPasses = static_cast<int>(ini.GetLongValue(section, "NRPasses", 1));
 		value.neuralCombat.inCombat = ini.GetBoolValue(section, "NROnePassInCombat", false);
@@ -105,8 +120,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ini.SetLongValue(section, "GeneratedFrames", value.generation.generatedFrames);
 		ini.SetBoolValue(section, "DynamicMFG", value.generation.dynamic);
 		ini.SetLongValue(section, "DynamicTargetFPS", value.generation.dynamicTargetFPS);
-		ini.SetBoolValue(section, "UIRecomposition", value.uiRecomposition);
+		ini.SetLongValue(section, "FrameGenerationPreset", static_cast<long>(value.preset));
+		// Kept so an older TRP reading this INI still gets the UI choice.
+		ini.SetBoolValue(section, "UIRecomposition", UsesUIRecomposition(value.preset));
 		ini.SetBoolValue(section, "NeuralRenderingEnabled", value.neuralEnabled);
+		ini.SetValue("Experimental", "NeuralRenderingRuntimePath", value.neuralRuntime.c_str());
 		ini.SetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		ini.SetLongValue(section, "NRPasses", value.neuralPasses);
 		ini.SetBoolValue(section, "NROnePassInCombat", value.neuralCombat.inCombat);

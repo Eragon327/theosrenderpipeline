@@ -1,9 +1,13 @@
 #include "ReShadeIntegration.h"
 #include "SourceDLSSGBackend.h"
+#include "XeFGLayerSelection.h"
 #include <PCH.h>
 #include "CommunityShaderIntegration.h"
 #include "SourceDLSSGSwapChain.h"
 #include "SourceRuntimeModuleDiagnostic.h"
+#include "DlssgOverride.h"
+#include "DlssgLiteBlending.h"
+#include "StreamlineRuntimeFolder.h"
 #include "../PluginPaths.h"
 #include "../ScreenshotFile.h"
 #include "../RenderPipeline.h"
@@ -24,6 +28,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 		};
 	}
 	using Microsoft::WRL::ComPtr;
+	void Backend::ConfigurePreset(DlssgPreset a_preset)
+	{
+		const auto old = preset_.exchange(a_preset, std::memory_order_relaxed);
+		LiteBlending::Configure(UsesLiteBlending(a_preset));
+		if (old != a_preset && UsesUIRecomposition(old) == UsesUIRecomposition(a_preset)) {
+			releaseForPreset_.store(true, std::memory_order_relaxed);
+		}
+	}
 	Backend& Backend::Get()
 	{
 		// Streamline owns background work and DXGI proxies. Keep its module and
@@ -103,6 +115,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 			return Check(E_UNEXPECTED, "another frame-generation mod is already loaded; disable the competing mod");
 		}
 		directory_ = Normalize(a_directory);
+		mfgUnlock_.SelectAdapter(device12_.Get());
+		if (mfgUnlock_.Snapshot().UsesProviderBackport()) {
+			const auto backport = BackportStreamlineDirectory(directory_);
+			std::error_code error;
+			if (std::filesystem::is_regular_file(backport / L"nvngx_dlssg.dll", error) &&
+				std::filesystem::is_regular_file(backport / L"sl.interposer.dll", error)) {
+				logger::info("[SourceDLSSG] RTX 20/30 backport uses the DLSS-G set it was built for: {}", backport.string());
+				directory_ = backport;
+			} else {
+				logger::warn("[SourceDLSSG] RTX 20/30 backport folder {} is missing; using {}", backport.string(), directory_.string());
+			}
+		}
 		logger::info("[SourceDLSSG] startup stage=module-ownership directory={} communityShaders={}", directory_.string(), CommunityShaders::Active());
 		// Keep one owner for the configured modules. Versions do not gate loading.
 		for (const auto* name : kStreamlineModules) {
@@ -181,6 +205,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		for (std::size_t index = 0; index < kStreamlineModules.size(); ++index) {
 			const auto* name = kStreamlineModules[index];
 			runtimeModules_[index] = TheosRenderPipeline::PluginPaths::RetainLoadedModule(directory_ / name);
+			if (!runtimeModules_[index] && std::wstring_view(name) == L"nvngx_dlssg.dll" &&
+				(runtimeModules_[index] = RetainNvidiaOverrideDlssg())) {
+				// NVIDIA app's Frame Generation override supplied its own DLSS-G build.
+				logger::warn("[SourceDLSSG] NVIDIA app frame generation override: DLSS-G loaded from {} instead of {}",
+					PluginPaths::ModulePath(runtimeModules_[index]).string(), (directory_ / name).string());
+				continue;
+			}
 			if (!runtimeModules_[index]) {
 				const auto configured = directory_ / name;
 				const auto attributes = GetFileAttributesW(configured.c_str());
@@ -194,6 +225,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 			logger::info("[SourceDLSSG] loaded {}", (directory_ / name).string());
 		}
+		// Before slDLSSGSetOptions creates the feature; harmless on builds without Lite blending.
+		LiteBlending::Install(runtimeModules_[0]);
 		auto resolve = [&](sl::Feature feature, const char* name, auto& function) {
 			void* address = nullptr;
 			if (!Check(featureFunction_(feature, name, address), name) || !address) { return Check(E_NOINTERFACE, name); }
@@ -559,6 +592,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		session_.RequestGeneration(GenerationConfiguration());
 		session_.RequestReflexMode(ReflexConfiguration());
 		session_.RequestUIRecomposition(UIRecompositionConfiguration());
+		if (releaseForPreset_.exchange(false, std::memory_order_relaxed) && provider_ == FrameGenerationProvider::NVIDIA) {
+			session_.RequestFeatureRelease();
+			logger::info("[SourceDLSSG] frame generation preset {}: releasing DLSS-G for one Present to recreate it",
+				PresetLabel(PresetConfiguration()));
+		}
 		session_.RequestOnlyGenerated(XeFGOnlyGenerated());
 		session_.RequestOutputFPSLimit(outputFPSLimit_.load(std::memory_order_relaxed));
 		const bool prepared = provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().prepared :
@@ -633,12 +671,15 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		const bool generationAllowed = enabled_ && !transitionBlocked && transitionWarmup == 0 && xefgSettled;
 		if (provider_ == FrameGenerationProvider::XeFG) {
-			const bool hdrLayers = hdrNative_ && hdrDisplay_ && hdrOutputPass_;
-			auto* intelHudless = hdrLayers ? hdrOutputPass_->HudlessTarget() : hudless_.texture12.Get();
-			// The same premultiplied UI layer DLSS-G recomposes. HDR output wrote
-			// its HDR10 copy only when both layers were composed this frame.
-			auto* intelUI = hdrLayers ? (hdrLayersComposed ? hdrOutputPass_->UITarget() : nullptr) :
-				(uiSource_ ? ui_.texture12.Get() : nullptr);
+			// The same premultiplied UI layer DLSS-G recomposes. The HDR targets are
+			// current only when HDR output composed this prepared frame; otherwise
+			// XeFG holds generation rather than interpolate an older world image.
+			const auto layers = SelectXeFGLayers(HDRSignalled(), hdrOutputPass_ != nullptr, prepared && hdrLayersComposed, uiSource_ != nullptr);
+			auto pick = [&](XeFGLayer layer, ID3D12Resource* hdr, ID3D12Resource* standard) {
+				return layer == XeFGLayer::HDR ? hdr : layer == XeFGLayer::Standard ? standard : nullptr;
+			};
+			auto* intelHudless = pick(layers.hudless, hdrOutputPass_ ? hdrOutputPass_->HudlessTarget() : nullptr, hudless_.texture12.Get());
+			auto* intelUI = pick(layers.ui, hdrOutputPass_ ? hdrOutputPass_->UITarget() : nullptr, ui_.texture12.Get());
 			// No FP16/scRGB reinterpretation. XeFG copies matching native-format layers.
 			const auto destination = a_destination->GetDesc();
 			const bool compatible = intelHudless && intelHudless->GetDesc().Format == destination.Format;

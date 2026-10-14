@@ -45,14 +45,20 @@ void Generation()
     }
     Require(!ValidGenerationRequest({0,0,false}) && !ValidGenerationRequest({6,0,false}), "bad multipliers remain invalid");
     {
+        using TheosRenderPipeline::SourceDLSSG::DlssgPreset;
         CSimpleIniA ini;
-        Require(LoadPreferences(ini).uiRecomposition, "existing INIs without the key get UI recomposition on");
-        Preferences preferences; preferences.uiRecomposition = false;
+        Require(LoadPreferences(ini).preset == DlssgPreset::B, "new INIs default to Preset B, the old UI recomposition default");
+        ini.SetBoolValue("SourceDLSSG", "UIRecomposition", false);
+        Require(LoadPreferences(ini).preset == DlssgPreset::A, "a saved UI recomposition opt-out becomes Preset A");
+        Preferences preferences; preferences.preset = DlssgPreset::C;
         StorePreferences(ini, preferences);
-        Require(!LoadPreferences(ini).uiRecomposition, "a saved opt-out round trips");
+        Require(LoadPreferences(ini).preset == DlssgPreset::C, "Preset C round trips");
+        Require(!ini.GetBoolValue("SourceDLSSG", "UIRecomposition", true), "older readers see Preset C as no UI recomposition");
+        ini.SetLongValue("SourceDLSSG", "FrameGenerationPreset", 9);
+        Require(LoadPreferences(ini).preset == DlssgPreset::B, "an invalid preset recovers to B");
         RendererSettingsDraft current; current.valid = true;
-        auto draft = current; draft.sourceDLSSG.uiRecomposition = false;
-        Require(CountRendererSettingsChanges(draft, current) == 1, "UI recomposition participates in Apply/Discard");
+        auto draft = current; draft.sourceDLSSG.preset = DlssgPreset::C;
+        Require(CountRendererSettingsChanges(draft, current) == 1, "the preset participates in Apply/Discard");
     }
     {
         CSimpleIniA ini;

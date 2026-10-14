@@ -128,14 +128,20 @@ namespace TheosRenderPipeline::NeuralRendering
 
 		~State()
 		{
+			bool released = true;
 			if (feature && releaseFeature) {
-				releaseFeature(feature);
+				const auto result = releaseFeature(feature);
+				released = NVSDK_NGX_SUCCEED(result);
+				if (!released) { logger::error("[DLSSNR Source] ReleaseFeature failed (0x{:08X}); keeping the runtime module loaded", static_cast<std::uint32_t>(result)); }
 			}
 			if (parameters && destroyParameters) {
-				destroyParameters(parameters);
+				const auto result = destroyParameters(parameters);
+				if (NVSDK_NGX_FAILED(result)) { logger::warn("[DLSSNR Source] DestroyParameters failed (0x{:08X})", static_cast<std::uint32_t>(result)); }
 			}
 			modulePathHook.reset();
-			if (module && ownsModule) {
+			// Unloading the runtime while a feature it failed to release may still
+			// run would leave its code unmapped; keep it for the process lifetime.
+			if (module && ownsModule && released) {
 				::FreeLibrary(module);
 			}
 		}
@@ -182,17 +188,17 @@ namespace TheosRenderPipeline::NeuralRendering
 
 		const auto identity = VerifySource(a_info.runtimePath, a_info.allowReconstructionRuntime);
 		if (!identity.matched) {
-			state.status = "source session runtime identity does not match the pinned build";
+			state.status = "NR runtime is not a supported build (file version 310 or later, or a known runtime)";
 			return false;
 		}
-		state.contract = MakeFeatureContract(MatchRuntime(identity.size, identity.sha256, a_info.allowReconstructionRuntime),
+		state.contract = MakeFeatureContract(MatchRuntime(identity.size, identity.sha256, identity.version, a_info.allowReconstructionRuntime),
 			a_info.displayWidth, a_info.displayHeight, a_info.renderWidth, a_info.renderHeight, a_info.networkPreset);
 		if (!state.contract.Valid()) {
 			state.status = "source session feature contract is invalid";
 			return false;
 		}
-		logger::info("[DLSSNR Source] pinned runtime build={} sha256={} path={}",
-			RuntimeName(state.contract.build), identity.sha256, identity.path.string());
+		logger::info("[DLSSNR Source] runtime build={} version={} size={} sha256={} path={}",
+			RuntimeName(state.contract.build), identity.version, identity.size, identity.sha256, identity.path.string());
 		if (const auto existing = ::GetModuleHandleW(L"nvngx_dlssnr.dll")) {
 			if (!EqualPath(ModulePath(existing), identity.path)) {
 				state.status = "a different nvngx_dlssnr.dll is already resident";

@@ -71,6 +71,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::uint64_t evaluations{}, resets{};
 		NeuralTelemetrySnapshot telemetry{};
 		std::string status{ "standard DLSS; source NR is off" };
+		// Set when a runtime known not to work on this GPU was replaced; kept for the session.
+		std::string fallback;
 	};
 
 	inline bool SameHistoryOptions(NeuralOptions current, const NeuralOptions& previous)

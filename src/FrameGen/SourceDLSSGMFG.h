@@ -3,10 +3,12 @@
 #include "../../extern/dlssg-turing/extern/RTX40MFG/midpoint_fix.h"
 #include <Windows.h>
 #include <filesystem>
+#include <string>
 
 struct ID3D12Device;
 namespace TheosRenderPipeline::SourceDLSSG
 {
+
 	enum class MFGRoute { Unselected, Native, AdaUnlock, AmpereUnlock, TuringUnlock };
 	struct MFGSnapshot
 	{
@@ -40,6 +42,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 	public:
 		void Configure(bool requested);
+		// Chooses the route before the Streamline folder is fixed: the RTX 20/30
+		// backport needs its own DLSS-G build. BeforeStreamline then prepares it.
+		void SelectAdapter(ID3D12Device* device);
 		void BeforeStreamline(ID3D12Device* device, const std::filesystem::path& directory);
 		void EnterStartupScope() noexcept;
 		void LeaveStartupScope() noexcept;
@@ -53,8 +58,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 		void BindWrapper(const void* setOptions);
 		void Tick();
 		const MFGSnapshot& Snapshot() const { return state_; }
+		bool NvidiaOverride() const { return nvidiaOverride_; }
 	private:
 		[[noreturn]] void Fail(const char* reason);
+		// Ada only, while no patch is in an uncertain state: MFG stays off for the
+		// session and DLSS-G continues at x2. Anything else is fatal, as before.
+		void StandDown(const char* reason);
+		std::string standDownStatus_;
+		bool nvidiaOverride_{};
 		MFGSnapshot state_;
 		bool started_{};
 		HMODULE wrapper_{}, provider_{};

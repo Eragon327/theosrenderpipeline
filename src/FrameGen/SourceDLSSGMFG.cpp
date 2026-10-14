@@ -3,12 +3,14 @@
 #include "../PluginPaths.h"
 #include "CommunityShaderIntegration.h"
 #include "../StartupHints.h"
+#include "DlssgOverride.h"
 #include "../../extern/dlssg-turing/src/SourceDLSSGMFGPatch.h"
 #include "../../extern/dlssg-turing/extern/RTX40MFG/midpoint_fix.h"
 #include "../../extern/dlssg-turing/extern/RTX40MFG/dlssg_provider_policy.h"
 #include "../../extern/dlssg-turing/src/runtime.hpp"
 #include <d3d12.h>
 #include <cstring>
+#include <format>
 #include <spdlog/spdlog.h>
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -42,9 +44,19 @@ namespace TheosRenderPipeline::SourceDLSSG
 			"{}\n\n{}{}{}"
 			"See TheosRenderPipeline.log for details. Skyrim will close after this message.", reason, guidance, hint, hint.empty() ? "" : "\n"));
 	}
+	void MFGUnlock::StandDown(const char* reason)
+	{
+		if (!state_.UsesAdaUnlock() || state_.unsafeMemory) { Fail(reason); }
+		state_.failed = true;
+		standDownStatus_ = std::format("MFG unavailable this session: {}. x2 frame generation continues.{}", reason,
+			nvidiaOverride_ ? " NVIDIA app is overriding DLSS Frame Generation for Skyrim; set its Frame Generation overrides to "
+				"Use the 3D application setting to restore MFG." : "");
+		state_.status = standDownStatus_.c_str();
+		spdlog::warn("[SourceDLSSG MFG] {}", standDownStatus_);
+	}
 	void MFGUnlock::EnterStartupScope() noexcept { trp::ampere::EnterStartupScope(); }
 	void MFGUnlock::LeaveStartupScope() noexcept { trp::ampere::LeaveStartupScope(); }
-	void MFGUnlock::BeforeStreamline(ID3D12Device* device, const std::filesystem::path& directory)
+	void MFGUnlock::SelectAdapter(ID3D12Device* device)
 	{
 		if (state_.route != MFGRoute::Unselected) { Fail("MFG startup adapter selection was repeated"); }
 		state_.status = "selecting NVIDIA MFG path";
@@ -65,6 +77,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 				"Set it to true in the winning MO2 INI (including Overwrite) and restart. "
 				"Turning frame generation off does not remove the required NVIDIA host.");
 		}
+	}
+	void MFGUnlock::BeforeStreamline(ID3D12Device* device, const std::filesystem::path& directory)
+	{
+		if (state_.route == MFGRoute::Unselected) { Fail("MFG adapter was not selected before Streamline loading"); }
 		if (state_.UsesProviderBackport()) {
 			spdlog::info("[SourceDLSSG Ampere] separate runtime bundles permitted={}", CommunityShaders::Active());
             if (!trp::ampere::Start(device, directory, [](const char* message) { spdlog::info("[SourceDLSSG Ampere] {}", message); }, CommunityShaders::Active(),
@@ -105,21 +121,29 @@ namespace TheosRenderPipeline::SourceDLSSG
 		wrapper_ = RetainConfiguredModule(directory, L"sl.dlss_g.dll");
 		provider_ = RetainConfiguredModule(directory, L"nvngx_dlssg.dll");
 		providerPath_ = directory / L"nvngx_dlssg.dll";
+		if (!provider_ && (provider_ = RetainNvidiaOverrideDlssg())) {
+			// NVIDIA app's override replaced TRP's DLSS-G; try the unlock on that build.
+			nvidiaOverride_ = true;
+			providerPath_ = PluginPaths::ModulePath(provider_);
+			spdlog::warn("[SourceDLSSG MFG] NVIDIA app frame generation override active: DLSS-G loaded from {}", providerPath_.string());
+		}
 		if (!wrapper_ || !provider_ || !GetProcAddress(wrapper_, "slGetPluginFunction") ||
 			!dlssg_provider_policy::IsDlssgImplementationModule(provider_) ||
 			!GetProcAddress(provider_, "NVSDK_NGX_GetGPUArchitecture") ||
-			!GetProcAddress(provider_, "NVSDK_NGX_D3D12_CreateFeature")) { Fail("configured DLSS-G module or required export missing; no patches applied"); return; }
+			!GetProcAddress(provider_, "NVSDK_NGX_D3D12_CreateFeature")) { StandDown("the DLSS-G module or a required export is missing; no patches applied"); return; }
 		auto wrapper = MFGPatch::FindExecutable(wrapper_, MFGContract::wrapperPattern.size(), MFGContract::MatchesWrapper);
 		auto provider = MFGPatch::FindExecutable(provider_, MFGContract::providerPattern.size(), MFGContract::MatchesProvider);
-		if (!wrapper || !provider || !MFGPatch::ProviderBranchMatches(provider_, provider)) { Fail("capability patch targets are missing, ambiguous or have an unsupported branch layout; no patches applied"); return; }
+		if (!wrapper || !provider || !MFGPatch::ProviderBranchMatches(provider_, provider)) {
+			StandDown("this DLSS-G build's capability patch targets are missing, ambiguous or have an unsupported layout; no patches applied"); return;
+		}
 		constexpr std::array<std::uint8_t, 3> nops3{ 0x90, 0x90, 0x90 };
 		const auto wrapperOriginal = std::span(MFGContract::wrapperPattern).subspan(7, 3);
 		state_.wrapperPatched = MFGPatch::WriteCode(wrapper + 7, wrapperOriginal, nops3, state_.unsafeMemory);
-		if (!state_.wrapperPatched) { Fail("wrapper patch failed"); return; }
+		if (!state_.wrapperPatched) { StandDown("wrapper patch failed"); return; }
 		state_.providerPatched = MFGPatch::WriteCode(provider + 2, MFGContract::providerOriginal, MFGContract::providerReplacement, state_.unsafeMemory);
 		if (!state_.providerPatched) {
 			MFGPatch::WriteCode(wrapper + 7, nops3, wrapperOriginal, state_.unsafeMemory);
-			state_.wrapperPatched = false; Fail("provider patch failed; MFG held off"); return;
+			state_.wrapperPatched = false; StandDown("provider patch failed; wrapper patch reverted"); return;
 		}
 		spdlog::info("[SourceDLSSG MFG] capability patches wrapperRVA=0x{:X} providerRVA=0x{:X}; host ceiling=x6 after full readiness",
 			wrapper + 7 - reinterpret_cast<std::uint8_t*>(wrapper_), provider + 2 - reinterpret_cast<std::uint8_t*>(provider_));
@@ -130,7 +154,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (!state_.UsesCompatibilityUnlock() || state_.failed) { return; }
 		MEMORY_BASIC_INFORMATION memory{};
 		state_.wrapperBound = setOptions && VirtualQuery(setOptions, &memory, sizeof(memory)) == sizeof(memory) && memory.AllocationBase == wrapper_;
-		if (!state_.wrapperBound) { Fail("slDLSSGSetOptions does not belong to patched wrapper"); return; }
+		if (!state_.wrapperBound) {
+			if (state_.UsesAdaUnlock()) { StandDown("slDLSSGSetOptions does not belong to the patched wrapper"); return; }
+			Fail("slDLSSGSetOptions does not belong to patched wrapper");
+		}
 		Tick();
 	}
 	void MFGUnlock::Tick()
@@ -165,7 +192,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			state_.status = "temporal patch ready; x2 through x6 and runtime-reported dynamic mode gated by wrapper binding";
 			spdlog::info("[SourceDLSSG MFG] temporalReady=true wrapperBound={} attempts={}", state_.wrapperBound, state_.attempts);
 		} else if (state_.temporalFailure != 12 || state_.attempts >= 8) {
-			Fail("Ada temporal program is unsupported or could not be prepared; see temporal error code");
+			StandDown("the Ada temporal program is unsupported or could not be prepared (see temporal error code)");
 		} else { state_.status = "waiting for temporal descriptor; x2 fixed only"; }
 	}
 }

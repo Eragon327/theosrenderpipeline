@@ -229,6 +229,20 @@ int main()
         Require(r.optionsCalls == calls + 1 && r.submitted.enableUserInterfaceRecomposition == sl::eFalse,
             "live disable is submitted on the next generated frame");
     }
+    // A preset change that keeps UI recomposition releases DLSS-G for exactly one Present.
+    {
+        Runtime r; Session s; Require(s.Start(API(r), 7), "release scenario starts");
+        auto retain = [&]() -> bool { return r.submitted.flags & sl::DLSSGFlags::eRetainResourcesWhenOff; };
+        Frame(s, 2, true, true);
+        Require(r.submitted.mode == sl::DLSSGMode::eOn && retain(), "generation starts with resources retained");
+        s.RequestFeatureRelease();
+        Frame(s, 2, true, true);
+        Require(r.submitted.mode == sl::DLSSGMode::eOff && !retain() && s.Snapshot().featureReleases == 1,
+            "the release Present turns generation off without retaining resources");
+        Frame(s, 2, true, true);
+        Require(r.submitted.mode == sl::DLSSGMode::eOn && retain() && s.Snapshot().featureReleases == 1,
+            "the next Present generates again and retains resources");
+    }
     // Lab "only generated frames" is a flag change, submitted live and only while generating.
     {
         Runtime r; Session s; Require(s.Start(API(r), 7), "debug view scenario starts");

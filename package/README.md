@@ -1,4 +1,8 @@
-# Theo's Render Pipeline — Universal, 0.4.2
+# Theo's Render Pipeline — Universal, 0.4.3
+
+Version 0.4.3 adds a frame generation preset dropdown (NVIDIA Presets A, B and
+C), bundles DLSS Frame Generation 310.9.16 for Preset C, adds an NR runtime
+selector, and fixes flickering in dialogue with NR on. See CHANGELOG.md.
 
 Version 0.4.2 fixes an offset copy and ghosting in generated frames while the
 camera is underwater, most visible in first person near lights. It applies to
@@ -62,7 +66,7 @@ This package includes the full renderer, configuration and sharpening shader.
 It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
-0.4.2 supplies the runtime bundle (0.2.5 retains the same NVIDIA DLLs). The NR-enabled
+0.4.3 supplies the runtime bundle (0.2.5 retains the same NVIDIA DLLs). The NR-enabled
 Standard download supplies all eight runtimes, including NR. In that setup,
 skip the runtime downloads below.
 
@@ -108,6 +112,9 @@ DLSS/frame generation available. Install the DLL and restart to use NR.
 
 These downloads are the tested set: SR/FG 310.9.1, Streamline 2.14.1 and NR 310.8.
 Newer runtimes use the same filenames and folders; compatibility may vary.
+Preset C needs DLSS-G 310.9.16 or newer, which Standard 0.4.3 bundles; with
+the SDK's 310.9.1 the menu reports that Preset C is unavailable. RTX 20/30
+cards need 310.9.1 for frame generation.
 
 ## Controls
 
@@ -225,7 +232,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.2 package still needs its final game test.
+development builds; the exact 0.4.3 package still needs its final game test.
 
 Keep your existing ReShade installation, preset and hotkeys. **Disable SSE
 ReShade Helper.** TRP supplies the effects and overlay stages. Effects run after

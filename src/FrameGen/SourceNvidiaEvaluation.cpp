@@ -13,6 +13,33 @@
 #include "NeuralCombatMode.h"
 #include "WeatherAppearanceRuntime.h"
 
+namespace
+{
+    // Motion and depth are captured by format and size as the game creates them,
+    // and a later matching texture replaces the capture. Another mod creating one
+    // would silently become DLSS and frame generation's motion or depth. Compare
+    // with the engine's declared targets and report each new disagreement once.
+    void ReportGuideCapture(ID3D11Texture2D* motion, ID3D11Texture2D* depth)
+    {
+        auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
+        if (!renderer) { return; }
+        auto* declaredMotion = reinterpret_cast<ID3D11Texture2D*>(renderer->GetRuntimeData().renderTargets[RE::RENDER_TARGETS::kMOTION_VECTOR].texture);
+        auto* declaredDepth = reinterpret_cast<ID3D11Texture2D*>(renderer->GetDepthStencilData().depthStencils[RE::RENDER_TARGETS_DEPTHSTENCIL::kMAIN].texture);
+        static ID3D11Texture2D* reportedMotion{};
+        static ID3D11Texture2D* reportedDepth{};
+        if (declaredMotion && motion && declaredMotion != motion && reportedMotion != motion) {
+            reportedMotion = motion;
+            logger::warn("[Guides] captured motion vectors {} differ from the engine's motion-vector target {}; another mod may have created a matching texture",
+                static_cast<void*>(motion), static_cast<void*>(declaredMotion));
+        }
+        if (declaredDepth && depth && declaredDepth != depth && reportedDepth != depth) {
+            reportedDepth = depth;
+            logger::warn("[Guides] captured depth {} differs from the engine's main depth target {}; another mod may have created a matching texture",
+                static_cast<void*>(depth), static_cast<void*>(declaredDepth));
+        }
+    }
+}
+
 struct NvidiaHost::SourceNvidiaEvaluationOperations
 {
     NvidiaHost& host;
@@ -30,9 +57,53 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
         float clipToPrevClip[16];
         static_assert(sizeof(camera.clipToPrevClip) == sizeof(clipToPrevClip));
         std::memcpy(clipToPrevClip, &camera.clipToPrevClip, sizeof(clipToPrevClip));
-        repairedMotion = TheosRenderPipeline::FGMotionRepair::Get().Apply(host.context_.Get(), frame.motion, frame.depth,
-            clipToPrevClip, camera.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight);
+        // The flag the engine uses for its own underwater look. Missing means
+        // no repair: the worst case is 0.4.1's unrepaired underwater motion.
+        const auto* water = RE::TESWaterSystem::GetSingleton();
+        const bool underwater = water && water->playerUnderwater;
+        auto& repair = TheosRenderPipeline::FGMotionRepair::Get();
+        repairedMotion = repair.Apply(host.context_.Get(), frame.motion, frame.depth,
+            clipToPrevClip, camera.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight, underwater);
+        LogUnderwater(underwater, repair.Enabled());
+        LogRepair(repair);
         return repairedMotion;
+    }
+
+    // The repair is armed only underwater; log each change of the engine flag
+    // (first 300) so a test shows whether it follows the camera.
+    static void LogUnderwater(bool underwater, bool enabled)
+    {
+        static bool last{};
+        static std::uint32_t changes{};
+        if (underwater == last) { return; }
+        last = underwater;
+        if (++changes <= 300) {
+            logger::info("[FGMotionRepair] player underwater={} repair {} changes={}", underwater,
+                !enabled ? "off (Lab)" : underwater ? "armed" : "disarmed (engine motion passes through)", changes);
+        }
+    }
+
+    // Every switch between engine and camera motion (first 300), and a summary
+    // every 600 read frames, so a repair that flips on and off shows in the log.
+    static void LogRepair(TheosRenderPipeline::FGMotionRepair& repair)
+    {
+        static bool repairing{};
+        static std::uint32_t switches{}, window{}, repairedInWindow{};
+        TheosRenderPipeline::FGMotionRepair::Decision decision;
+        if (!repair.TakeDecision(decision)) { return; }
+        constexpr auto samples = TheosRenderPipeline::FGMotionRepair::kSamples;
+        if (decision.repaired != repairing && ++switches <= 300) {
+            logger::info("[FGMotionRepair] frame={} {} disagree={}/{} varied={}/{} switches={}", decision.frame,
+                decision.repaired ? "camera motion replaces engine motion" : "engine motion kept",
+                decision.disagree, samples, decision.varied, samples, switches);
+        }
+        repairing = decision.repaired;
+        repairedInWindow += decision.repaired;
+        if (++window == 600) {
+            logger::info("[FGMotionRepair] last 600 frames: repaired={} switches total={} last disagree={} varied={}",
+                repairedInWindow, switches, decision.disagree, decision.varied);
+            window = repairedInWindow = 0;
+        }
     }
 
     bool NeuralEligible(const TheosRenderPipeline::SourceNvidiaFrameGuides& frame) const
@@ -161,6 +232,7 @@ bool NvidiaHost::EvaluateSourceNvidiaFrame(bool nativeUIHandoff, bool resetHisto
     frame.output = gameTargets_.UpscaleOutput();
     frame.motion = upscaler.mMotionVectors.mImage;
     frame.depth = upscaler.mDepthBuffer.mImage;
+    ReportGuideCapture(frame.motion, frame.depth);
     // Stable tag identity is published now and filled after native UI drawing,
     // before Streamline consumes it at Present. Startup foreground is separate.
     frame.uiColorAndAlpha = nativeUIHandoff && nativeUI_.Available() ? nativeUI_.TaggedTexture() : nullptr;

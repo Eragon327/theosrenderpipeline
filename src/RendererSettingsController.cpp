@@ -7,6 +7,8 @@
 #include "PerformanceTuning.h"
 #include "CommunityShaderIntegration.h"
 #include "WeatherAppearanceRuntime.h"
+#include "PluginPaths.h"
+#include "NvidiaBaselinePolicy.h"
 
 namespace TheosRenderPipeline
 {
@@ -89,8 +91,9 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     RendererSettingsCapabilities capabilities{sourceUpscaler, false, host_.DedicatedUITextureMode(), CommunityShaders::Active()};
     capabilities.nvidiaAdapter = SourceDLSSG::Backend::Get().NvidiaAdapter();
 #if !defined(TRP_NO_NEURAL_RENDERING)
-    capabilities.neuralRuntime =
-        TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(frameGen_.settings.neuralRenderingRuntimePath);
+    // The draft may select a different runtime file; check the one it selects.
+    const auto draftRuntime = ResolveRuntimePath(settingsDraft.sourceDLSSG.neuralRuntime, PluginPaths::Directory()).string();
+    capabilities.neuralRuntime = TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(draftRuntime);
     capabilities.neuralOperational = SourceDLSSG::Backend::Get().Ready() && !SourceDLSSG::Backend::Get().NeuralState().failed;
 #endif
     const auto current = Capture(capabilities.neuralRuntime, false);
@@ -133,12 +136,22 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     performanceSettings.directDLSSOutput = settingsDraft.directDLSSOutput;
     performance_.ApplySettings(performanceSettings);
     frameGen_.settings.sourceDLSSG = TheosRenderPipeline::SourceDLSSG::SanitizePreferences(settingsDraft.sourceDLSSG);
+#if !defined(TRP_NO_NEURAL_RENDERING)
+    // A changed runtime takes effect through NR's options below: the pass
+    // recreates its feature on the new file at the next evaluation.
+    if (frameGen_.settings.configuredRuntimePaths.neural != frameGen_.settings.sourceDLSSG.neuralRuntime) {
+        logger::info("[SourceDLSSG NR] runtime {} -> {}", frameGen_.settings.configuredRuntimePaths.neural,
+            frameGen_.settings.sourceDLSSG.neuralRuntime);
+    }
+    frameGen_.settings.configuredRuntimePaths.neural = frameGen_.settings.sourceDLSSG.neuralRuntime;
+    frameGen_.settings.neuralRenderingRuntimePath = draftRuntime;
+#endif
     if (host_.StartupConfigured())
     {
         auto& source = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         source.RequestProvider(frameGen_.settings.sourceDLSSG.provider);
         source.ConfigureReflex(static_cast<sl::ReflexMode>(frameGen_.settings.sourceDLSSG.reflexMode));
-        source.ConfigureUIRecomposition(frameGen_.settings.sourceDLSSG.uiRecomposition);
+        source.ConfigurePreset(frameGen_.settings.sourceDLSSG.preset);
         source.ConfigureXeFGFrameTime(frameGen_.settings.sourceDLSSG.xefgFrameTime);
         source.ConfigureOutputFPSLimit(frameGen_.settings.sourceDLSSG.outputFPSLimit);
         source.ConfigureGeneration(frameGen_.settings.sourceDLSSG.generation);
