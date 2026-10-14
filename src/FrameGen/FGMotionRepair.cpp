@@ -38,6 +38,9 @@ float2 CameraMotion(uint2 p) {
     const uint2 p = min(uint2((id.xy + .5) / float2(GridX, GridY) * float2(RenderWidth, RenderHeight)), uint2(RenderWidth, RenderHeight) - 1);
     const float2 off = (Motion.Load(int3(p, 0)).xy - CameraMotion(p)) * float2(RenderWidth, RenderHeight);
     if (!all(isfinite(off)) || length(off) > 4) Counter.InterlockedAdd(0, 1);
+    // Diagnostic only: motion that varies across the frame is not a stuck frame.
+    const float2 centre = Motion.Load(int3(RenderWidth / 2, RenderHeight / 2, 0)).xy;
+    if (length((Motion.Load(int3(p, 0)).xy - centre) * float2(RenderWidth, RenderHeight)) > .5) Counter.InterlockedAdd(4, 1);
 }
 [numthreads(8, 8, 1)] void Write(uint3 id : SV_DispatchThreadID) {
     if (id.x >= RenderWidth || id.y >= RenderHeight) return;
@@ -92,6 +95,10 @@ float2 CameraMotion(uint2 p) {
         D3D11_UNORDERED_ACCESS_VIEW_DESC raw{};
         raw.Format = DXGI_FORMAT_R32_TYPELESS; raw.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
         raw.Buffer.NumElements = 4; raw.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+        D3D11_BUFFER_DESC staging{ 16, D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ, 0, 0 };
+        for (auto& buffer : readback_) {
+            if (FAILED(device->CreateBuffer(&staging, nullptr, &buffer))) { return false; }
+        }
         if (FAILED(device->CreateBuffer(&constants, nullptr, &constants_)) || FAILED(device->CreateBuffer(&counter, nullptr, &counter_)) ||
             FAILED(device->CreateUnorderedAccessView(counter_.Get(), &raw, &counterUAV_))) { return false; }
         device_ = device;
@@ -151,6 +158,27 @@ float2 CameraMotion(uint2 p) {
         context->CSSetShaderResources(0, 2, noInputs);
         context->CSSetUnorderedAccessViews(0, 2, noOutputs, nullptr);
         context1_->SwapDeviceContextState(previous.Get(), nullptr);
+        // Copy this frame's counts, then read the oldest copy if the GPU is done with it.
+        const auto slot = applied_ % 3;
+        context->CopyResource(readback_[slot].Get(), counter_.Get());
+        readbackFrame_[slot] = ++applied_;
+        const auto oldest = applied_ % 3;
+        D3D11_MAPPED_SUBRESOURCE counts{};
+        if (readbackFrame_[oldest] && SUCCEEDED(context->Map(readback_[oldest].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &counts))) {
+            const auto* values = static_cast<const std::uint32_t*>(counts.pData);
+            latest_ = { readbackFrame_[oldest], values[0], values[1], values[0] * 10 > kSamples * 9 };
+            fresh_ = true;
+            context->Unmap(readback_[oldest].Get(), 0);
+            readbackFrame_[oldest] = 0;
+        }
         return output_.Get();
+    }
+
+    bool FGMotionRepair::TakeDecision(Decision& out)
+    {
+        if (!fresh_) { return false; }
+        fresh_ = false;
+        out = latest_;
+        return true;
     }
 }

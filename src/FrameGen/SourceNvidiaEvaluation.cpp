@@ -57,9 +57,34 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
         float clipToPrevClip[16];
         static_assert(sizeof(camera.clipToPrevClip) == sizeof(clipToPrevClip));
         std::memcpy(clipToPrevClip, &camera.clipToPrevClip, sizeof(clipToPrevClip));
-        repairedMotion = TheosRenderPipeline::FGMotionRepair::Get().Apply(host.context_.Get(), frame.motion, frame.depth,
+        auto& repair = TheosRenderPipeline::FGMotionRepair::Get();
+        repairedMotion = repair.Apply(host.context_.Get(), frame.motion, frame.depth,
             clipToPrevClip, camera.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight);
+        LogRepair(repair);
         return repairedMotion;
+    }
+
+    // Every switch between engine and camera motion (first 300), and a summary
+    // every 600 read frames, so a repair that flips on and off shows in the log.
+    static void LogRepair(TheosRenderPipeline::FGMotionRepair& repair)
+    {
+        static bool repairing{};
+        static std::uint32_t switches{}, window{}, repairedInWindow{};
+        TheosRenderPipeline::FGMotionRepair::Decision decision;
+        if (!repair.TakeDecision(decision)) { return; }
+        constexpr auto samples = TheosRenderPipeline::FGMotionRepair::kSamples;
+        if (decision.repaired != repairing && ++switches <= 300) {
+            logger::info("[FGMotionRepair] frame={} {} disagree={}/{} varied={}/{} switches={}", decision.frame,
+                decision.repaired ? "camera motion replaces engine motion" : "engine motion kept",
+                decision.disagree, samples, decision.varied, samples, switches);
+        }
+        repairing = decision.repaired;
+        repairedInWindow += decision.repaired;
+        if (++window == 600) {
+            logger::info("[FGMotionRepair] last 600 frames: repaired={} switches total={} last disagree={} varied={}",
+                repairedInWindow, switches, decision.disagree, decision.varied);
+            window = repairedInWindow = 0;
+        }
     }
 
     bool NeuralEligible(const TheosRenderPipeline::SourceNvidiaFrameGuides& frame) const

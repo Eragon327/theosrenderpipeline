@@ -24,6 +24,18 @@ namespace TheosRenderPipeline
         // row-major for row vectors, as Streamline receives it.
         ID3D11Texture2D* Apply(ID3D11DeviceContext* context, ID3D11Texture2D* motion, ID3D11Texture2D* depth,
             const float (&clipToPrevClip)[16], bool depthInverted, std::uint32_t renderWidth, std::uint32_t renderHeight);
+        // Diagnostics read back a few frames late, without waiting: of the 64x36
+        // samples, how many disagreed with the camera and how many differed from
+        // the frame's centre motion (a stuck frame has almost none).
+        struct Decision
+        {
+            std::uint64_t frame{};
+            std::uint32_t disagree{}, varied{};
+            bool repaired{};
+        };
+        static constexpr std::uint32_t kSamples = 64 * 36;
+        // Returns true once per newly read frame.
+        bool TakeDecision(Decision& out);
     private:
         bool Initialize(ID3D11DeviceContext* context);
         bool EnsureOutput(ID3D11Texture2D* motion);
@@ -37,5 +49,9 @@ namespace TheosRenderPipeline
         Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> counterUAV_, outputUAV_;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> output_, motion_, depth_;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> motionSRV_, depthSRV_;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> readback_[3];
+        std::uint64_t readbackFrame_[3]{}, applied_{};
+        Decision latest_{};
+        bool fresh_{};
     };
 }
