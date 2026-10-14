@@ -31,6 +31,13 @@ selection, failure diagnosis and tests. See [credits](THIRD-PARTY.md).
 
 The supported provider is **DLSS-G 310.9.1**, SHA-256
 `FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82`.
+For SM86 only, **DLSS-G 310.9.16** (SHA-256
+`CADEE1AA6DB3907BABDC3285DA2AEBC4553D92B89C38BA3EAE8ABD8BBA1BEA72`) is also
+qualified: all 71 programs, including the new `Kernel_BlendCandidatesFGLite`,
+pass the production planner and the driver load probe. SM75 still requires
+310.9.1: a changed `Kernel_BlendCandidatesFused` and the fixed network code
+contracts are not yet reviewed for 310.9.16. `EmulateAmpereOnAda` runs the
+unchanged SM86 preparation on a physical RTX 40 adapter for developer tests.
 Do not assume another DLL version has the same layout. The source also retains
 the existing Ampere implementation to exercise isolation; this is not a general
 adapter-support override. No NVIDIA DLLs, model weights or exported kernel

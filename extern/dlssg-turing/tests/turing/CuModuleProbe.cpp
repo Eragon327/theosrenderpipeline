@@ -42,5 +42,6 @@ int wmain(int argc,wchar_t** argv) {
         if(module && destroy(device.Get(),module))return 10;
     }
     std::wcout<<L"total="<<total<<L" failed="<<failed<<std::endl;
-    return total==71 && !failed?0:1;
+    // Programs plus the temporal clone: 310.9.1 has 70, 310.9.16 (SM86) has 71.
+    return (total==71 || total==72) && !failed?0:1;
 }

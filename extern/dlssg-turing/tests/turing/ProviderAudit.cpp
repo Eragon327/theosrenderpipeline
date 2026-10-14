@@ -93,9 +93,10 @@ int wmain(int argc,wchar_t** argv) { try {
             p+=bytes;
         }
     }
-    Check(containers.size()==70,"exact provider qualification requires 70 programs");
+    // Qualified providers: DLSS-G 310.9.1 (70 programs) and, for SM86, 310.9.16 (71).
+    Check(containers.size()==70 || (target==86 && containers.size()==71),"exact provider qualification requires 70 programs, or 71 for SM86");
     Check(PlanProvider(),"production provider plan");
-    Check(s.fatbins==70,"production planner covers all programs");
+    Check(s.fatbins==containers.size(),"production planner covers all programs");
     std::uintptr_t finalFatbin{};
     Check(memory::Read(reinterpret_cast<const void*>(s.temporal.replacementDescriptor+8),finalFatbin),"temporal descriptor");
     std::vector<std::uint8_t> temporal(s.temporal.outputBytes);
