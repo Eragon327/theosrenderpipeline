@@ -4,7 +4,6 @@
 #include "SourceDLSSGDeviceLoss.h"
 #include "D3D11FrameCopy.h"
 #include "SourceDLSSGSession.h"
-#include "NeuralOutputGuard.h"
 #include "DlssgPreset.h"
 #include "SourceDLSSGNeuralState.h"
 #if !defined(TRP_NO_NEURAL_RENDERING)
@@ -201,12 +200,6 @@ namespace TheosRenderPipeline::SourceDLSSG
 		void ReleaseGuides();
 		bool RecreateNeuralIfNeeded(const NeuralOptions& options);
 		bool FailNeuralRecording();
-		// Black-output guard: sample NR's input/output, and replace a runtime
-		// that renders black for this session. Render thread only.
-		void RecordNeuralGuard(ID3D12GraphicsCommandList* list, ID3D12Resource* input, ID3D12Resource* output);
-		void SubmitNeuralGuard();
-		void PollNeuralGuard();
-		void ApplyNeuralFallback(NeuralOptions& options) const; // Requires neuralMutex_.
 		const char* NeuralUnavailableReason(const NeuralOptions& options);
 		void RecordPresentationFeedback(std::uint32_t a_presentCount,
 			std::int64_t a_observedQpc, std::int64_t a_syncQpc);
@@ -286,10 +279,6 @@ namespace TheosRenderPipeline::SourceDLSSG
 #if !defined(TRP_NO_NEURAL_RENDERING)
 		std::unique_ptr<NeuralPass> neuralPass_;
 		NeuralRuntimeAvailability neuralAvailability_; // Protected by neuralMutex_.
-		NeuralOutputGuard neuralGuard_;
-		NeuralBlackDetector neuralBlack_;
-		std::filesystem::path neuralGuardRuntime_;
-		std::vector<std::filesystem::path> neuralFailedRuntimes_; // Protected by neuralMutex_.
 		const char* neuralReportedUnavailable_{};
 #endif
 		std::unique_ptr<HDRPass> hdrPass_;

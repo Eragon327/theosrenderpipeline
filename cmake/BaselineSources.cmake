@@ -42,7 +42,6 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/DlssgPreset.h
     src/FrameGen/StreamlineRuntimeFolder.h
     src/FrameGen/NeuralRuntimeFiles.h
-    src/FrameGen/NeuralOutputGuard.h
     src/FrameGen/FGInputDebugView.h
     src/FrameGen/FGInputDebugView.cpp
     src/FrameGen/FGMotionRepair.h
