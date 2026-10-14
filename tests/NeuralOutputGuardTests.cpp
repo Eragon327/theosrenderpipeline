@@ -18,15 +18,18 @@ static std::vector<std::uint8_t> Half(std::uint16_t r, std::uint16_t g, std::uin
 
 int main()
 {
-    // 4x4 patches. 0x3800 = 0.5, 0x7E00 = NaN, 0x7C00 = +inf, 0x1400 ~ 0.001.
+    // 4x4 patches. 0x3800 = 0.5, 0x7E00 = NaN, 0x7C00 = +inf.
     const auto grey = Half(0x3800, 0x3800, 0x3800), black = Half(0, 0, 0), nan = Half(0x7E00, 0x7E00, 0x7E00);
-    const auto inf = Half(0x7C00, 0, 0), dim = Half(0x1400, 0x1400, 0x1400);
+    const auto inf = Half(0x7C00, 0, 0), dim = Half(0x2000, 0x2000, 0x2000); // 0.0078
     auto classify = [](const std::vector<std::uint8_t>& data) { return ClassifyPatch(DXGI_FORMAT_R16G16B16A16_FLOAT, data.data(), 4, 4, 32); };
     Require(classify(grey).lit == 16 && classify(grey).dark == 0, "a grey patch is lit");
     Require(classify(black).dark == 16 && classify(black).lit == 0, "a black patch is dark");
     Require(classify(nan).dark == 16, "NaN output counts as dark");
     Require(classify(inf).dark == 16, "infinite output counts as dark");
     Require(classify(dim).dark == 0 && classify(dim).lit == 0, "a very dim image is neither dark nor lit");
+    // 0x0400 ~ 6e-5 and 0xB800 = -0.5: near-zero and negative output is dark too.
+    Require(classify(Half(0x0400, 0x0400, 0x0400)).dark == 16, "near-zero output counts as dark");
+    Require(classify(Half(0xB800, 0xB800, 0xB800)).dark == 16, "negative output counts as dark");
     Require(!ClassifyPatch(DXGI_FORMAT_BC1_UNORM, grey.data(), 4, 4, 32).supported, "unsupported formats are not judged");
 
     // R11G11B10: 0.5 in each channel (exponent 14).

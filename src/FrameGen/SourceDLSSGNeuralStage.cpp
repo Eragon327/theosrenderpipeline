@@ -87,7 +87,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 
     void Backend::RecordNeuralGuard(ID3D12GraphicsCommandList* list, ID3D12Resource* input, ID3D12Resource* output)
     {
+        static const char* reported{};
         neuralGuard_.Record(device12_.Get(), list, input, output);
+        if (const auto* skipped = neuralGuard_.Skipped(); skipped && skipped != reported) {
+            reported = skipped;
+            logger::warn("[SourceDLSSG NR] output guard skipped a sample: {} (input format={} output format={})", skipped,
+                static_cast<int>(neuralGuard_.InputFormat()), static_cast<int>(neuralGuard_.OutputFormat()));
+        }
     }
 
     void Backend::SubmitNeuralGuard() { neuralGuard_.Submitted(queue_.Get()); }
@@ -98,9 +104,17 @@ namespace TheosRenderPipeline::SourceDLSSG
         if (!neuralGuard_.Poll(input, output)) { return; }
         std::scoped_lock lock(neuralMutex_);
         // Samples taken before a runtime change say nothing about the new one.
+        static std::uint32_t logged{};
         if (!PluginPaths::EqualPath(neuralGuardRuntime_, neuralOptions_.runtimePath)) {
             neuralGuardRuntime_ = neuralOptions_.runtimePath;
             neuralBlack_.Reset();
+            logged = 0;
+        }
+        // The first samples for each runtime, so a test shows what the guard saw.
+        if (++logged <= 6) {
+            logger::info("[SourceDLSSG NR] output guard sample {} runtime={} input lit {}/{} dark {} (format {}), output lit {}/{} dark {} (format {})",
+                logged, neuralOptions_.runtimePath.filename().string(), input.lit, input.texels, input.dark,
+                static_cast<int>(neuralGuard_.InputFormat()), output.lit, output.texels, output.dark, static_cast<int>(neuralGuard_.OutputFormat()));
         }
         if (!neuralOptions_.enabled || !neuralBlack_.Add(input, output)) { return; }
         neuralBlack_.Reset();
