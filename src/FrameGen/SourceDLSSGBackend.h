@@ -281,9 +281,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralRuntimeAvailability neuralAvailability_; // Protected by neuralMutex_.
 		const char* neuralReportedUnavailable_{};
 		// Runtimes refused for this GPU this session, and the GPU's CUDA compute capability (-1 = not queried).
-		std::vector<std::filesystem::path> neuralRefusedRuntimes_; // Protected by neuralMutex_.
+		// Each refused runtime with the note shown while it stays selected.
+		std::vector<std::pair<std::filesystem::path, std::string>> neuralRefusedRuntimes_; // Protected by neuralMutex_.
 		int neuralComputeCapability_{ -1 };
-		void ApplyNeuralFallback(NeuralOptions& options) const; // Requires neuralMutex_.
+		// Replaces a refused runtime; returns its note, or nullptr. Requires neuralMutex_.
+		const std::string* ApplyNeuralFallback(NeuralOptions& options) const;
 #endif
 		std::unique_ptr<HDRPass> hdrPass_;
 		// Renderer-owned HDR output (render thread except the guarded settings/state).

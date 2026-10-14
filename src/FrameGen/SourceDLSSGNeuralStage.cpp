@@ -20,7 +20,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 				a_options.runtimePath.string());
 		}
 		std::scoped_lock lock(neuralMutex_);
-		ApplyNeuralFallback(a_options);
+		// The note stays only while the selected runtime is the one being replaced.
+		const auto* note = ApplyNeuralFallback(a_options);
+		neuralSnapshot_.fallback = note ? *note : std::string{};
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
@@ -44,16 +46,23 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}, retainedBuild);
 		if (refused) {
 			// Refuse it before any feature uses it; the next frame runs NVIDIA's runtime instead.
-			neuralRefusedRuntimes_.push_back(options.runtimePath);
-			ApplyNeuralFallback(neuralOptions_);
+			// Both NR stages of one frame can ask before the switch lands; record it once.
+			const bool known = std::any_of(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
+				[&](const auto& entry) { return PluginPaths::EqualPath(entry.first, options.runtimePath); });
+			if (!known) {
+				neuralRefusedRuntimes_.emplace_back(options.runtimePath, std::string{});
+				auto fallback = neuralOptions_;
+				ApplyNeuralFallback(fallback);
+				const auto name = options.runtimePath.filename().string();
+				neuralRefusedRuntimes_.back().second = fallback.enabled ?
+					std::format("{} is {}, so NVIDIA's {} is used instead. RTX 40 cards need a fixed build.", name, refused->description,
+						fallback.runtimePath.filename().string()) :
+					std::format("{} is {}, so NR is off. RTX 40 cards need a fixed build.", name, refused->description);
+				logger::warn("[SourceDLSSG NR] {} (GPU compute capability {}.{})", neuralRefusedRuntimes_.back().second,
+					neuralComputeCapability_ / 10, neuralComputeCapability_ % 10);
+			}
+			if (const auto* note = ApplyNeuralFallback(neuralOptions_)) { neuralSnapshot_.fallback = *note; }
 			neuralAvailability_.Reset();
-			const auto name = options.runtimePath.filename().string();
-			neuralSnapshot_.fallback = neuralOptions_.enabled ?
-				std::format("{} is {}, so NVIDIA's {} is used instead. RTX 40 cards need a fixed build.", name, refused->description,
-					neuralOptions_.runtimePath.filename().string()) :
-				std::format("{} is {}, so NR is off. RTX 40 cards need a fixed build.", name, refused->description);
-			logger::warn("[SourceDLSSG NR] {} (GPU compute capability {}.{})", neuralSnapshot_.fallback,
-				neuralComputeCapability_ / 10, neuralComputeCapability_ % 10);
 			return "NR runtime refused for this GPU; switching runtime";
 		}
 		if (reason && reason != neuralReportedUnavailable_) { logger::warn("[SourceDLSSG NR] {}", reason); }
@@ -92,17 +101,20 @@ namespace TheosRenderPipeline::SourceDLSSG
         return true;
     }
 
-    void Backend::ApplyNeuralFallback(NeuralOptions& options) const
+    const std::string* Backend::ApplyNeuralFallback(NeuralOptions& options) const
     {
-        auto refused = [&](const std::filesystem::path& path) {
-            return std::any_of(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
-                [&](const std::filesystem::path& entry) { return PluginPaths::EqualPath(entry, path); });
+        auto refused = [&](const std::filesystem::path& path) -> const std::string* {
+            const auto entry = std::find_if(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
+                [&](const auto& item) { return PluginPaths::EqualPath(item.first, path); });
+            return entry == neuralRefusedRuntimes_.end() ? nullptr : &entry->second;
         };
-        if (!options.enabled || !refused(options.runtimePath)) { return; }
+        const auto* note = options.enabled ? refused(options.runtimePath) : nullptr;
+        if (!note) { return nullptr; }
         const auto fallback = PluginPaths::Directory() / std::filesystem::u8path(kDefaultNeuralRuntime);
         std::error_code error;
         if (!refused(fallback) && std::filesystem::is_regular_file(fallback, error)) { options.runtimePath = fallback; }
         else { options.enabled = false; }
+        return note;
     }
 
     bool Backend::FailNeuralRecording()
