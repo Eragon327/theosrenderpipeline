@@ -72,6 +72,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// After AfterPresent: a switch will replace the presenter at this boundary.
 		bool ProviderSwitchPending() const { return providerSwitchPending_; }
 		void ConfigureMFGUnlock(bool requested) { if (!attempted_) { mfgUnlock_.Configure(requested); } }
+		void ConfigureRTX30(bool legacyRuntime, bool emulateOnRTX40)
+		{
+			if (attempted_) { return; }
+			rtx30LegacyDLSSG_ = legacyRuntime;
+			mfgUnlock_.ConfigureEmulation(emulateOnRTX40);
+		}
 		const MFGSnapshot& MFGState() const { return mfgUnlock_.Snapshot(); }
 		HRESULT CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_device,
 			const DXGI_SWAP_CHAIN_DESC& a_desc, const std::filesystem::path& a_directory,
@@ -239,6 +245,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		sl::Result reportedStateQueryResult_{ sl::Result::eOk };
 		sl::Result reportedOptionsResult_{ sl::Result::eOk };
 		MFGUnlock mfgUnlock_;
+		bool rtx30LegacyDLSSG_{};
 		std::atomic<sl::ReflexMode> reflexMode_{ sl::ReflexMode::eLowLatency };
 		std::atomic<DlssgPreset> preset_{ DlssgPreset::B };
 		std::atomic<bool> releaseForPreset_{};

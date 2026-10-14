@@ -65,7 +65,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 			// Upstream callback is noexcept; diagnostics must not terminate the game.
 			try { spdlog::info("[SourceDLSSG MFG] {}", std::filesystem::path(text).string()); } catch (...) {}
 		});
-		const auto adapter = midpoint_fix::ObserveD3D12Adapter(device);
+		auto adapter = midpoint_fix::ObserveD3D12Adapter(device);
+		if (emulateRTX30_ && adapter == midpoint_fix::AdapterKind::Ada) {
+			spdlog::warn("[SourceDLSSG MFG] DEVELOPER TEST: EmulateRTX30OnRTX40 runs the RTX 30 (SM86) path on this RTX 40 adapter");
+			trp::ampere::EmulateAmpereOnAda(true);
+			adapter = midpoint_fix::AdapterKind::Ampere;
+		}
 		if (!state_.SelectRoute(adapter)) {
 			state_.temporalFailure = midpoint_fix::FailureCode();
 			Fail("active rendering adapter could not be identified; no patches applied");

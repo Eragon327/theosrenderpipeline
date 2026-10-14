@@ -45,6 +45,10 @@ int main()
         "the RTX 20/30 set sits beside the configured Streamline folder");
     Require(BackportStreamlineDirectory(LR"(D:\X\Streamline\)") == std::filesystem::path(LR"(D:\X\Streamline-RTX20-30)"),
         "a trailing separator names the same folder");
+    Require(UsesBackportStreamline(true, false, false) && UsesBackportStreamline(true, false, true), "RTX 20 always uses 310.9.1");
+    Require(!UsesBackportStreamline(false, true, false), "RTX 30 runs the newer DLSS-G by default");
+    Require(UsesBackportStreamline(false, true, true), "RTX30LegacyDLSSG keeps RTX 30 on 310.9.1");
+    Require(!UsesBackportStreamline(false, false, true), "RTX 40/50 never use the 310.9.1 set");
     std::puts("PASS RTX 20/30 Streamline folder beside the configured one");
     std::puts("PASS DLSS-G override path: NVIDIA model store recognised, TRP and other folders not");
 }

@@ -19,6 +19,11 @@ class SourceFrameGeneration
         bool enabled{true}; // Initial interpolation request; the NVIDIA host is always required.
         bool sourceDLSSGMFGUnlock{true}; // Matches the packaged default; explicit false is preserved.
         bool sourceDLSSGMFGUnlockPresent{};
+        // RTX 30 runs DLSS-G 310.9.16 unless this keeps it on the 310.9.1 set
+        // that RTX 20 still requires. Startup only; never written.
+        bool rtx30LegacyDLSSG{};
+        // Developer test (Universal): run the RTX 30 path on an RTX 40 card.
+        bool emulateRTX30OnRTX40{};
         std::string sourceDLSSGStreamlineDirectory;
         TheosRenderPipeline::SourceDLSSG::Preferences sourceDLSSG;
         int nativeUICompositionMode{}; // 0 = dedicated UI; 1 = HUD-less detection.
@@ -36,6 +41,8 @@ class SourceFrameGeneration
         RequestRuntimeInterpolation(settings.enabled);
         settings.sourceDLSSGMFGUnlockPresent = ini.GetValue("Experimental", "SourceDLSSGMFGUnlock", nullptr) != nullptr;
         settings.sourceDLSSGMFGUnlock = ini.GetBoolValue("Experimental", "SourceDLSSGMFGUnlock", true);
+        settings.rtx30LegacyDLSSG = ini.GetBoolValue("Experimental", "RTX30LegacyDLSSG", false);
+        settings.emulateRTX30OnRTX40 = ini.GetBoolValue("Debug", "EmulateRTX30OnRTX40", false);
         settings.configuredRuntimePaths.Load(ini);
         settings.sourceDLSSGStreamlineDirectory = settings.configuredRuntimePaths.streamline;
         settings.sourceDLSSG = TheosRenderPipeline::SourceDLSSG::LoadPreferences(ini);

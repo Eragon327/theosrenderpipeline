@@ -116,15 +116,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		directory_ = Normalize(a_directory);
 		mfgUnlock_.SelectAdapter(device12_.Get());
-		if (mfgUnlock_.Snapshot().UsesProviderBackport()) {
+		// RTX 20 needs the 310.9.1 set; RTX 30 also runs the newer DLSS-G unless kept on it.
+		if (UsesBackportStreamline(mfgUnlock_.Snapshot().UsesTuringUnlock(), mfgUnlock_.Snapshot().UsesAmpereUnlock(), rtx30LegacyDLSSG_)) {
 			const auto backport = BackportStreamlineDirectory(directory_);
 			std::error_code error;
 			if (std::filesystem::is_regular_file(backport / L"nvngx_dlssg.dll", error) &&
 				std::filesystem::is_regular_file(backport / L"sl.interposer.dll", error)) {
-				logger::info("[SourceDLSSG] RTX 20/30 backport uses the DLSS-G set it was built for: {}", backport.string());
+				logger::info("[SourceDLSSG] {} uses the DLSS-G 310.9.1 set: {}",
+					mfgUnlock_.Snapshot().UsesTuringUnlock() ? "RTX 20" : "RTX 30 (RTX30LegacyDLSSG)", backport.string());
 				directory_ = backport;
 			} else {
-				logger::warn("[SourceDLSSG] RTX 20/30 backport folder {} is missing; using {}", backport.string(), directory_.string());
+				logger::warn("[SourceDLSSG] DLSS-G 310.9.1 folder {} is missing; using {}", backport.string(), directory_.string());
 			}
 		}
 		logger::info("[SourceDLSSG] startup stage=module-ownership directory={} communityShaders={}", directory_.string(), CommunityShaders::Active());
