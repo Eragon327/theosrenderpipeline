@@ -14,7 +14,9 @@
 - Add an NR runtime selector to the NR tab. It lists every
   `nvngx_dlssnr*.dll` in the `NVIDIA` folder, so newer NVIDIA builds and
   community builds can be chosen without renaming files. Runtimes load by
-  version (310 or newer).
+  version (310 or newer). The community int8 v2 build renders black on RTX 40
+  cards, so there TRP uses NVIDIA's `nvngx_dlssnr.dll` instead and says so in
+  the NR tab; RTX 20, 30 and 50 cards can still use it.
 - Fix flickering faces and lighting in dialogue with NR on, a 0.4.2
   regression. The underwater motion repair now runs only while the game reports
   the player underwater.

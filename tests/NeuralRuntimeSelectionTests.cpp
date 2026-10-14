@@ -1,5 +1,6 @@
 #include "FrameGen/NeuralRenderingRuntimeContract.h"
 #include "FrameGen/NeuralRuntimeFiles.h"
+#include "FrameGen/NeuralRuntimeCompatibility.h"
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -30,6 +31,18 @@ int main()
     Require(NeuralRendering::MajorVersion("310.8.0.0") == 310 && NeuralRendering::MajorVersion("") == 0 &&
         NeuralRendering::MajorVersion("x310") == 0, "major version parsing");
 
+    // Community int8 v2 is refused only on RTX 40 (SM 8.9); everything else loads by version.
+    {
+        using NeuralRendering::FindIncompatibleRuntime;
+        constexpr std::string_view v2 = "F82812BF0AAFD77F7F95ABC61B0AFA36967EF9D0A773137B85E1D978201C19F9";
+        constexpr std::string_view adaFixed = "4A5710990E8D16AD66B06128B4FA5E7910F5B98EF823193082314C36277089D0";
+        Require(FindIncompatibleRuntime(v2, 89) != nullptr, "int8 v2 is refused on RTX 40");
+        for (const int capability : { 75, 86, 120, 0 }) {
+            Require(FindIncompatibleRuntime(v2, capability) == nullptr, "int8 v2 still loads on RTX 20/30/50 and unknown GPUs");
+        }
+        Require(FindIncompatibleRuntime(adaFixed, 89) == nullptr, "a fixed build loads on RTX 40");
+        Require(FindIncompatibleRuntime(NeuralRendering::kNexusRuntimeSha256, 89) == nullptr, "NVIDIA's runtime loads on RTX 40");
+    }
     // The folder listing: NVIDIA's name first, other nvngx_dlssnr*.dll after, nothing else.
     const auto root = std::filesystem::temp_directory_path() / std::format(L"TRPNeuralRuntimeFiles-{}", _getpid());
     std::error_code error;

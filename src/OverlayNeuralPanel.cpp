@@ -370,6 +370,12 @@ void DrawSourceNeuralControls(TheosRenderPipeline::SourceDLSSG::Preferences& dra
     {
         ImGui::TextWrapped("%s", state.status.c_str());
     }
+    if (!state.fallback.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, kOchre);
+        ImGui::TextWrapped("%s", state.fallback.c_str());
+        ImGui::PopStyleColor();
+    }
     DrawNeuralRuntime(draft);
     DrawNeuralSettings(draft, sharpening, sharpness, unavailable);
 }

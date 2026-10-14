@@ -2,7 +2,12 @@
 #include "SourceDLSSGBackend.h"
 #include "NeuralRenderingRuntimeIdentity.h"
 #include "PerformanceTuning.h"
+#include "NeuralRuntimeCompatibility.h"
+#include "SourceDLSSGSettings.h"
+#include "../PluginPaths.h"
+#include <algorithm>
 #include <chrono>
+#include <format>
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
@@ -15,6 +20,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				a_options.runtimePath.string());
 		}
 		std::scoped_lock lock(neuralMutex_);
+		ApplyNeuralFallback(a_options);
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
@@ -26,11 +32,30 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (!NvidiaAdapter() && options.enabled) { return "Neural Rendering requires an NVIDIA RTX GPU; XeSS and XeFG remain available"; }
 		const auto retainedBuild = neuralPass_ ? neuralPass_->RetainedRuntimeBuild(options.runtimePath) :
 			NeuralRendering::RuntimeBuild::Unknown;
-		const auto reason = neuralAvailability_.UnavailableReason(options, [](const std::filesystem::path& path) {
+		if (neuralComputeCapability_ < 0 && device12_) { neuralComputeCapability_ = NeuralRendering::ComputeCapability(device12_->GetAdapterLuid()); }
+		const NeuralRendering::IncompatibleRuntime* refused{};
+		const auto reason = neuralAvailability_.UnavailableReason(options, [&](const std::filesystem::path& path) {
 			const auto identity = NeuralRenderingRuntimeIdentity::VerifySource(path, true);
+			if (identity.matched && (refused = NeuralRendering::FindIncompatibleRuntime(identity.sha256, neuralComputeCapability_))) {
+				return NeuralRendering::RuntimeBuild::Unknown;
+			}
 			return identity.matched ? NeuralRendering::MatchRuntime(identity.size, identity.sha256, identity.version, true) :
 				NeuralRendering::RuntimeBuild::Unknown;
 		}, retainedBuild);
+		if (refused) {
+			// Refuse it before any feature uses it; the next frame runs NVIDIA's runtime instead.
+			neuralRefusedRuntimes_.push_back(options.runtimePath);
+			ApplyNeuralFallback(neuralOptions_);
+			neuralAvailability_.Reset();
+			const auto name = options.runtimePath.filename().string();
+			neuralSnapshot_.fallback = neuralOptions_.enabled ?
+				std::format("{} is {}, so NVIDIA's {} is used instead. RTX 40 cards need a fixed build.", name, refused->description,
+					neuralOptions_.runtimePath.filename().string()) :
+				std::format("{} is {}, so NR is off. RTX 40 cards need a fixed build.", name, refused->description);
+			logger::warn("[SourceDLSSG NR] {} (GPU compute capability {}.{})", neuralSnapshot_.fallback,
+				neuralComputeCapability_ / 10, neuralComputeCapability_ % 10);
+			return "NR runtime refused for this GPU; switching runtime";
+		}
 		if (reason && reason != neuralReportedUnavailable_) { logger::warn("[SourceDLSSG NR] {}", reason); }
 		neuralReportedUnavailable_ = reason;
 		return reason;
@@ -65,6 +90,19 @@ namespace TheosRenderPipeline::SourceDLSSG
                 options.secondPass.linked, second.preset, second.inputScale, second.tuning.intensity);
         }
         return true;
+    }
+
+    void Backend::ApplyNeuralFallback(NeuralOptions& options) const
+    {
+        auto refused = [&](const std::filesystem::path& path) {
+            return std::any_of(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
+                [&](const std::filesystem::path& entry) { return PluginPaths::EqualPath(entry, path); });
+        };
+        if (!options.enabled || !refused(options.runtimePath)) { return; }
+        const auto fallback = PluginPaths::Directory() / std::filesystem::u8path(kDefaultNeuralRuntime);
+        std::error_code error;
+        if (!refused(fallback) && std::filesystem::is_regular_file(fallback, error)) { options.runtimePath = fallback; }
+        else { options.enabled = false; }
     }
 
     bool Backend::FailNeuralRecording()
