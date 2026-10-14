@@ -1,3 +1,39 @@
+# 0.4.3
+
+- Add a **Frame generation preset** dropdown with NVIDIA's Presets A
+  (standard), B (UI recomposition, the previous default) and C (Lite blending,
+  beta). Changes apply live. A saved UI recomposition setting carries over: on
+  becomes B, off becomes A. If the NVIDIA app or driver profile forces a
+  preset, the menu shows it; NVIDIA's runtime gives that preset priority. XeFG
+  keeps its UI recomposition checkbox.
+- Standard now bundles DLSS Frame Generation 310.9.16, which adds Preset C.
+  Experimental RTX 20/30 frame generation still requires 310.9.1, so Standard
+  also includes that Streamline set in `NVIDIA/Streamline-RTX20-30/`, and TRP
+  selects it automatically on those cards. This switch has not yet been tested
+  on RTX 20/30 hardware.
+- Add an NR runtime selector to the NR tab. It lists every
+  `nvngx_dlssnr*.dll` in the `NVIDIA` folder, so newer NVIDIA builds and
+  community builds can be chosen without renaming files. Runtimes load by
+  version (310 or newer).
+- Fix flickering faces and lighting in dialogue with NR on, a 0.4.2
+  regression. The underwater motion repair now runs only while the game reports
+  the player underwater.
+- On RTX 40 cards, a Frame Generation override from the NVIDIA app no longer
+  stops Skyrim at startup. If x3-x6 cannot be enabled for that DLSS-G build,
+  frame generation continues at x2.
+- Fix missing parts of the UI layer when another mod sets blending before the
+  UI pass.
+- Saved settings and presets are written safely, so a failed write can no
+  longer leave them empty or truncated.
+- TRP's mip LOD bias now applies only to the game's own rendering, not other
+  mods' rendering contexts.
+- XeFG no longer interpolates a stale HDR world image.
+- Logs report misrouted motion or depth inputs, NGX release failures and
+  underwater motion repair decisions.
+
+Settings files carry over. `FrameGenerationPreset` replaces
+`UIRecomposition`, which is still written for older versions.
+
 # 0.4.2
 
 - Fix an offset copy of the scene, and ghosting of bright lights while moving,

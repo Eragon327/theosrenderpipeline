@@ -1,4 +1,8 @@
-# Theo's Render Pipeline — Standard, 0.4.2
+# Theo's Render Pipeline — Standard, 0.4.3
+
+Version 0.4.3 adds a frame generation preset dropdown (NVIDIA Presets A, B and
+C), bundles DLSS Frame Generation 310.9.16 for Preset C, adds an NR runtime
+selector, and fixes flickering in dialogue with NR on. See CHANGELOG.md.
 
 Version 0.4.2 fixes an offset copy and ghosting in generated frames while the
 camera is underwater, most visible in first person near lights. It applies to
@@ -184,12 +188,12 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.2 package still needs its final game test.
+development builds; the exact 0.4.3 package still needs its final game test.
 
 ## With the Universal edition
 
 For the RTX 40 MFG unlock or experimental RTX 20/30 support, install the matching
-0.4.2 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
+0.4.3 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
 the NVIDIA runtimes included here, including NR.
 
 Both editions contain settings files; the later mod's files win. Switching
@@ -248,8 +252,12 @@ Documents/My Games/Skyrim Special Edition/SKSE/.
 
 ## Included runtimes and notices
 
-Seven unchanged production DLLs from Streamline 2.14.1 provide DLSS/DLSS-G
-310.9.1 and the required Streamline components. The included NR runtime is
+Unchanged production DLLs from Streamline 2.14.1 provide DLSS 310.9.1 and the
+required Streamline components. `NVIDIA/Streamline/` contains NVIDIA's DLSS-G
+310.9.16, which adds Frame Generation Preset C. `NVIDIA/Streamline-RTX20-30/`
+retains the Streamline 2.14.1 set with DLSS-G 310.9.1, which experimental
+RTX 20/30 frame generation requires; TRP selects it automatically on those
+cards. The included NR runtime is
 310.8, matching the previously tested DLSS5 reshade/Build16 binary.
 See LICENSE and THIRD-PARTY.md for renderer terms, source credits and NVIDIA
 RTX SDK/DLSS terms. NVIDIA-LICENSES.txt retains the accompanying runtime notices.
