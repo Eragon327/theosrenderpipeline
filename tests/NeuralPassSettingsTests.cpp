@@ -16,6 +16,17 @@ int main()
 	CSimpleIniA ini;
 	auto empty = LoadPreferences(ini);
 	Require(!empty.xefg.experimentalMFG && empty.xefg.generatedFrames == 1, "old INIs retain official XeFG x2");
+	Require(empty.neuralRuntime == kDefaultNeuralRuntime, "NR defaults to NVIDIA's runtime file");
+	{
+		CSimpleIniA runtime;
+		auto chosen = empty;
+		chosen.neuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll";
+		StorePreferences(runtime, chosen);
+		Require(std::string(runtime.GetValue("Experimental", "NeuralRenderingRuntimePath", "")) == chosen.neuralRuntime &&
+			LoadPreferences(runtime).neuralRuntime == chosen.neuralRuntime, "the chosen runtime round trips through the existing key");
+		chosen.neuralRuntime.clear();
+		Require(SanitizePreferences(chosen).neuralRuntime == kDefaultNeuralRuntime, "an empty choice returns to NVIDIA's runtime");
+	}
 	empty.xefg = {true, 5};
 	empty.generation.generatedFrames = 5;
 	StorePreferences(ini, empty);

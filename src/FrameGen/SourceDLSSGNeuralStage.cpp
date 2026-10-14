@@ -28,7 +28,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			NeuralRendering::RuntimeBuild::Unknown;
 		const auto reason = neuralAvailability_.UnavailableReason(options, [](const std::filesystem::path& path) {
 			const auto identity = NeuralRenderingRuntimeIdentity::VerifySource(path, true);
-			return identity.matched ? NeuralRendering::MatchRuntime(identity.size, identity.sha256, true) :
+			return identity.matched ? NeuralRendering::MatchRuntime(identity.size, identity.sha256, identity.version, true) :
 				NeuralRendering::RuntimeBuild::Unknown;
 		}, retainedBuild);
 		if (reason && reason != neuralReportedUnavailable_) { logger::warn("[SourceDLSSG NR] {}", reason); }

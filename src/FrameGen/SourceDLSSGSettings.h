@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <string_view>
+
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralRenderingReconstruction.h"
 #include "NeuralCombatPolicy.h"
@@ -11,8 +14,12 @@
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
-	// Live runtime preferences. Presenter changes commit after Present; DLL paths
-	// remain startup-owned and the NVIDIA test host still supplies DLSS and NR.
+	// The NR runtime DLL, relative to Data/SKSE/Plugins unless absolute. Users
+	// pick any nvngx_dlssnr*.dll in the NVIDIA folder; the version decides how it is driven.
+	inline constexpr std::string_view kDefaultNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr.dll";
+
+	// Live runtime preferences. Presenter changes commit after Present. The NR
+	// runtime file is chosen here; the Streamline directory remains startup-owned.
 	struct Preferences
 	{
 		FrameGenerationProvider provider{FrameGenerationProvider::NVIDIA};
@@ -27,6 +34,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool xefgFrameTime{ true };
 		GenerationRequest generation{};
 		bool neuralEnabled{ false };
+		std::string neuralRuntime{ kDefaultNeuralRuntime };
 		bool neuralBeforeUpscaling{ true };
 		int neuralPasses{ 1 };
 		NeuralRendering::CombatSettings neuralCombat{};
@@ -48,6 +56,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.generation = SanitizeGenerationRequest(value.generation);
 		if (!ValidPreset(static_cast<int>(value.preset))) { value.preset = DlssgPreset::B; }
 		value.neuralTuning = NeuralRendering::SanitizeBuild14Tuning(value.neuralTuning);
+		if (value.neuralRuntime.empty()) { value.neuralRuntime = kDefaultNeuralRuntime; }
 		value.neuralPasses = std::clamp(value.neuralPasses, 1, 2);
 		value.neuralCombat = NeuralRendering::SanitizeCombatSettings(value.neuralCombat);
 		value.neuralReconstruction = NeuralRendering::SanitizeReconstruction(value.neuralReconstruction);
@@ -77,6 +86,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.preset = static_cast<DlssgPreset>(ini.GetLongValue(section, "FrameGenerationPreset",
 			ini.GetBoolValue(section, "UIRecomposition", true) ? 2 : 1));
 		value.neuralEnabled = ini.GetBoolValue(section, "NeuralRenderingEnabled", false);
+		value.neuralRuntime = ini.GetValue("Experimental", "NeuralRenderingRuntimePath", std::string(kDefaultNeuralRuntime).c_str());
 		value.neuralBeforeUpscaling = ini.GetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		value.neuralPasses = static_cast<int>(ini.GetLongValue(section, "NRPasses", 1));
 		value.neuralCombat.inCombat = ini.GetBoolValue(section, "NROnePassInCombat", false);
@@ -114,6 +124,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Kept so an older TRP reading this INI still gets the UI choice.
 		ini.SetBoolValue(section, "UIRecomposition", UsesUIRecomposition(value.preset));
 		ini.SetBoolValue(section, "NeuralRenderingEnabled", value.neuralEnabled);
+		ini.SetValue("Experimental", "NeuralRenderingRuntimePath", value.neuralRuntime.c_str());
 		ini.SetBoolValue(section, "NRBeforeUpscaling", value.neuralBeforeUpscaling);
 		ini.SetLongValue(section, "NRPasses", value.neuralPasses);
 		ini.SetBoolValue(section, "NROnePassInCombat", value.neuralCombat.inCombat);

@@ -136,7 +136,7 @@ namespace TheosRenderPipeline::NeuralRenderingRuntimeIdentity
 		static_assert(kExpectedRuntimeSha256 == NeuralRendering::kLegacyRuntimeSha256);
 		auto result = Verify(a_path); // Hash once, before loading any module.
 		result.matched = result.present && NeuralRendering::MatchRuntime(result.size, result.sha256,
-			a_allowReconstruction) != NeuralRendering::RuntimeBuild::Unknown;
+			result.version, a_allowReconstruction) != NeuralRendering::RuntimeBuild::Unknown;
 		return result;
 	}
 }
