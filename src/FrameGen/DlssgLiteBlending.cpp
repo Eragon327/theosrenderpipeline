@@ -20,9 +20,9 @@ namespace TheosRenderPipeline::SourceDLSSG::LiteBlending
 		{
 			if (feature != NVSDK_NGX_Feature_FrameGeneration || !parameters || !gEnabled.load(std::memory_order_relaxed)) { return; }
 			NVSDK_NGX_Parameter_SetI(parameters, kParameter.data(), 1);
-			if (gRequests.fetch_add(1, std::memory_order_relaxed) == 0) {
-				spdlog::info("[SourceDLSSG] Lite blending requested at frame generation creation ({}=1)", kParameter);
-			}
+			// Creation is rare (startup, preset or resize), so log each request.
+			spdlog::info("[SourceDLSSG] Lite blending requested at frame generation creation ({}=1, request {})",
+				kParameter, gRequests.fetch_add(1, std::memory_order_relaxed) + 1);
 		}
 
 		// The export checks that its return address is inside NVIDIA's NGX
