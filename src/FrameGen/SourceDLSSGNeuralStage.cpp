@@ -2,7 +2,11 @@
 #include "SourceDLSSGBackend.h"
 #include "NeuralRenderingRuntimeIdentity.h"
 #include "PerformanceTuning.h"
+#include "SourceDLSSGSettings.h"
+#include "../PluginPaths.h"
+#include <algorithm>
 #include <chrono>
+#include <format>
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
@@ -15,6 +19,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				a_options.runtimePath.string());
 		}
 		std::scoped_lock lock(neuralMutex_);
+		ApplyNeuralFallback(a_options);
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
@@ -65,6 +70,51 @@ namespace TheosRenderPipeline::SourceDLSSG
                 options.secondPass.linked, second.preset, second.inputScale, second.tuning.intensity);
         }
         return true;
+    }
+
+    void Backend::ApplyNeuralFallback(NeuralOptions& options) const
+    {
+        auto failed = [&](const std::filesystem::path& path) {
+            return std::any_of(neuralFailedRuntimes_.begin(), neuralFailedRuntimes_.end(),
+                [&](const std::filesystem::path& entry) { return PluginPaths::EqualPath(entry, path); });
+        };
+        if (!options.enabled || !failed(options.runtimePath)) { return; }
+        const auto fallback = PluginPaths::Directory() / std::filesystem::u8path(kDefaultNeuralRuntime);
+        std::error_code error;
+        if (!failed(fallback) && std::filesystem::is_regular_file(fallback, error)) { options.runtimePath = fallback; }
+        else { options.enabled = false; }
+    }
+
+    void Backend::RecordNeuralGuard(ID3D12GraphicsCommandList* list, ID3D12Resource* input, ID3D12Resource* output)
+    {
+        neuralGuard_.Record(device12_.Get(), list, input, output);
+    }
+
+    void Backend::SubmitNeuralGuard() { neuralGuard_.Submitted(queue_.Get()); }
+
+    void Backend::PollNeuralGuard()
+    {
+        PatchStats input, output;
+        if (!neuralGuard_.Poll(input, output)) { return; }
+        std::scoped_lock lock(neuralMutex_);
+        // Samples taken before a runtime change say nothing about the new one.
+        if (!PluginPaths::EqualPath(neuralGuardRuntime_, neuralOptions_.runtimePath)) {
+            neuralGuardRuntime_ = neuralOptions_.runtimePath;
+            neuralBlack_.Reset();
+        }
+        if (!neuralOptions_.enabled || !neuralBlack_.Add(input, output)) { return; }
+        neuralBlack_.Reset();
+        const auto failedPath = neuralOptions_.runtimePath;
+        neuralFailedRuntimes_.push_back(failedPath);
+        ApplyNeuralFallback(neuralOptions_);
+        neuralAvailability_.Reset();
+        const auto name = failedPath.filename().string();
+        neuralSnapshot_.fallback = neuralOptions_.enabled ?
+            std::format("NR produced a black image with {}, so NVIDIA's {} is used for this session. That runtime may not support your GPU.",
+                name, neuralOptions_.runtimePath.filename().string()) :
+            std::format("NR produced a black image with {}, so NR is off for this session. That runtime may not support your GPU.", name);
+        logger::warn("[SourceDLSSG NR] output guard: {} (input lit {}/{}, output dark {}/{})",
+            neuralSnapshot_.fallback, input.lit, input.texels, output.dark, output.texels);
     }
 
     bool Backend::FailNeuralRecording()
@@ -127,9 +177,11 @@ namespace TheosRenderPipeline::SourceDLSSG
             camera->mvecScale.x * motion_.desc.Width, camera->mvecScale.y * motion_.desc.Height,
             motion_.texture12.Get(), depth_.texture12.Get(), nullptr, earlyNeuralColor_.texture12.Get(), nullptr,
             neuralTimestampFrequency_)) { return FailNeuralRecording(); }
+        RecordNeuralGuard(list, earlyNeuralColor_.texture12.Get(), neuralPass_->Corrected());
         if (!Check(Interop::RecordCopy(list, neuralPass_->Corrected(), earlyNeuralColor_.texture12.Get()), "early NR result copy") ||
             !Check(interop_.Submit(Work::Upscaling), "submit NR before DLSS") ||
             !Check(interop_.WaitD3D11(Work::Upscaling), "DLSS waits for NR")) { return false; }
+        SubmitNeuralGuard();
         // This copy and the subsequent NGX D3D11 call follow the GPU wait on
         // the same immediate context. No CPU-wide flush/drain on each frame.
         if (!Check(D3D11FrameCopy::Color(context11_.Get(), earlyNeuralColor_.texture11.Get(), color, colorExtent),

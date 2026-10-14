@@ -629,6 +629,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				return fault_; // Retain all objects and the unsubmitted list on unknown NGX failure.
 			}
 			realSource = neuralPass_->Composed();
+			RecordNeuralGuard(list, a_source, realSource);
 		}
 #endif
 		HRESULT outputResult;
@@ -694,6 +695,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		if (!Check(outputResult, "record native output copy/conversion") ||
 			!Check(interop_.Submit(Work::SwapChain), "submit native output copy")) { return fault_; }
+#if !defined(TRP_NO_NEURAL_RENDERING)
+		SubmitNeuralGuard();
+		PollNeuralGuard();
+#endif
 		if (screenshotRecorded_) {
 			screenshotRecorded_ = false;
 			ScreenshotBoundary([&] {
