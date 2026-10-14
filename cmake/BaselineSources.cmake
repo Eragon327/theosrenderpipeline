@@ -39,6 +39,8 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/XeFGLayerSelection.h
     src/FrameGen/DlssgOverride.h
     src/FrameGen/DlssgLiteBlending.h
+    src/FrameGen/DlssgPreset.h
+    src/FrameGen/StreamlineRuntimeFolder.h
     src/FrameGen/FGInputDebugView.h
     src/FrameGen/FGInputDebugView.cpp
     src/FrameGen/FGMotionRepair.h

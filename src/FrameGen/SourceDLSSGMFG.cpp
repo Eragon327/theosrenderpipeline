@@ -56,7 +56,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 	void MFGUnlock::EnterStartupScope() noexcept { trp::ampere::EnterStartupScope(); }
 	void MFGUnlock::LeaveStartupScope() noexcept { trp::ampere::LeaveStartupScope(); }
-	void MFGUnlock::BeforeStreamline(ID3D12Device* device, const std::filesystem::path& directory)
+	void MFGUnlock::SelectAdapter(ID3D12Device* device)
 	{
 		if (state_.route != MFGRoute::Unselected) { Fail("MFG startup adapter selection was repeated"); }
 		state_.status = "selecting NVIDIA MFG path";
@@ -77,6 +77,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 				"Set it to true in the winning MO2 INI (including Overwrite) and restart. "
 				"Turning frame generation off does not remove the required NVIDIA host.");
 		}
+	}
+	void MFGUnlock::BeforeStreamline(ID3D12Device* device, const std::filesystem::path& directory)
+	{
+		if (state_.route == MFGRoute::Unselected) { Fail("MFG adapter was not selected before Streamline loading"); }
 		if (state_.UsesProviderBackport()) {
 			spdlog::info("[SourceDLSSG Ampere] separate runtime bundles permitted={}", CommunityShaders::Active());
             if (!trp::ampere::Start(device, directory, [](const char* message) { spdlog::info("[SourceDLSSG Ampere] {}", message); }, CommunityShaders::Active(),

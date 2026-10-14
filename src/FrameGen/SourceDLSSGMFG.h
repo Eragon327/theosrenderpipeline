@@ -42,6 +42,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 	public:
 		void Configure(bool requested);
+		// Chooses the route before the Streamline folder is fixed: the RTX 20/30
+		// backport needs its own DLSS-G build. BeforeStreamline then prepares it.
+		void SelectAdapter(ID3D12Device* device);
 		void BeforeStreamline(ID3D12Device* device, const std::filesystem::path& directory);
 		void EnterStartupScope() noexcept;
 		void LeaveStartupScope() noexcept;

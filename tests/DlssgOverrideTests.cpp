@@ -1,6 +1,7 @@
 #include "FrameGen/DlssgOverride.h"
 #include "FrameGen/DlssgLiteBlending.h"
 #include "FrameGen/DlssgPreset.h"
+#include "FrameGen/StreamlineRuntimeFolder.h"
 #include <string>
 #include <cstdio>
 #include <cstdlib>
@@ -39,5 +40,11 @@ int main()
     Require(DriverPresetName(3) == "C" && DriverPresetName(0xFFFFFF) == "Latest" && DriverPresetName(0).empty() &&
         DriverPresetName(16).empty(), "driver preset values name their letter");
     std::puts("PASS DLSS-G presets: A/B/C mapping and driver preset names");
+    Require(BackportStreamlineDirectory(LR"(D:\Mods\TRP\SKSE\Plugins\TheosRenderPipeline\NVIDIA\Streamline)") ==
+        std::filesystem::path(LR"(D:\Mods\TRP\SKSE\Plugins\TheosRenderPipeline\NVIDIA\Streamline-RTX20-30)"),
+        "the RTX 20/30 set sits beside the configured Streamline folder");
+    Require(BackportStreamlineDirectory(LR"(D:\X\Streamline\)") == std::filesystem::path(LR"(D:\X\Streamline-RTX20-30)"),
+        "a trailing separator names the same folder");
+    std::puts("PASS RTX 20/30 Streamline folder beside the configured one");
     std::puts("PASS DLSS-G override path: NVIDIA model store recognised, TRP and other folders not");
 }

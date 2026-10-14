@@ -7,6 +7,7 @@
 #include "SourceRuntimeModuleDiagnostic.h"
 #include "DlssgOverride.h"
 #include "DlssgLiteBlending.h"
+#include "StreamlineRuntimeFolder.h"
 #include "../PluginPaths.h"
 #include "../ScreenshotFile.h"
 #include "../RenderPipeline.h"
@@ -114,6 +115,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 			return Check(E_UNEXPECTED, "another frame-generation mod is already loaded; disable the competing mod");
 		}
 		directory_ = Normalize(a_directory);
+		mfgUnlock_.SelectAdapter(device12_.Get());
+		if (mfgUnlock_.Snapshot().UsesProviderBackport()) {
+			const auto backport = BackportStreamlineDirectory(directory_);
+			std::error_code error;
+			if (std::filesystem::is_regular_file(backport / L"nvngx_dlssg.dll", error) &&
+				std::filesystem::is_regular_file(backport / L"sl.interposer.dll", error)) {
+				logger::info("[SourceDLSSG] RTX 20/30 backport uses the DLSS-G set it was built for: {}", backport.string());
+				directory_ = backport;
+			} else {
+				logger::warn("[SourceDLSSG] RTX 20/30 backport folder {} is missing; using {}", backport.string(), directory_.string());
+			}
+		}
 		logger::info("[SourceDLSSG] startup stage=module-ownership directory={} communityShaders={}", directory_.string(), CommunityShaders::Active());
 		// Keep one owner for the configured modules. Versions do not gate loading.
 		for (const auto* name : kStreamlineModules) {
