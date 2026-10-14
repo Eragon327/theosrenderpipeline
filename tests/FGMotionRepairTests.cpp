@@ -51,7 +51,7 @@ int main()
     const float panned[16]{ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, .1f, 0, 0, 1 };
     auto run = [&](const std::vector<float>& motion, const float (&camera)[16]) {
         auto source = Texture(device.Get(), DXGI_FORMAT_R32G32_FLOAT, 8, motion.data());
-        auto* result = repair.Apply(context.Get(), source.Get(), depth.Get(), camera, false, kWidth, kHeight);
+        auto* result = repair.Apply(context.Get(), source.Get(), depth.Get(), camera, false, kWidth, kHeight, true);
         Require(result && result != source.Get(), "repair produces its own copy");
         return Read(context.Get(), result);
     };
@@ -79,11 +79,16 @@ int main()
     const auto kept = run(object, identity);
     for (std::size_t i = 0; i < kept.size(); ++i) { Require(kept[i] == object[i], "a moving object keeps its own motion"); }
     ++cases;
+    // Above water even stuck-looking motion passes through: the repair is armed
+    // only while the game reports the player underwater.
+    auto source = Texture(device.Get(), DXGI_FORMAT_R32G32_FLOAT, 8, stuck.data());
+    Require(repair.Apply(context.Get(), source.Get(), depth.Get(), identity, false, kWidth, kHeight, false) == source.Get(),
+        "above water the engine's motion is handed through untouched");
+    ++cases;
     // Disabled: the engine's texture is handed through untouched.
     repair.Enable(false);
-    auto source = Texture(device.Get(), DXGI_FORMAT_R32G32_FLOAT, 8, stuck.data());
-    Require(repair.Apply(context.Get(), source.Get(), depth.Get(), identity, false, kWidth, kHeight) == source.Get(),
+    Require(repair.Apply(context.Get(), source.Get(), depth.Get(), identity, false, kWidth, kHeight, true) == source.Get(),
         "disabled repair returns the engine's motion");
     ++cases;
-    std::printf("PASS: %u motion repair cases: stuck frames, camera motion, agreeing motion, moving objects, disabled\n", cases);
+    std::printf("PASS: %u motion repair cases: stuck frames, camera motion, agreeing motion, moving objects, above water, disabled\n", cases);
 }

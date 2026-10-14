@@ -124,9 +124,10 @@ float2 CameraMotion(uint2 p) {
     }
 
     ID3D11Texture2D* FGMotionRepair::Apply(ID3D11DeviceContext* context, ID3D11Texture2D* motion, ID3D11Texture2D* depth,
-        const float (&clipToPrevClip)[16], bool depthInverted, std::uint32_t renderWidth, std::uint32_t renderHeight)
+        const float (&clipToPrevClip)[16], bool depthInverted, std::uint32_t renderWidth, std::uint32_t renderHeight,
+        bool underwater)
     {
-        if (!Enabled() || failed_ || !context || !motion || !depth || !renderWidth || !renderHeight) { return motion; }
+        if (!Enabled() || !underwater || failed_ || !context || !motion || !depth || !renderWidth || !renderHeight) { return motion; }
         if (!count_ && !Initialize(context)) { failed_ = true; return motion; }
         if (!EnsureOutput(motion)) { failed_ = true; return motion; }
         auto* motionView = View(device_.Get(), motion, motion_, motionSRV_);

@@ -13,6 +13,9 @@ namespace TheosRenderPipeline
     // alone implies at that depth; when nearly all disagree, the frame's motion
     // is replaced by that camera motion. Otherwise it is copied unchanged.
     // Everything stays on the GPU: the decision never waits for a readback.
+    // It runs only while the game reports the player underwater: above water
+    // (dialogue close-ups, for one) the camera check alone could flip between
+    // engine and camera motion and make NR flicker, so motion passes through.
     class FGMotionRepair
     {
     public:
@@ -20,10 +23,11 @@ namespace TheosRenderPipeline
         void Enable(bool a_enabled) { enabled_.store(a_enabled, std::memory_order_relaxed); }
         bool Enabled() const { return enabled_.load(std::memory_order_relaxed); }
         // Returns the motion to hand to frame generation: the repaired copy, or
-        // `motion` itself when disabled or unavailable. clipToPrevClip is
-        // row-major for row vectors, as Streamline receives it.
+        // `motion` itself when disabled, above water or unavailable.
+        // clipToPrevClip is row-major for row vectors, as Streamline receives it.
         ID3D11Texture2D* Apply(ID3D11DeviceContext* context, ID3D11Texture2D* motion, ID3D11Texture2D* depth,
-            const float (&clipToPrevClip)[16], bool depthInverted, std::uint32_t renderWidth, std::uint32_t renderHeight);
+            const float (&clipToPrevClip)[16], bool depthInverted, std::uint32_t renderWidth, std::uint32_t renderHeight,
+            bool underwater);
         // Diagnostics read back a few frames late, without waiting: of the 64x36
         // samples, how many disagreed with the camera and how many differed from
         // the frame's centre motion (a stuck frame has almost none).

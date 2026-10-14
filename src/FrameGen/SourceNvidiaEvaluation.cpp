@@ -57,11 +57,30 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
         float clipToPrevClip[16];
         static_assert(sizeof(camera.clipToPrevClip) == sizeof(clipToPrevClip));
         std::memcpy(clipToPrevClip, &camera.clipToPrevClip, sizeof(clipToPrevClip));
+        // The flag the engine uses for its own underwater look. Missing means
+        // no repair: the worst case is 0.4.1's unrepaired underwater motion.
+        const auto* water = RE::TESWaterSystem::GetSingleton();
+        const bool underwater = water && water->playerUnderwater;
         auto& repair = TheosRenderPipeline::FGMotionRepair::Get();
         repairedMotion = repair.Apply(host.context_.Get(), frame.motion, frame.depth,
-            clipToPrevClip, camera.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight);
+            clipToPrevClip, camera.depthInverted == sl::eTrue, frame.renderWidth, frame.renderHeight, underwater);
+        LogUnderwater(underwater, repair.Enabled());
         LogRepair(repair);
         return repairedMotion;
+    }
+
+    // The repair is armed only underwater; log each change of the engine flag
+    // (first 300) so a test shows whether it follows the camera.
+    static void LogUnderwater(bool underwater, bool enabled)
+    {
+        static bool last{};
+        static std::uint32_t changes{};
+        if (underwater == last) { return; }
+        last = underwater;
+        if (++changes <= 300) {
+            logger::info("[FGMotionRepair] player underwater={} repair {} changes={}", underwater,
+                !enabled ? "off (Lab)" : underwater ? "armed" : "disarmed (engine motion passes through)", changes);
+        }
     }
 
     // Every switch between engine and camera motion (first 300), and a summary
