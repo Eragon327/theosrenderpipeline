@@ -50,6 +50,7 @@ struct Owner {
     std::atomic<const char*> error{};
     std::atomic_uint32_t mask{}, requirementsCalls{}, capabilityCalls{}, createCalls{};
     std::uint32_t fatbins{}, targetSm{86}, nativeArchitecture{kAmpere};
+    bool emulateAmpereOnAda{}, emulatedAda{};
     Log log{};
     Fatal fatal{};
     LUID luid{};
@@ -304,7 +305,8 @@ bool BindAdapter(ID3D12Device* device) {
         s.gpu=gpus[i];
     }
     ArchInfo arch{0x20010,0,0,0};
-    if (!s.gpu || s.arch(s.gpu,&arch)!=0 || arch.architecture!=s.nativeArchitecture) return Fail("NVAPI does not match the physical compatibility adapter");
+    const auto physical=s.emulatedAda ? kAda : s.nativeArchitecture;
+    if (!s.gpu || s.arch(s.gpu,&arch)!=0 || arch.architecture!=physical) return Fail("NVAPI does not match the physical compatibility adapter");
     if (s.targetSm==75) {
         const auto getName=reinterpret_cast<GetName>(s.query(0xceee8e9f));
         std::array<char,64> name{};
@@ -414,13 +416,15 @@ bool Start(ID3D12Device* device,const std::filesystem::path& directory,Log log,b
     try {
         Message("stage=adapter-binding");
         const auto adapter=device ? midpoint_fix::ObserveD3D12Adapter(device) : midpoint_fix::AdapterKind::Unavailable;
-        if (!device || !directory.is_absolute() || (adapter!=midpoint_fix::AdapterKind::Ampere && adapter!=midpoint_fix::AdapterKind::Turing))
+        s.emulatedAda=s.emulateAmpereOnAda && adapter==midpoint_fix::AdapterKind::Ada;
+        if (!device || !directory.is_absolute() || (adapter!=midpoint_fix::AdapterKind::Ampere && adapter!=midpoint_fix::AdapterKind::Turing && !s.emulatedAda))
             return Fail("Compatibility preparation requires an actual SM86 or SM75 rendering adapter");
         if (adapter==midpoint_fix::AdapterKind::Turing) {
             s.targetSm=75; s.nativeArchitecture=kTuring;s.fatal=fatal;
             if(!s.fatal)return Fail("Turing kernel failure guard requires a terminating host callback");
         }
-        Message(s.targetSm==75 ? "physical adapter=Turing target=SM75; experimental instruction lowering" : "physical adapter=Ampere target=SM86");
+        Message(s.targetSm==75 ? "physical adapter=Turing target=SM75; experimental instruction lowering" :
+            s.emulatedAda ? "physical adapter=Ada EMULATING Ampere target=SM86 (developer test)" : "physical adapter=Ampere target=SM86");
         if (!BindAdapter(device)) return false;
         if (!Load(directory,L"nvngx_dlssg.dll",s.provider,allowSeparateModules)) return false;
         if (!Load(directory,L"sl.common.dll",s.common,allowSeparateModules)) return false;
@@ -448,6 +452,7 @@ bool Start(ID3D12Device* device,const std::filesystem::path& directory,Log log,b
         return true;
     } catch (...) { return Fail("Ampere startup preparation raised an exception; restart required"); }
 }
+void EmulateAmpereOnAda(bool enabled) noexcept { State().emulateAmpereOnAda=enabled; }
 RuntimeStatus Snapshot() noexcept {
     auto& s=State(); return {s.prepared.load(),s.installed.load(),s.failed.load(),s.createSeen.load(),s.fatbins,s.mask.load(),s.requirementsCalls.load(),s.capabilityCalls.load(),s.createCalls.load(),s.error.load()};
 }
