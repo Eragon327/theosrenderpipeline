@@ -268,6 +268,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::uint64_t presentationQueryFailures_{};
 		std::int64_t presentationQpcFrequency_{};
 		std::uint64_t neuralTimestampFrequency_{};
+		bool timerReported_{}; // Stage timer availability was logged.
 		RuntimeDiagnostics runtimeDiagnostics_;
 		mutable std::mutex generationMutex_;
 		GenerationRequest generationRequest_;

@@ -71,6 +71,33 @@ void OverlayUI::DrawStageMeasurements(SettingsPage page)
 {
     const auto* performance = PerformanceTuning::GetSingleton();
     const auto& timings = performance->GetTimingSnapshot();
+    using Stage12 = PerformanceTuning::D3D12Stage;
+    // D3D12 passes appear only while they run: NR placement and the frame
+    // generation provider decide which lists exist.
+    auto row12 = [&](const char* name, Stage12 stage, const char* help = nullptr) {
+        const auto i = static_cast<std::size_t>(stage);
+        if (!performance->TimingEnabled() || !timings.d3d12Available[i]) { return false; }
+        DrawSettingsValue(name, TheosRenderPipeline::Telemetry::Milliseconds(timings.d3d12Ms[i], true).c_str());
+        if (help) { DrawSettingsHelp(help); }
+        return true;
+    };
+    if (page == SettingsPage::NeuralRendering)
+    {
+        row12("Preparation", Stage12::kNeuralPrepare, "Colour, guide and UI preparation before inference.");
+        row12("Reconstruction + UI", Stage12::kNeuralFinish,
+              "Pass 2 restoration, colour reconstruction, native UI composition and the HUD-less copy.");
+        using Stage11 = PerformanceTuning::D3D11Stage;
+        const auto roundTrip = static_cast<std::size_t>(Stage11::kNeuralEarlyRoundTrip);
+        const auto earlyList = static_cast<std::size_t>(Stage12::kEarlyNeuralList);
+        if (performance->TimingEnabled() && timings.d3d11Available[roundTrip] && timings.d3d12Available[earlyList])
+        {
+            const auto handoff = (std::max)(0.0f, timings.d3d11Ms[roundTrip] - timings.d3d12Ms[earlyList]);
+            DrawSettingsValue("D3D11/D3D12 handoff",
+                              TheosRenderPipeline::Telemetry::Milliseconds(handoff, true).c_str());
+            DrawSettingsHelp("Before-DLSS NR only: the input and result copies plus the waits between the two APIs.");
+        }
+        return;
+    }
     if (performance->TimingEnabled() && performance->GetQueryDiagnostics().quarantined)
     {
         ImGui::TextDisabled("GPU timings unavailable (query failure)");
@@ -103,6 +130,9 @@ void OverlayUI::DrawStageMeasurements(SettingsPage page)
         row("Mask", Stage::kMaskEncode);
         row("Upscaler output copy", Stage::kOutputCopy);
         row("Presentation copy", Stage::kPresentationCopy);
+        row12("Output (D3D12)", Stage12::kOutput, "Copy or HDR encoding into the swapchain.");
+        row12("Present work (D3D12)", Stage12::kOutputList,
+              "Everything TRP records before Present: after-DLSS NR, output and XeFG input copies.");
         const auto& c = timings.gameFrameCadence;
         const auto& g = timings.d3d11Frame;
         if (c.samples == 0)
@@ -122,13 +152,25 @@ void OverlayUI::DrawStageMeasurements(SettingsPage page)
     {
         row("FG inputs", Stage::kFrameGenInputs);
         row("HUD-less copy", Stage::kHUDLessCopy);
+        row12("Input tags (D3D12)", Stage12::kFrameGenTagList, "DLSS-G's copies of the tagged inputs.");
+        row12("XeFG input copies", Stage12::kXeFGInputs);
+        if (row12("Frame generation", Stage12::kFrameGenerationHold,
+                  "GPU time from the end of TRP's output to DLSS-G releasing this frame's inputs. It covers generating "
+                  "this frame's generated frames; other GPU work running at the same time can add to it."))
+        {
+            const auto& hold = timings.frameGenerationHold;
+            ImGui::TextWrapped("Frame generation ms: p50 %.2f | p95 %.2f | p99 %.2f", hold.p50Ms, hold.p95Ms,
+                               hold.p99Ms);
+            ImGui::TextDisabled("%llu measured, %llu upper bounds only", static_cast<unsigned long long>(timings.holdExact),
+                                static_cast<unsigned long long>(timings.holdBounded));
+            DrawSettingsHelp("An upper bound is a frame where DLSS-G had already finished before TRP could measure it.");
+        }
         const auto& present = timings.sourcePresentCpu;
         if (present.samples)
         {
             ImGui::TextWrapped("CPU Present ms: p50 %.2f | p95 %.2f | p99 %.2f", present.p50Ms, present.p95Ms,
                                present.p99Ms);
-            DrawSettingsHelp(
-                "CPU Present includes waits. NVIDIA generation GPU cost and physical cadence are not measured.");
+            DrawSettingsHelp("CPU Present includes waits. Physical display cadence is not measured.");
         }
     }
     else if (page == SettingsPage::Advanced)

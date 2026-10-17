@@ -59,6 +59,26 @@ public:
 	static_assert(static_cast<unsigned>(D3D11Stage::kOutputCopy) == 6);
 	static_assert(static_cast<unsigned>(D3D11Stage::kPresentationCopy) == 11);
 
+	// TRP's own work on the presenting D3D12 queue. A list stage covers a whole
+	// command list; the others are passes inside one. IDs are trace stage
+	// numbers, so append only.
+	enum class D3D12Stage : std::uint8_t
+	{
+		kEarlyNeuralList,
+		kFrameGenTagList,
+		kOutputList,
+		kNeuralPrepare,
+		kNeuralInference,
+		kNeuralFinish,
+		kOutput,
+		kXeFGInputs,
+		// From the end of TRP's output list to DLSS-G releasing that frame's
+		// inputs, on the same queue: the GPU time frame generation holds them.
+		kFrameGenerationHold,
+		kCount
+	};
+	static_assert(static_cast<unsigned>(D3D12Stage::kFrameGenerationHold) == 8);
+
 	// Only an accepted start can construct an owner. Generations are never reset
 	// with timing windows, query slots or devices, so an old scope cannot end a
 	// later recording even when the same slot and context are reused.
@@ -121,6 +141,16 @@ public:
 		Percentiles gameFrameCadence{};
 		Percentiles d3d11Frame{};
 		Percentiles sourcePresentCpu{};
+
+		// Smoothed like the D3D11 stages. A stage is available only while it is
+		// still being measured; one not seen for a few frames is not a zero.
+		std::array<float, static_cast<std::size_t>(D3D12Stage::kCount)> d3d12Ms{};
+		std::array<bool, static_cast<std::size_t>(D3D12Stage::kCount)> d3d12Available{};
+		std::uint64_t d3d12Samples{};
+		// Exact hold samples feed the values above. Bounded ones were measured
+		// after DLSS-G had already released its inputs, so only an upper bound.
+		std::uint64_t holdExact{}, holdBounded{};
+		Percentiles frameGenerationHold{};
 	};
 
 	static PerformanceTuning* GetSingleton()
@@ -158,6 +188,8 @@ public:
 	// publishable measurement. A rejected end never closes a different owner.
 	bool EndD3D11Stage(ID3D11DeviceContext* a_context, D3D11StageTicket a_ticket);
 	void RecordNeuralEarlyCPU(std::uint64_t cpuNanoseconds, std::uint64_t waitNanoseconds, bool waited);
+	// One retired D3D12 interval. frame counts presenting-queue frames.
+	void RecordD3D12Stage(D3D12Stage stage, float ms, std::uint64_t frame, bool bounded = false);
 
 	void RecordGameFrameCadenceMs(float a_ms);
 	void RecordSourcePresentCpuMs(float ms);
@@ -175,6 +207,9 @@ private:
 	static constexpr std::size_t kD3D11QueriesPerSlot = kD3D11StageCount * 2;
 	static constexpr std::size_t kPercentileWindow = 1024;
 	static constexpr std::uint64_t kPercentileRefreshSamples = 30;
+	static constexpr std::size_t kD3D12StageCount = static_cast<std::size_t>(D3D12Stage::kCount);
+	// Stages missing for this many presenting-queue frames become unavailable.
+	static constexpr std::uint64_t kD3D12StaleFrames = 8;
 
 	struct D3D11QuerySlot
 	{
@@ -228,6 +263,10 @@ private:
 	std::array<float, kPercentileWindow> d3d11FrameWindow_{};
 	std::array<float, kPercentileWindow> sourcePresentCpuWindow_{};
 	std::size_t sourcePresentCpuNext_{}, sourcePresentCpuCount_{};
+	std::array<std::uint64_t, kD3D12StageCount> d3d12LastFrame_{};
+	std::uint64_t d3d12NewestFrame_{};
+	std::array<float, kPercentileWindow> holdWindow_{};
+	std::size_t holdNext_{}, holdCount_{};
 	std::size_t gameFrameCadenceNext_{ 0 };
 	std::size_t d3d11FrameNext_{ 0 };
 	std::size_t gameFrameCadenceCount_{ 0 };

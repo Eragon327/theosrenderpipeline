@@ -21,7 +21,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			float motionScaleX, float motionScaleY,
 			ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 			ID3D12Resource* hudless, ID3D12Resource* composed,
-			std::uint64_t timestampFrequency = 0);
+			std::uint64_t timestampFrequency = 0, const D3D12StageMarks& marks = {});
 		ID3D12Resource* Composed() const { return composed_.Get(); }
 		ID3D12Resource* Corrected() const { return corrected_.Get(); }
 		NeuralTelemetrySnapshot Telemetry() const { return telemetry_.Snapshot(); }

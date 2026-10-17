@@ -176,7 +176,7 @@ namespace TheosRenderPipeline::SourceDLSSG
             frameNeuralReset_, camera->depthInverted == sl::eTrue,
             camera->mvecScale.x * motion_.desc.Width, camera->mvecScale.y * motion_.desc.Height,
             motion_.texture12.Get(), depth_.texture12.Get(), nullptr, earlyNeuralColor_.texture12.Get(), nullptr,
-            neuralTimestampFrequency_)) { return FailNeuralRecording(); }
+            neuralTimestampFrequency_, interop_.Marks(Work::Upscaling))) { return FailNeuralRecording(); }
         if (!Check(Interop::RecordCopy(list, neuralPass_->Corrected(), earlyNeuralColor_.texture12.Get()), "early NR result copy") ||
             !Check(interop_.Submit(Work::Upscaling), "submit NR before DLSS") ||
             !Check(interop_.WaitD3D11(Work::Upscaling), "DLSS waits for NR")) { return false; }

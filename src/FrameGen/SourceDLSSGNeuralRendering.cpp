@@ -225,7 +225,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 	bool NeuralPass::Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
 		const NeuralOptions& options, bool reset, bool depthInverted, float scaleX, float scaleY,
 		ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
-		ID3D12Resource* hudless, ID3D12Resource* composed, std::uint64_t timestampFrequency)
+		ID3D12Resource* hudless, ID3D12Resource* composed, std::uint64_t timestampFrequency,
+		const D3D12StageMarks& marks)
 	{
 		if (!device || !list || slot >= heaps_.size() || options.passes < 1 || options.passes > 2 || !SameSize(motion, depth) ||
 			!Texture(hudless) || (options.WorldOnly() ? (ui || composed || options.tuning.uiCorrection) :
@@ -240,6 +241,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Interop::Begin retired this exact command slot before Record was called.
 		// Reading its previous query pair therefore never adds a CPU wait.
 		HarvestTelemetry(slot);
+		// Marks left open by a failed recording are dropped with the list.
+		marks.Begin(D3D12Stage::kNeuralPrepare);
 		const auto reconstruction = NeuralRendering::SanitizeReconstruction(options.reconstruction);
 		const auto method = NeuralRendering::EffectiveResolve(reconstruction);
 		const bool resolving = method != NeuralRendering::ResolveMethod::Auto;
@@ -316,6 +319,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		input.reset = reset; input.depthInverted = depthInverted; input.tuning = options.tuning;
 		const bool gpuTiming = timestampHeap_ && timestampReadback_ && mappedTimestamps_ && timestampFrequency_;
 		const auto query = static_cast<UINT>(slot * 2);
+		marks.End(D3D12Stage::kNeuralPrepare);
+		marks.Begin(D3D12Stage::kNeuralInference);
 		if (gpuTiming) { list->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query); }
 		const auto cpuBegin = std::chrono::steady_clock::now();
 		auto second = input;
@@ -338,6 +343,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		} else {
 			telemetry_.RecordCPUOnly(cpuRecordNanoseconds);
 		}
+		marks.End(D3D12Stage::kNeuralInference);
+		marks.Begin(D3D12Stage::kNeuralFinish);
 
 		if (effectivePasses == 2 && !FinishSecond(device, list, slot, input, second, constants)) { return false; }
 
@@ -374,6 +381,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				reconstruction.peripheralCompression ? "peripheral 80/90" : "uniform",
 				reconstruction.fusedPreparation, fusedColor_, reconstruction.fusedPreparation && reconstruction.peripheralCompression);
 			status_ += secondStatus + overrideStatus;
+			marks.End(D3D12Stage::kNeuralFinish);
 			return true;
 		}
 
@@ -405,6 +413,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Preserve the HUD-less tag identity already registered with Streamline.
 		// Both its generated frames and our real-frame composition use corrected_.
 		if (FAILED(Interop::RecordCopy(list, corrected_.Get(), hudless))) { status_ = "NR HUD-less copy rejected"; return false; }
+		marks.End(D3D12Stage::kNeuralFinish);
 		status_ = std::format("source NR after DLSS {}x{} -> {}x{}; {} pass(es); {} resolve; {}; native UI after NR; NR feeds real output and HUD-less FG tag; fusion requested={} colour={} guides={}",
 			constants.workWidth, constants.workHeight, constants.sourceWidth, constants.sourceHeight,
 			effectivePasses,

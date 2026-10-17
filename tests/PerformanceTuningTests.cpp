@@ -118,6 +118,59 @@ static void RouteCPUChecks()
     std::puts("PASS: production route state with timings off; skipped frames; execution until next boundary; invalid timing independence; preserved capability, requests, reasons, counters and fallback latch (CPU only; hook placement source-reviewed)");
 }
 
+static void D3D12CPUChecks()
+{
+    using Stage12 = PerformanceTuning::D3D12Stage;
+    constexpr auto at = [](Stage12 stage) { return static_cast<std::size_t>(stage); };
+    static_assert(at(Stage12::kEarlyNeuralList) == 0 && at(Stage12::kFrameGenTagList) == 1 &&
+        at(Stage12::kOutputList) == 2 && at(Stage12::kNeuralPrepare) == 3 && at(Stage12::kNeuralInference) == 4 &&
+        at(Stage12::kNeuralFinish) == 5 && at(Stage12::kOutput) == 6 && at(Stage12::kXeFGInputs) == 7 &&
+        at(Stage12::kFrameGenerationHold) == 8);
+    auto& p = Timing();
+    p.ApplySettings({false, false, false, false});
+    p.RecordD3D12Stage(Stage12::kOutput, 1.0f, 1);
+    Require(!p.GetTimingSnapshot().d3d12Available[at(Stage12::kOutput)] && !p.GetTimingSnapshot().d3d12Samples,
+        "D3D12 samples are ignored with timings off");
+    p.ApplySettings({true, false, false, false});
+    p.RecordD3D12Stage(Stage12::kOutput, 2.0f, 0);
+    p.RecordD3D12Stage(Stage12::kOutputList, -1.0f, 0);
+    p.RecordD3D12Stage(Stage12::kOutputList, std::nanf(""), 0);
+    const auto& s = p.GetTimingSnapshot();
+    Require(s.d3d12Available[at(Stage12::kOutput)] && s.d3d12Ms[at(Stage12::kOutput)] == 2.0f,
+        "the first sample at frame 0 publishes unsmoothed");
+    Require(!s.d3d12Available[at(Stage12::kOutputList)] && s.d3d12Samples == 1, "negative and NaN durations are rejected");
+    p.RecordD3D12Stage(Stage12::kOutput, 4.0f, 1);
+    Require(std::fabs(s.d3d12Ms[at(Stage12::kOutput)] - 2.2f) < 1e-5f, "later samples are smoothed like D3D11 stages");
+    // A stage that stops running goes unavailable rather than reading as its last value or zero.
+    p.RecordD3D12Stage(Stage12::kNeuralPrepare, 1.0f, 2);
+    for (std::uint64_t frame = 3; frame < 9; ++frame) { p.RecordD3D12Stage(Stage12::kOutput, 4.0f, frame); }
+    Require(s.d3d12Available[at(Stage12::kNeuralPrepare)], "a stage seen within eight frames stays available");
+    p.RecordD3D12Stage(Stage12::kOutput, 4.0f, 10);
+    Require(!s.d3d12Available[at(Stage12::kNeuralPrepare)] && s.d3d12Available[at(Stage12::kOutput)],
+        "a stage missing for eight frames goes unavailable");
+    p.RecordD3D12Stage(Stage12::kNeuralPrepare, 3.0f, 11);
+    Require(s.d3d12Available[at(Stage12::kNeuralPrepare)] && s.d3d12Ms[at(Stage12::kNeuralPrepare)] == 3.0f,
+        "a returning stage restarts smoothing");
+    // Upper bounds are counted but never published as durations.
+    const auto samples = s.d3d12Samples;
+    p.RecordD3D12Stage(Stage12::kFrameGenerationHold, 9.0f, 11, true);
+    Require(!s.d3d12Available[at(Stage12::kFrameGenerationHold)] && s.holdBounded == 1 && s.holdExact == 0 &&
+        s.d3d12Samples == samples && s.frameGenerationHold.samples == 0, "a bounded hold is only counted");
+    for (int i = 1; i <= 100; ++i) { p.RecordD3D12Stage(Stage12::kFrameGenerationHold, static_cast<float>(i), 12); }
+    Require(s.holdExact == 100 && s.holdBounded == 1 && s.d3d12Available[at(Stage12::kFrameGenerationHold)],
+        "exact holds publish");
+    Require(s.frameGenerationHold.samples >= 90 && s.frameGenerationHold.p50Ms > 40.0f &&
+        s.frameGenerationHold.p50Ms < 52.0f && s.frameGenerationHold.p95Ms > s.frameGenerationHold.p50Ms,
+        "hold percentiles cover exact samples only");
+    p.ResetTimingWindow();
+    Require(!s.d3d12Samples && !s.holdExact && !s.holdBounded && !s.d3d12Available[at(Stage12::kOutput)],
+        "a timing window reset clears D3D12 stages");
+    p.RecordD3D12Stage(Stage12::kOutput, 1.0f, 0);
+    Require(s.d3d12Available[at(Stage12::kOutput)], "frame history restarts after a reset");
+    p.ApplySettings({false, false, false, false});
+    std::puts("PASS: stable D3D12 stage IDs; disabled, invalid, smoothed, stale and returning stages; bounded holds; hold percentiles; reset (CPU only)");
+}
+
 static void CPUChecks()
 {
     static_assert(Index(Stage::kFrame) == 0 && Index(Stage::kFrameGenInputs) == 1 &&
@@ -138,6 +191,7 @@ static void CPUChecks()
     Require(p.GetScopeDiagnostics().contextMismatches == 0, "inactive scopes are not misuse");
     std::puts("PASS: stable stage IDs; disabled/no-owner lifecycle (CPU only)");
     RouteCPUChecks();
+    D3D12CPUChecks();
 }
 
 struct Device

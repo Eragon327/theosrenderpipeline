@@ -11,6 +11,7 @@
 #include "../PluginPaths.h"
 #include "../ScreenshotFile.h"
 #include "../RenderPipeline.h"
+#include "../PerformanceTuning.h"
 #include "SourceFrameGeneration.h"
 #include <d3dcompiler.h>
 #include <chrono>
@@ -320,6 +321,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 		if (!Check(device12_->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue_)), "presenting queue") ||
 			!Check(interop_.Initialize(device11_.Get(), device12_.Get(), queue_.Get()), "shared interop")) { return fault_; }
+		interop_.Timer().SetSink([](void*, const D3D12StageSample& sample) {
+			PerformanceTuning::GetSingleton()->RecordD3D12Stage(sample.stage, sample.ms, sample.frame, sample.bounded);
+		}, nullptr);
 		if (FAILED(queue_->GetTimestampFrequency(&hdrTimestampFrequency_))) { hdrTimestampFrequency_ = 0; }
 #if !defined(TRP_NO_NEURAL_RENDERING)
 		if (FAILED(queue_->GetTimestampFrequency(&neuralTimestampFrequency_)) || !neuralTimestampFrequency_) {
@@ -369,7 +373,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		api_.context = this;
 		api_.waitForInputReaders = [](void* context, void* fence, std::uint64_t value) {
 			auto& owner = *static_cast<Backend*>(context);
-			const auto result = owner.interop_.WaitForInputReaders(static_cast<ID3D12Fence*>(fence), value);
+			// Called after Present: the snapshot still holds that frame's mode.
+			const auto result = owner.interop_.WaitForInputReaders(static_cast<ID3D12Fence*>(fence), value,
+				owner.session_.Snapshot().GenerationActive());
 			if (FAILED(result)) {
 				const auto& detail = owner.interop_.LastInputWait();
 				logger::error("[SourceDLSSG] input reuse fence stage={} fence={} value={} hostIdentity={} referenceFenceOwner={} inputFenceOwner={}",
@@ -583,6 +589,16 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 		if (!Ready()) { return FAILED(fault_) ? fault_ : E_UNEXPECTED; }
 		FinishScreenshot();
+		auto& timer = interop_.Timer();
+		timer.SetEnabled(PerformanceTuning::GetSingleton()->TimingEnabled());
+		if (!timerReported_ && timer.Availability() != S_FALSE) {
+			timerReported_ = true;
+			if (SUCCEEDED(timer.Availability())) { logger::info("[Performance D3D12] presenting-queue stage timing ready"); }
+			else {
+				logger::warn("[Performance D3D12] presenting-queue stage timing unavailable (0x{:08X}); rendering continues",
+					static_cast<std::uint32_t>(timer.Availability()));
+			}
+		}
 		const auto oldReflexRequest = session_.Snapshot().reflexRequested;
 		const auto oldReflexSubmitted = session_.Snapshot().reflexSubmitted;
 		const auto oldFrameLimit = session_.Snapshot().frameLimitSubmittedUs;
@@ -626,15 +642,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 				reset, frameConstants_.depthInverted == sl::eTrue,
 				frameConstants_.mvecScale.x * motion_.desc.Width, frameConstants_.mvecScale.y * motion_.desc.Height,
 				motion_.texture12.Get(), depth_.texture12.Get(), ui_.texture12.Get(), hudless_.texture12.Get(), a_source,
-				neuralTimestampFrequency_)) {
+				neuralTimestampFrequency_, interop_.Marks(Work::SwapChain))) {
 				FailNeuralRecording();
 				return fault_; // Retain all objects and the unsubmitted list on unknown NGX failure.
 			}
 			realSource = neuralPass_->Composed();
 		}
 #endif
+		const auto marks = interop_.Marks(Work::SwapChain);
 		HRESULT outputResult;
 		DXGI_COLOR_SPACE_TYPE outputColorSpace = a_colorSpace;
+		marks.Begin(D3D12Stage::kOutput);
 		const bool rendererHDR = hdrNative_ && a_destination->GetDesc().Format == HDROutputPass::kOutputFormat &&
 			HDROutputEligibleFormat(realSource->GetDesc().Format);
 		const bool hdrEncoded = !rendererHDR && realSource->GetDesc().Format == DXGI_FORMAT_R16G16B16A16_FLOAT &&
@@ -648,6 +666,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		} else {
 			outputResult = Interop::RecordCopy(list, realSource, a_destination);
 		}
+		marks.End(D3D12Stage::kOutput);
 		const bool hdrLayersComposed = hdrFrameTagged_;
 		hdrFrameTagged_ = false;
 		if (SUCCEEDED(outputResult)) {
@@ -690,9 +709,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 				if (ui.Format != destination.Format || ui.Width != destination.Width || ui.Height != destination.Height) { intelUI = nullptr; }
 			}
 			if (!CheckXeFG(xefg_.SetDebugView(XeFGOnlyGenerated(), XeFGTagGenerated()))) { return fault_; }
+			marks.Begin(D3D12Stage::kXeFGInputs);
 			if (!CheckXeFG(xefg_.BeforePresent(list, motion_.texture12.Get(), depth_.texture12.Get(), intelHudless, intelUI,
 				generationAllowed && prepared && compatible, UIRecompositionConfiguration(),
 				outputFPSLimit_.load(), XeFGConfiguration().generatedFrames))) { return fault_; }
+			marks.End(D3D12Stage::kXeFGInputs);
 		}
 		if (!Check(outputResult, "record native output copy/conversion") ||
 			!Check(interop_.Submit(Work::SwapChain), "submit native output copy")) { return fault_; }

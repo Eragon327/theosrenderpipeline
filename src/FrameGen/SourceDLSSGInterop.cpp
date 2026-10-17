@@ -7,12 +7,25 @@
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
+	namespace
+	{
+		D3D12Stage ListStage(Work a_work)
+		{
+			switch (a_work) {
+			case Work::Upscaling: return D3D12Stage::kEarlyNeuralList;
+			case Work::FrameGeneration: return D3D12Stage::kFrameGenTagList;
+			default: return D3D12Stage::kOutputList;
+			}
+		}
+	}
+
 	Interop::~Interop()
 	{
 		if (FAILED(Drain())) {
 			// A timeout is not retirement. Keep GPU-owned objects alive until the
 			// process ends rather than freeing an allocator that is still in use.
 			AbandonInFlightObjects();
+			timer_.Abandon();
 		}
 		for (auto& work : work_) {
 			if (work.event) {
@@ -218,7 +231,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return work->value ? Check(context11_->Wait(work->fence11.Get(), work->value)) : S_OK;
 	}
 
-	HRESULT Interop::WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value)
+	HRESULT Interop::WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value, bool a_timeHold)
 	{
 		Observe("input reader validation", Work::FrameGeneration);
 		inputWait_ = {};
@@ -246,7 +259,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (FAILED(hr)) { return hr; }
 		// Only these two calls are direct; WaitD3D12/WaitD3D11 observe their own.
 		inputWait_.stage = observation_.stage = "input fence queue Wait";
+		// Already released before the queue waits: a hold measured now is only
+		// an upper bound, set by when this thread got here.
+		const bool timeHold = a_timeHold && a_fence && a_value && timer_.Enabled();
+		const bool released = timeHold && a_fence->GetCompletedValue() >= a_value;
 		if (a_fence && a_value && FAILED(hr = queue_->Wait(a_fence, a_value))) { return Check(hr); }
+		if (timeHold) { timer_.SubmitHold(queue_.Get(), released, work->fence12.Get(), work->value + 1); }
 		// This queue signal also follows the most recent native Present. It
 		// covers the default DLSS-G presenting-queue block when no fence is given.
 		inputWait_.stage = observation_.stage = "bridge queue Signal";
@@ -354,7 +372,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (FAILED(hr = work->lists[work->slot]->Reset(work->allocators[work->slot].Get(), nullptr))) { return Check(hr); }
 		work->recording = true;
 		*a_list = work->lists[work->slot].Get();
+		// This slot just retired; others may have too.
+		timer_.Harvest();
+		timerRecords_[static_cast<std::size_t>(a_work)] = timer_.Open(device12_.Get(), queue_.Get(), *a_list, ListStage(a_work));
 		return S_OK;
+	}
+
+	D3D12StageMarks Interop::Marks(Work a_work)
+	{
+		const auto index = static_cast<std::size_t>(a_work);
+		auto* work = Get(a_work);
+		return work && work->recording ? D3D12StageMarks{ &timer_, timerRecords_[index] } : D3D12StageMarks{};
 	}
 
 	HRESULT Interop::Submit(Work a_work)
@@ -362,15 +390,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Observe("command list Close", a_work);
 		auto* work = Get(a_work);
 		if (!Ready() || !work || !work->recording) { return E_UNEXPECTED; }
+		auto& record = timerRecords_[static_cast<std::size_t>(a_work)];
+		timer_.Close(record);
 		auto hr = work->lists[work->slot]->Close();
 		work->recording = false;
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { timer_.Discard(std::exchange(record, D3D12StageTimer::kNoRecord)); return Check(hr); }
 		ID3D12CommandList* lists[]{ work->lists[work->slot].Get() };
 		queue_->ExecuteCommandLists(1, lists);
 		observation_.stage = "D3D12 queue Signal after ExecuteCommandLists";
 		observation_.fenceValue = work->value + 1;
 		hr = queue_->Signal(work->fence12.Get(), ++work->value);
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { timer_.Discard(std::exchange(record, D3D12StageTimer::kNoRecord)); return Check(hr); }
+		timer_.Submitted(std::exchange(record, D3D12StageTimer::kNoRecord), work->fence12.Get(), work->value);
 		work->submitted[work->slot] = work->value;
 		work->slot = (work->slot + 1) % kCommandSlots;
 		return S_OK;

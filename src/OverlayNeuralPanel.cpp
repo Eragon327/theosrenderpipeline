@@ -403,6 +403,8 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
                                            : "unavailable");
         DrawSettingsHelp("Combined model inference and inter-pass preparation. Excludes input preparation, final Pass "
                          "2 restoration, reconstruction, UI composition and the D3D11/D3D12 handoff.");
+        if (state.active)
+            DrawStageMeasurements(SettingsPage::NeuralRendering);
         DrawNRAppliedPasses(applied);
         if (state.active) {
             const auto execution = state.passOverride == TheosRenderPipeline::NeuralRendering::PassOverride::None ?
