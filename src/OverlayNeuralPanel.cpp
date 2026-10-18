@@ -328,29 +328,31 @@ void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
         listedFor = draft.neuralRuntime;
         listed = Clock::now();
     }
-    auto name = [](const std::string& path) {
-        const auto utf8 = std::filesystem::u8path(path).filename().u8string();
-        return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
-    };
+    using TheosRenderPipeline::SourceDLSSG::NeuralRuntimeLabel;
     if (BeginSettingRows("nrRuntime", LabelWidth({"One pass while weapons are drawn", "Input colour is linear HDR", "NR input resolution"})))
     {
         SettingRow("Runtime", "NeuralRenderingRuntimePath", true, false, [&] {
             bool changed = false;
-            if (ImGui::BeginCombo("##v", name(draft.neuralRuntime).c_str())) {
+            if (ImGui::BeginCombo("##v", NeuralRuntimeLabel(draft.neuralRuntime).c_str())) {
                 for (const auto& runtime : runtimes) {
                     const bool selected = runtime == draft.neuralRuntime;
-                    if (ImGui::Selectable(name(runtime).c_str(), selected) && !selected) { draft.neuralRuntime = runtime; changed = true; }
+                    if (ImGui::Selectable(NeuralRuntimeLabel(runtime).c_str(), selected) && !selected) { draft.neuralRuntime = runtime; changed = true; }
                     if (selected) { ImGui::SetItemDefaultFocus(); }
                 }
                 ImGui::EndCombo();
             }
-            DrawSettingsHelp("Any nvngx_dlssnr*.dll in Data/SKSE/Plugins/TheosRenderPipeline/NVIDIA. nvngx_dlssnr.dll is NVIDIA's runtime; "
-                             "other files, such as community builds, load by their file version (310 or later). "
-                             "Community builds do not come from NVIDIA. Apply switches it; the log records each file's version and hash.");
+            DrawSettingsHelp("Automatic picks the newest model your GPU runs: NVIDIA 310.9.16 on RTX 50, the 310.9.16 compat "
+                             "rebuild on RTX 40, and NVIDIA 310.8 otherwise. The compat build is a community rebuild by RenoDX, "
+                             "not an NVIDIA release. You can also pick any nvngx_dlssnr*.dll in "
+                             "Data/SKSE/Plugins/TheosRenderPipeline/NVIDIA; it loads by its file version (310 or later). "
+                             "A runtime that can't run on your GPU is replaced for the session. Apply switches it.");
             return changed;
         });
         ImGui::EndTable();
     }
+    const auto applied = TheosRenderPipeline::SourceDLSSG::Backend::Get().NeuralConfiguration();
+    if (applied.automaticRuntime && applied.enabled && TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(draft.neuralRuntime))
+        ImGui::TextDisabled("Automatic is using %s", NeuralRuntimeLabel(applied.runtimePath.string()).c_str());
 }
 
 void DrawSourceNeuralControls(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bool& sharpening,

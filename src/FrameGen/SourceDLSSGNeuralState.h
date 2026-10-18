@@ -29,6 +29,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			return passes == 2 && (presetOnePass || passOverride != NeuralRendering::PassOverride::None) ? 1 : passes;
 		}
 		std::filesystem::path runtimePath;
+		// The backend replaces runtimePath with the best bundled runtime for the GPU.
+		bool automaticRuntime{};
 		NeuralRendering::Tuning tuning{};
 		NeuralRendering::Reconstruction reconstruction{};
 		NeuralRendering::SecondPassSettings secondPass{};

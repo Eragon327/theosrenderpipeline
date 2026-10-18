@@ -60,6 +60,9 @@ namespace TheosRenderPipeline::NeuralRendering
 		bool RecordEvaluation(const EvaluationInput& a_input);
 
 		bool IsInitialized() const;
+		// The runtime loaded but NGX refused to create the feature, before any
+		// command reached a caller's list: the NGX result, otherwise 0.
+		std::uint32_t RefusedCreation() const;
 		RuntimeBuild Build() const;
 		std::uint64_t EvaluationsRecorded() const;
 		const std::string& Status() const;

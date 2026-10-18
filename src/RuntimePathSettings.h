@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NvidiaBaselinePolicy.h"
+#include "FrameGen/NeuralRuntimeFiles.h"
 #include <filesystem>
 #include <string>
 
@@ -14,13 +15,14 @@ namespace TheosRenderPipeline
         template<class Ini> void Load(const Ini& ini)
         {
             streamline = ini.GetValue("Experimental", "SourceDLSSGStreamlineDirectory", "");
-            neural = ini.GetValue("Experimental", "NeuralRenderingRuntimePath", "");
+            neural = SourceDLSSG::NormalizeNeuralRuntimeSetting(ini.GetValue("Experimental", "NeuralRenderingRuntimePath", ""),
+                ini.GetBoolValue("Experimental", "NeuralRenderingRuntimeExplicit", false));
         }
 
         [[nodiscard]] RuntimePathSettings Resolve(const std::filesystem::path& pluginDirectory) const
         {
             return {ResolveRuntimePath(streamline, pluginDirectory).string(),
-                ResolveRuntimePath(neural, pluginDirectory).string()};
+                SourceDLSSG::ResolveNeuralRuntimeSetting(neural, pluginDirectory).string()};
         }
 
         template<class Ini> void Store(Ini& ini) const

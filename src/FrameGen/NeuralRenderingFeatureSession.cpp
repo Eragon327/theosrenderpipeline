@@ -446,6 +446,12 @@ namespace TheosRenderPipeline::NeuralRendering
 	{
 		return state_ && state_->initialized;
 	}
+	std::uint32_t FeatureSession::RefusedCreation() const
+	{
+		constexpr auto notCalled = (std::numeric_limits<std::uint32_t>::max)();
+		return state_ && !state_->initialized && state_->lastCreateResult != notCalled &&
+			NVSDK_NGX_FAILED(static_cast<NVSDK_NGX_Result>(state_->lastCreateResult)) ? state_->lastCreateResult : 0;
+	}
 	RuntimeBuild FeatureSession::Build() const
 	{
 		return IsInitialized() ? state_->contract.build : RuntimeBuild::Unknown;

@@ -16,7 +16,7 @@ int main()
 	CSimpleIniA ini;
 	auto empty = LoadPreferences(ini);
 	Require(!empty.xefg.experimentalMFG && empty.xefg.generatedFrames == 1, "old INIs retain official XeFG x2");
-	Require(empty.neuralRuntime == kDefaultNeuralRuntime, "NR defaults to NVIDIA's runtime file");
+	Require(empty.neuralRuntime == kAutomaticNeuralRuntime, "NR defaults to Automatic");
 	{
 		CSimpleIniA runtime;
 		auto chosen = empty;
@@ -25,7 +25,7 @@ int main()
 		Require(std::string(runtime.GetValue("Experimental", "NeuralRenderingRuntimePath", "")) == chosen.neuralRuntime &&
 			LoadPreferences(runtime).neuralRuntime == chosen.neuralRuntime, "the chosen runtime round trips through the existing key");
 		chosen.neuralRuntime.clear();
-		Require(SanitizePreferences(chosen).neuralRuntime == kDefaultNeuralRuntime, "an empty choice returns to NVIDIA's runtime");
+		Require(SanitizePreferences(chosen).neuralRuntime == kAutomaticNeuralRuntime, "an empty choice returns to Automatic");
 	}
 	empty.xefg = {true, 5};
 	empty.generation.generatedFrames = 5;

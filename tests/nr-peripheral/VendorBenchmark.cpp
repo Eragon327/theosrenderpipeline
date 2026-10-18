@@ -64,6 +64,7 @@ int wmain(int argc,wchar_t** argv){
         gpu.list->EndQuery(query.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0);
         const bool recorded=pass->Record(gpu.device.Get(),gpu.list.Get(),frame%kCommandSlots,options,frame==0 || recreate,true,float(w),float(h),
             motion.Get(),depth.Get(),options.beforeUpscaling?nullptr:ui.Get(),scene.Get(),options.beforeUpscaling?nullptr:composed.Get(),frequency);
+        if(!recorded && pass->RefusedCreation())std::printf("REFUSED 0x%08X\n",pass->RefusedCreation());
         Require(recorded,pass->Status().c_str());
         if (coldStart) {
             Require(GetModuleHandleW(L"nvngx.dll") || GetModuleHandleW(L"_nvngx.dll"),
@@ -89,6 +90,14 @@ int wmain(int argc,wchar_t** argv){
         if(ch<3 && std::abs(result[i][ch]-pixels[i][ch])>.01f)++changed;
     }
     Require(changed>result.size()/10,"real runtime must alter the image");
+    // A runtime without working kernels for this GPU can run and still render
+    // black (community int8 v2 on RTX 40), which also "alters the image".
+    double inputMean=0,outputMean=0;size_t black=0;
+    for(size_t i=0;i<result.size();++i){
+        inputMean+=(pixels[i][0]+pixels[i][1]+pixels[i][2])/3.0;outputMean+=(result[i][0]+result[i][1]+result[i][2])/3.0;
+        if(result[i][0]<.02f && result[i][1]<.02f && result[i][2]<.02f)++black;
+    }
+    std::printf("OUTPUT input_mean=%.4f output_mean=%.4f black_share=%.4f\n",inputMean/result.size(),outputMean/result.size(),double(black)/result.size());
     auto mean=[](const auto& v){return std::accumulate(v.begin(),v.end(),0.0)/v.size();};
     std::printf("RESULT mode=%ls source=%ux%u model=%ux%u samples=%zu NR_total_ms=%.6f inference_ms=%.6f changed=%zu\n",mode.c_str(),w,h,
         TheosRenderPipeline::NeuralRendering::ModelExtent(w,options.reconstruction),TheosRenderPipeline::NeuralRendering::ModelExtent(h,options.reconstruction),
