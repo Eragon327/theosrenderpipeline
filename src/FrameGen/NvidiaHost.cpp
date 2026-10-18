@@ -79,6 +79,7 @@ bool NvidiaHost::EvaluateFrame(IDXGISwapChain* a_swapChain, bool a_nativeUIHando
 
     {
         ScopedD3D11PerformanceStage timer{context_.Get(), PerformanceTuning::D3D11Stage::kPresentationCopy};
+        if (FAILED(TheosRenderPipeline::SourceDLSSG::Backend::Get().Transport().BeforeSharedWrites())) { return false; }
         context_->CopyResource(presentation_.Buffers()[currentIndex].Get(), gameTargets_.UpscaleOutput());
     }
     resetNextEvaluation_ = false;
@@ -135,6 +136,7 @@ bool NvidiaHost::PrepareCommunityFrameForPresent()
         pipeline->FrameGenerationTransitionBlocked()));
     // Every real presentation copies CS's completed image, including menus and
     // frames where camera/guide inputs are unavailable for generation.
+    if (FAILED(TheosRenderPipeline::SourceDLSSG::Backend::Get().Transport().BeforeSharedWrites())) { return false; }
     context_->CopyResource(presentation_.Buffers()[index].Get(), gameTargets_.GameFacing());
     if (prepared) {
         renderWidth_ = communityFrame_.RenderExtent().width;
@@ -190,6 +192,8 @@ void NvidiaHost::AdjustLegacyDescForCaller(DXGI_SWAP_CHAIN_DESC* a_desc, const v
 
 bool NvidiaHost::PrepareNativeUITarget(UINT index)
 {
+    // UI may draw straight into the shared presentation buffer.
+    if (FAILED(TheosRenderPipeline::SourceDLSSG::Backend::Get().Transport().BeforeSharedWrites())) { return false; }
     const auto result = presentation_.Select(device_.Get(), index);
     if (FAILED(result))
     {

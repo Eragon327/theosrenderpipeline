@@ -111,7 +111,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// internal fence, the presenting-queue barrier is valid only with DLSS-G's
 		// default eBlockPresentingClientQueue mode. a_timeHold: the presented
 		// frame generated frames, so the timer measures DLSS-G's input hold.
-		HRESULT WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value, bool a_timeHold = false);
+		// a_deferD3D11 (Lab): the next frame's D3D11 work waits only for the
+		// previous bridge; this one waits at BeforeSharedWrites, so the game can
+		// render while frame generation still reads this frame's inputs.
+		HRESULT WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value, bool a_timeHold = false,
+			bool a_deferD3D11 = false);
+		// Queues the deferred D3D11 wait, if any. Call before any D3D11 write to a
+		// texture the presenting queue or frame generation reads.
+		HRESULT BeforeSharedWrites();
 		const InputWaitDiagnostics& LastInputWait() const { return inputWait_; }
 		HRESULT Begin(Work a_work, ID3D12GraphicsCommandList** a_list, AllocatorWaitTiming* a_wait = nullptr);
 		HRESULT Submit(Work a_work);
@@ -162,6 +169,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::array<int, static_cast<std::size_t>(Work::Count)> timerRecords_{
 			D3D12StageTimer::kNoRecord, D3D12StageTimer::kNoRecord, D3D12StageTimer::kNoRecord };
 		InputWaitDiagnostics inputWait_;
+		// FrameGeneration fence values: the latest bridge, and one D3D11 has not waited for yet.
+		std::uint64_t bridgedInputWait_{}, deferredInputWait_{};
 		InteropFailureDiagnostics observation_, failure_;
 		RetirementWaitPolicy waitPolicy_;
 		RetirementWaitDiagnostics extendedWait_;

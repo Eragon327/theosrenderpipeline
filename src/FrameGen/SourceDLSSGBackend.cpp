@@ -384,8 +384,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 		api_.waitForInputReaders = [](void* context, void* fence, std::uint64_t value) {
 			auto& owner = *static_cast<Backend*>(context);
 			// Called after Present: the snapshot still holds that frame's mode.
+			const bool overlap = owner.NvidiaOverlapNextFrame();
+			if (overlap != owner.nvidiaOverlapLogged_) {
+				owner.nvidiaOverlapLogged_ = overlap;
+				logger::info("[SourceDLSSG] next-frame D3D11 wait for frame-generation inputs now {}",
+					overlap ? "deferred to the first shared write (Lab)" : "at the start of the frame");
+			}
 			const auto result = owner.interop_.WaitForInputReaders(static_cast<ID3D12Fence*>(fence), value,
-				owner.session_.Snapshot().GenerationActive());
+				owner.session_.Snapshot().GenerationActive(), overlap);
 			if (FAILED(result)) {
 				const auto& detail = owner.interop_.LastInputWait();
 				logger::error("[SourceDLSSG] input reuse fence stage={} fence={} value={} hostIdentity={} referenceFenceOwner={} inputFenceOwner={}",
@@ -447,7 +453,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 	bool Backend::CopyDepth(ID3D11Texture2D* a_depth)
 	{
-		return Check(depthCopy_.Copy(context11_.Get(), a_depth, depth_.texture11.Get(),
+		return Check(interop_.BeforeSharedWrites(), "deferred input wait before depth copy") &&
+			Check(depthCopy_.Copy(context11_.Get(), a_depth, depth_.texture11.Get(),
 			{depth_.desc.Width, depth_.desc.Height}), "depth copy");
 	}
 	bool Backend::Prepare(const sl::Constants& a_constants, ID3D11Texture2D* a_motion, ID3D11Texture2D* a_depth,

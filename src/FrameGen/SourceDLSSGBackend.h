@@ -122,6 +122,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// input copies instead of draining every host lane on the CPU.
 		void ConfigureXeFGGpuInputWait(bool a_enabled) { xefgGpuInputWait_.store(a_enabled, std::memory_order_relaxed); }
 		bool XeFGGpuInputWait() const { return xefgGpuInputWait_.load(std::memory_order_relaxed); }
+		// Lab A/B, not saved: NVIDIA's next frame waits for frame generation's
+		// inputs only where TRP first writes a shared texture, not at its start.
+		void ConfigureNvidiaOverlapNextFrame(bool a_enabled) { nvidiaOverlapNextFrame_.store(a_enabled, std::memory_order_relaxed); }
+		bool NvidiaOverlapNextFrame() const { return nvidiaOverlapNextFrame_.load(std::memory_order_relaxed); }
 		bool XeFGTagGenerated() const { return xefgTagGenerated_.load(std::memory_order_relaxed); }
 		bool ConfigureOutputFPSLimit(int a_fps)
 		{
@@ -251,6 +255,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::atomic<DlssgPreset> preset_{ DlssgPreset::B };
 		std::atomic<bool> releaseForPreset_{};
 		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
+		std::atomic<bool> nvidiaOverlapNextFrame_{};
+		bool nvidiaOverlapLogged_{}; // Present thread.
 		// Per-window CPU samples for the input-reuse A/B; logged and cleared every 600 presents.
 		std::vector<float> xefgReuseMs_, xefgSleepMs_;
 		bool xefgReuseWindowGpu_{};
