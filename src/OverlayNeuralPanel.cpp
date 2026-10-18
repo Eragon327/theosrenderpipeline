@@ -341,7 +341,7 @@ void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
                 }
                 ImGui::EndCombo();
             }
-            DrawSettingsHelp("Automatic picks the newest model your GPU supports. Compat is a community rebuild.");
+            DrawSettingsHelp("Automatic picks the newest model your GPU supports. NVIDIA 310.9.16 runs on RTX 50, or RTX 40 with Universal's kernel pack. Compat is a community rebuild.");
             return changed;
         });
         ImGui::EndTable();

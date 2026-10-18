@@ -77,6 +77,10 @@ int main()
             "RTX 50 prefers NVIDIA's signed 310.9.16, then builds that keep its RTX 50 code");
         Require(AutomaticNeuralRuntimes(89) == List{kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
             "RTX 40 prefers TRP's build and never tries NVIDIA's RTX 50-only 310.9.16");
+        Require(AutomaticNeuralRuntimes(89, true) == List{kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
+            "Universal Ada installer prefers NVIDIA's original 310.9.16 with the kernel pack");
+        Require(AutomaticNeuralRuntimes(120, true) == AutomaticNeuralRuntimes(120) &&
+            AutomaticNeuralRuntimes(86, true) == AutomaticNeuralRuntimes(86), "Ada installer only changes RTX 40 Automatic choice");
         for (const int capability : {0, 75, 86, 90}) {
             Require(AutomaticNeuralRuntimes(capability) == List{kDefaultNeuralRuntime},
                 "RTX 20/30, unverified and unknown GPUs keep 310.8");
@@ -88,7 +92,7 @@ int main()
         Require(ResolveNeuralRuntimeSetting("D:/x/nvngx_dlssnr_new.dll", plugins) == std::filesystem::path(L"D:/x/nvngx_dlssnr_new.dll"),
             "absolute paths are kept");
         Require(NeuralRuntimeLabel("Automatic") == "Automatic" && NeuralRuntimeLabel(kDefaultNeuralRuntime) == "NVIDIA 310.8" &&
-            NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_310.9.16.DLL)") == "NVIDIA 310.9.16 (RTX 50)" &&
+            NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_310.9.16.DLL)") == "NVIDIA 310.9.16" &&
             NeuralRuntimeLabel(kCompatNeuralRuntime) == "310.9.16 compat (RTX 20-40)" &&
             NeuralRuntimeLabel(kRTX40NeuralRuntime) == "310.9.16 (RTX 40, TRP build)" &&
             NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll") == "nvngx_dlssnr_int8.dll", "menu labels");

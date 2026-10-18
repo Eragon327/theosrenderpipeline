@@ -38,6 +38,11 @@ option(TRP_ENABLE_NEURAL_RENDERING "Include Neural Rendering integration and con
 option(TRP_ENABLE_OPTIONAL_FEATURES "Include optional Ada/Ampere/Turing MFG compatibility" ON)
 if(TRP_ENABLE_NEURAL_RENDERING)
     target_sources(TheosRenderPipeline PRIVATE ${ARP_NEURAL_SOURCES})
+    if(TRP_ENABLE_OPTIONAL_FEATURES)
+        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeAdaKernels.cpp src/FrameGen/NeuralRuntimeAdaKernelPlan.cpp)
+    else()
+        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeAdaKernelsNative.cpp)
+    endif()
     include(cmake/NeuralShaders.cmake)
     trp_target_neural_shaders(TheosRenderPipeline)
 else()
@@ -211,6 +216,8 @@ if(NOT EXISTS "${TRP_XEFG_SDK_DIR}/inc/xess_fg/xefg_swapchain_d3d12.h" OR
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${TRP_XEFG_SDK_DIR}/inc")
 set_source_files_properties(src/FrameGen/XeFGPresenter.cpp src/FrameGen/XeFGUnlock.cpp src/FrameGen/XeFGUnlockNative.cpp src/FrameGen/XeSSUpscaler.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
+set_source_files_properties(src/FrameGen/NeuralRuntimeAdaKernels.cpp src/FrameGen/NeuralRuntimeAdaKernelPlan.cpp src/FrameGen/NeuralRuntimeAdaKernelsNative.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
 find_path(TRP_SIMPLEINI_INCLUDE_DIR SimpleIni.h REQUIRED)
 
 target_include_directories(
@@ -471,6 +478,7 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_link_libraries(TRPNeuralRatioColorTests PRIVATE d3d11 d3dcompiler)
     add_test(NAME NeuralRatioColor COMMAND TRPNeuralRatioColorTests)
     add_subdirectory(tests/nr-peripheral)
+    add_subdirectory(tests/nr-ada)
     add_executable(TRPCommunityShaderFrameTests tests/CommunityShaderFrameTests.cpp)
     target_compile_features(TRPCommunityShaderFrameTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPCommunityShaderFrameTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

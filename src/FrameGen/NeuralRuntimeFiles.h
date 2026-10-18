@@ -14,8 +14,9 @@ namespace TheosRenderPipeline::SourceDLSSG
     inline constexpr std::string_view kNeuralRuntimeFolder = "TheosRenderPipeline/NVIDIA";
     // Runtimes relative to Data/SKSE/Plugins. NVIDIA's 310.8 runs on every RTX GPU
     // and is the fallback. NVIDIA's 310.9.16 has kernels only for RTX 50. TRP's
-    // RTX 40 build adds Ada kernels compiled from NVIDIA's own code
-    // (tools/nr-runtime). A community compat rebuild, if installed, adds RTX 20-40.
+    // Universal adds Ada kernels in memory from a pinned adjacent pack. The
+    // standalone RTX 40 build remains a fallback. A community compat rebuild,
+    // if installed, adds RTX 20-40. See tools/nr-runtime.
     inline constexpr std::string_view kDefaultNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr.dll";
     inline constexpr std::string_view kLatestNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16.dll";
     inline constexpr std::string_view kRTX40NeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16_rtx40.dll";
@@ -38,12 +39,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 
     // Automatic's choices for a CUDA compute capability (89 is RTX 40, 120 is
     // RTX 50, 0 unknown), best first; missing or refused files are skipped. The
+    // Universal installer tries the original 310.9.16 first on RTX 40; a safe
+    // installation refusal falls through to the remaining choices. The standalone
     // RTX 40 build keeps NVIDIA's RTX 50 code, so it also stands in there. The
     // new model is unmeasured on RTX 20 and 30, which keep 310.8.
-    inline std::vector<std::string_view> AutomaticNeuralRuntimes(int computeCapability)
+    inline std::vector<std::string_view> AutomaticNeuralRuntimes(int computeCapability, bool adaKernels = false)
     {
         if (computeCapability >= 120) { return { kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime }; }
-        if (computeCapability == 89) { return { kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime }; }
+        if (computeCapability == 89) {
+            if (adaKernels) { return { kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime }; }
+            return { kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime };
+        }
         return { kDefaultNeuralRuntime };
     }
 
@@ -75,7 +81,7 @@ namespace TheosRenderPipeline::SourceDLSSG
         const auto name = filename(value);
         const auto folded = FoldRuntimePath(name);
         if (folded == FoldRuntimePath(filename(kDefaultNeuralRuntime))) { return "NVIDIA 310.8"; }
-        if (folded == FoldRuntimePath(filename(kLatestNeuralRuntime))) { return "NVIDIA 310.9.16 (RTX 50)"; }
+        if (folded == FoldRuntimePath(filename(kLatestNeuralRuntime))) { return "NVIDIA 310.9.16"; }
         if (folded == FoldRuntimePath(filename(kRTX40NeuralRuntime))) { return "310.9.16 (RTX 40, TRP build)"; }
         if (folded == FoldRuntimePath(filename(kCompatNeuralRuntime))) { return "310.9.16 compat (RTX 20-40)"; }
         return name;

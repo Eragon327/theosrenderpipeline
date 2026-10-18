@@ -1,9 +1,10 @@
 #include "GPU.h"
 #include <numeric>
+#include <fstream>
 #include <nvsdk_ngx.h>
 
 int wmain(int argc,wchar_t** argv){
-    Require(argc == 5 || argc == 6, "usage: benchmark absolute-NR-DLL native|uniform|peripheral|passes|coldpasses width height [preset]");
+    Require(argc >= 5 && argc <= 7, "usage: benchmark absolute-NR-DLL native|uniform|peripheral|passes|coldpasses width height [preset [output-float4-file]]");
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
     const std::wstring mode=argv[2];
     const bool coldStart = mode == L"coldpasses";
@@ -29,7 +30,7 @@ int wmain(int argc,wchar_t** argv){
     NeuralOptions options;options.enabled=true;options.runtimePath=argv[1];options.beforeUpscaling=true;
     options.tuning.uiCorrection=false;options.reconstruction.inputScale=mode==L"uniform"?.9f:1.f;
     options.reconstruction.peripheralCompression=mode==L"peripheral";
-    if(argc==6)options.reconstruction.preset=std::stoi(argv[5]);
+    if(argc>=6)options.reconstruction.preset=std::stoi(argv[5]);
     std::vector<Pixel> pixels(size_t(w)*h);
     for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x)
         pixels[y*w+x]={.1f+.6f*x/w,.1f+.6f*y/h,.2f+.3f*((x/8+y/8)%2),1};
@@ -86,6 +87,11 @@ int wmain(int argc,wchar_t** argv){
         }
     }
     auto result=gpu.Read(pass->Corrected());size_t changed=0;
+    if(argc==7){
+        std::ofstream output(std::filesystem::path(argv[6]),std::ios::binary);
+        output.write(reinterpret_cast<const char*>(result.data()),static_cast<std::streamsize>(result.size()*sizeof(Pixel)));
+        Require(output.good(),"write complete float4 output for runtime comparison");
+    }
     for(size_t i=0;i<result.size();++i)for(unsigned ch=0;ch<4;++ch){
         Require(std::isfinite(result[i][ch]),"finite real NR output");
         if(ch<3 && std::abs(result[i][ch]-pixels[i][ch])>.01f)++changed;

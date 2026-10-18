@@ -3,6 +3,7 @@
 #include "NeuralRenderingRuntimeIdentity.h"
 #include "PerformanceTuning.h"
 #include "NeuralRuntimeCompatibility.h"
+#include "NeuralRuntimeAdaKernels.h"
 #include "SourceDLSSGSettings.h"
 #include "../PluginPaths.h"
 #include <algorithm>
@@ -43,7 +44,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (neuralComputeCapability_ < 0 && device12_) {
 			neuralComputeCapability_ = NeuralRendering::ComputeCapability(device12_->GetAdapterLuid());
 		}
-		for (const auto candidate : AutomaticNeuralRuntimes((std::max)(neuralComputeCapability_, 0))) {
+		for (const auto candidate : AutomaticNeuralRuntimes((std::max)(neuralComputeCapability_, 0), NeuralRendering::AdaKernelsSupported())) {
 			const auto path = PluginPaths::Directory() / std::filesystem::u8path(candidate);
 			if (const auto* why = refused(path)) { note = note ? note : why; continue; }
 			std::error_code error;
@@ -83,12 +84,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 		const auto result = neuralPass_ ? neuralPass_->RefusedCreation() : 0u;
 		if (!result) { return false; }
+		const auto status = neuralPass_->Status();
 		// NGX refused before NR recorded anything; this pass has no GPU work in flight.
 		neuralPass_.reset();
 		std::scoped_lock lock(neuralMutex_);
-		constexpr std::uint32_t featureNotSupported = 0xBAD00001; // NVSDK_NGX_Result_FAIL_FeatureNotSupported
-		RefuseNeuralRuntime(runtime, result == featureNotSupported ?
-			std::string("does not support this GPU") : std::format("could not start NR (NGX 0x{:08X})", result), "");
+		RefuseNeuralRuntime(runtime, std::format("could not start NR ({})", status), "");
 		return true;
 	}
 	const char* Backend::NeuralUnavailableReason(const NeuralOptions& options)
