@@ -1,4 +1,11 @@
-# Theo's Render Pipeline — Universal, 0.4.3
+# Theo's Render Pipeline — Universal, 0.4.4
+
+Version 0.4.4 adds Automatic NR runtime selection and NVIDIA NR 310.9.16 on
+RTX 40 through Universal's in-memory kernel pack. Install matching Standard
+first, then Universal after it in MO2. Standard includes the original runtime,
+the standalone RTX 40 fallback and the older NR runtime. Universal adds the
+kernel pack and compatibility code. NR remains available in both editions and
+defaults off. See CHANGELOG.md and the NR runtime notes below.
 
 Version 0.4.3 adds a frame generation preset dropdown (NVIDIA Presets A, B and
 C), bundles DLSS Frame Generation 310.9.16 for Preset C, adds an NR runtime
@@ -66,8 +73,8 @@ This package includes the full renderer, configuration and sharpening shader.
 It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
-0.4.3 supplies the runtime bundle (0.2.5 retains the same NVIDIA DLLs). The NR-enabled
-Standard download supplies all eight runtimes, including NR. In that setup,
+0.4.4 supplies the complete NVIDIA and Intel runtime bundles, including the
+original NR 310.9.16, standalone RTX 40 fallback and older NR runtime. In that setup,
 skip the runtime downloads below.
 
 ## Install
@@ -92,6 +99,26 @@ skip the runtime downloads below.
 
 The destination folders are included in the ZIP. Use the `bin/x64` files
 from the download, not its debug or development folders.
+
+## NR runtime notes
+
+Use **Neural Rendering > Runtime > Automatic** for the default selection.
+Universal on RTX 40 first tries the original NVIDIA 310.9.16 DLL with the
+adjacent `nvngx_dlssnr_310.9.16_rtx40.trpk` supplied in this Universal download.
+Keep the pack in `SKSE/Plugins/TheosRenderPipeline/NVIDIA/`. The installer
+checks the runtime, pack and memory changes before use; the original NVIDIA
+DLL is unchanged on disk. Safe refusal retains the fallback runtime choices.
+Standard does not install this pack in memory. Its runtime selector retains
+the supplied standalone RTX 40 build and older NR runtime. Explicit custom
+runtime choices remain available; older default-runtime settings migrate to
+Automatic. Use the matching Standard/Universal pair for the complete bundle.
+
+The preceding Universal renderer was tested on RTX 4080 SUPER / driver 610.88
+with two NR passes before upscaling at 3413x960, x4 frame generation and a
+loading transition. The user reported that it looked good. This does not
+establish other GPU/driver coverage or physical display cadence. The versioned
+0.4.4 DLLs are new builds. A tiny 58x32 second-model stress case times out with
+both the standalone and in-memory paths; use normal rendering dimensions.
 
 ## Optional Neural Rendering (NR)
 
@@ -232,7 +259,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.3 package still needs its final game test.
+development builds; the exact 0.4.4 package has not been tested with ReShade.
 
 Keep your existing ReShade installation, preset and hotkeys. **Disable SSE
 ReShade Helper.** TRP supplies the effects and overlay stages. Effects run after

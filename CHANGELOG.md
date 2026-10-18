@@ -1,3 +1,24 @@
+# 0.4.4
+
+- Universal runs NVIDIA Neural Rendering 310.9.16 on RTX 40 using a checked
+  kernel pack installed in memory. The original NVIDIA DLL stays unchanged on
+  disk. Automatic prefers this runtime on RTX 40 and keeps safe fallbacks.
+- Standard includes original NR 310.9.16 and the standalone RTX 40 NR fallback,
+  alongside the previous NR runtime. Universal supplies the in-memory kernel
+  pack; install the matching Standard first, then Universal after it in MO2.
+- NR defaults to Automatic. Existing explicit custom runtime choices are kept;
+  older default-runtime settings migrate to Automatic. Runtime names show the
+  NVIDIA version and distinguish the RTX 40 compatibility build.
+- NR reports GPU time separately for inference, preparation, reconstruction/UI
+  and the D3D11/D3D12 handoff, helping identify which stages cost frame time.
+
+Both editions retain NR, existing frame-generation compatibility and packaged
+settings defaults. The preceding renderer passed a scoped RTX 4080 SUPER game
+test with two NR passes before upscaling, x4 frame generation and a loading
+transition. The versioned 0.4.4 binaries are new builds. Other hardware and
+physical display cadence remain unverified. A tiny 58x32 second-model stress
+case times out with both the in-memory and standalone paths.
+
 # 0.4.3
 
 - Add a **Frame generation preset** dropdown with NVIDIA's Presets A
