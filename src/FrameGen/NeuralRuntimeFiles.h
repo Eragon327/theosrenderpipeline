@@ -14,7 +14,7 @@ namespace TheosRenderPipeline::SourceDLSSG
     inline constexpr std::string_view kNeuralRuntimeFolder = "TheosRenderPipeline/NVIDIA";
     // The bundled runtimes, relative to Data/SKSE/Plugins. NVIDIA's 310.8 runs on
     // every RTX GPU and is the fallback. NVIDIA's 310.9.16 has kernels only for
-    // RTX 50; the RenoDX compat rebuild of it adds RTX 20, 30 and 40 kernels.
+    // RTX 50; a community compat rebuild of it adds RTX 20, 30 and 40 kernels.
     inline constexpr std::string_view kDefaultNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr.dll";
     inline constexpr std::string_view kLatestNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16.dll";
     inline constexpr std::string_view kCompatNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16_compat.dll";

@@ -341,7 +341,7 @@ void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
                 }
                 ImGui::EndCombo();
             }
-            DrawSettingsHelp("Automatic picks the newest model your GPU supports. Compat is a community rebuild by RenoDX.");
+            DrawSettingsHelp("Automatic picks the newest model your GPU supports. Compat is a community rebuild.");
             return changed;
         });
         ImGui::EndTable();
