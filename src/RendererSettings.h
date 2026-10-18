@@ -27,8 +27,8 @@ struct RendererSettingsDraft
     bool lateOverlayBridge{true};
     bool enableGPUTimings{true};
     bool enableFrameTrace{false};
-    bool directRCASOutput{false};
-    bool directDLSSOutput{false};
+    bool directRCASOutput{true};
+    bool directDLSSOutput{true};
     TheosRenderPipeline::SourceDLSSG::Preferences sourceDLSSG;
     Appearance::Settings appearance;
     bool textureProviderConnected{false};

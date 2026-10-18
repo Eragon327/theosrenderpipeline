@@ -65,8 +65,8 @@ void PerformanceTuning::LoadStartupINI()
 	Settings startup{};
 	startup.enableGPUTimings = ini.GetBoolValue("Performance", "EnableGPUTimings", true);
 	startup.enableFrameTrace = ini.GetBoolValue("Performance", "EnableFrameTrace", false);
-	startup.directRCASOutput = ini.GetBoolValue("Performance", "DirectRCASOutput", false);
-	startup.directDLSSOutput = ini.GetBoolValue("Performance", "DirectDLSSOutput", false);
+	startup.directRCASOutput = ini.GetBoolValue("Performance", "DirectRCASOutput", true);
+	startup.directDLSSOutput = ini.GetBoolValue("Performance", "DirectDLSSOutput", true);
 	ApplySettings(startup);
 }
 

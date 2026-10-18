@@ -184,9 +184,9 @@ void OverlayUI::DrawOutputOptimizations()
 {
     ImGui::Separator();
     ImGui::Checkbox("Direct RCAS output", &settingsDraft.directRCASOutput);
-    DrawSettingsHelp("Writes sharpened output directly, avoiding its final copy. Apply required.");
+    DrawSettingsHelp("On by default. Writes sharpened output directly, avoiding its final copy. Apply required.");
     ImGui::Checkbox("Direct DLSS output", &settingsDraft.directDLSSOutput);
-    DrawSettingsHelp("Avoids the DLSS copy when sharpening is off; does not disable sharpening. Apply required.");
+    DrawSettingsHelp("On by default. Avoids the DLSS copy when sharpening is off; does not disable sharpening. Apply required.");
 }
 
 void OverlayUI::DrawMeasurementControls()
