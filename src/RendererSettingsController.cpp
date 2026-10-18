@@ -168,6 +168,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         options.automaticRuntime =
             TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(frameGen_.settings.configuredRuntimePaths.neural);
         options.tuning = frameGen_.settings.sourceDLSSG.neuralTuning;
+        options.objectMasks = frameGen_.settings.sourceDLSSG.neuralObjectMasks;
         options.reconstruction = frameGen_.settings.sourceDLSSG.neuralReconstruction;
         options.secondPass = frameGen_.settings.sourceDLSSG.neuralSecondPass;
         options.beforeUpscaling = frameGen_.settings.sourceDLSSG.neuralBeforeUpscaling;

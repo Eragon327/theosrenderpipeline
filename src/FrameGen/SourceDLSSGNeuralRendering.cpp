@@ -226,7 +226,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const NeuralOptions& options, bool reset, bool depthInverted, float scaleX, float scaleY,
 		ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 		ID3D12Resource* hudless, ID3D12Resource* composed, std::uint64_t timestampFrequency,
-		const D3D12StageMarks& marks)
+		const D3D12StageMarks& marks, ID3D12Resource* objectMask, std::array<float,2> objectMaskGuideOffset)
 	{
 		if (!device || !list || slot >= heaps_.size() || options.passes < 1 || options.passes > 2 || !SameSize(motion, depth) ||
 			!Texture(hudless) || (options.WorldOnly() ? (ui || composed || options.tuning.uiCorrection) :
@@ -371,6 +371,23 @@ namespace TheosRenderPipeline::SourceDLSSG
 			std::format("; pass override={}; requested={}", NeuralRendering::PassOverrideName(options.passOverride), options.passes) : std::string{};
 		const auto secondStatus = effectivePasses == 2 ? std::format("; pass2={}x{} preset={} linked={} intensity={:.3f}",
 			secondOutput_->GetDesc().Width, secondOutput_->GetDesc().Height, secondSettings_.preset, options.secondPass.linked, secondSettings_.tuning.intensity) : std::string{};
+        if (options.objectMasks.enabled && objectMask) {
+            if (!objectResult_) {
+                auto desc = corrected_->GetDesc();
+                D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+                const auto hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+                    D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&objectResult_));
+                if (FAILED(hr)) { status_ = "NR object-result allocation failed"; return false; }
+            }
+            Transition(list, corrected_.Get(), read, D3D12_RESOURCE_STATE_COMMON);
+            for (auto* r : {featureMotion, featureDepth, featureUI, hudless, composed}) { Transition(list,r,read,D3D12_RESOURCE_STATE_COMMON); }
+            const auto hr = objectBlend_.Record(device,list,slot,options.objectMasks,hudless,corrected_.Get(),objectMask,depth,objectResult_.Get(),objectMaskGuideOffset);
+            if (FAILED(hr)) { status_ = std::format("NR object-mask composition failed 0x{:08X}",static_cast<UINT>(hr)); return false; }
+            const auto copied = Interop::RecordCopy(list,objectResult_.Get(),corrected_.Get());
+            if (FAILED(copied)) { status_ = std::format("NR object-mask result copy failed 0x{:08X}",static_cast<UINT>(copied)); return false; }
+            for (auto* r : {featureMotion, featureDepth, featureUI, hudless, composed}) { Transition(list,r,D3D12_RESOURCE_STATE_COMMON,read); }
+            Transition(list,corrected_.Get(),D3D12_RESOURCE_STATE_COMMON,read);
+        }
 		if (options.WorldOnly()) {
 			Transition(list, corrected_.Get(), read, D3D12_RESOURCE_STATE_COMMON);
 			for (auto* texture : { featureMotion, featureDepth, hudless }) { Transition(list, texture, read, D3D12_RESOURCE_STATE_COMMON); }

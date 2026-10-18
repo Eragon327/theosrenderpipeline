@@ -5,6 +5,7 @@
 #include "SourceDLSSGNeuralState.h"
 #include "SourceDLSSGNeuralResolve.h"
 #include "SourceDLSSGNeuralTelemetry.h"
+#include "NeuralObjectBlend.h"
 #include <array>
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -21,7 +22,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			float motionScaleX, float motionScaleY,
 			ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 			ID3D12Resource* hudless, ID3D12Resource* composed,
-			std::uint64_t timestampFrequency = 0, const D3D12StageMarks& marks = {});
+			std::uint64_t timestampFrequency = 0, const D3D12StageMarks& marks = {}, ID3D12Resource* objectMask = nullptr,
+            std::array<float,2> objectMaskGuideOffset = {});
 		ID3D12Resource* Composed() const { return composed_.Get(); }
 		ID3D12Resource* Corrected() const { return corrected_.Get(); }
 		NeuralTelemetrySnapshot Telemetry() const { return telemetry_.Snapshot(); }
@@ -76,6 +78,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<ID3D12Resource> encoded_, workColor_, workOutput_, residual_;
 		Microsoft::WRL::ComPtr<ID3D12Resource> packedMotion_, packedDepth_, packedUI_;
 		NeuralResolveKernels resolve_;
+        NeuralRendering::ObjectBlend objectBlend_;
+        Microsoft::WRL::ComPtr<ID3D12Resource> objectResult_;
 		bool fusedColor_{};
 		NeuralRendering::Reconstruction reconstruction_;
 		std::filesystem::path runtimePath_;

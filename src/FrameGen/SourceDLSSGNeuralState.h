@@ -3,6 +3,7 @@
 #include "NeuralRenderingReconstruction.h"
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralCombatPolicy.h"
+#include "NeuralObjectMask.h"
 #include "NeuralRuntimeFiles.h"
 #include "SourceDLSSGNeuralTelemetry.h"
 #include <algorithm>
@@ -33,6 +34,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// The backend replaces runtimePath with the best bundled runtime for the GPU.
 		bool automaticRuntime{};
 		NeuralRendering::Tuning tuning{};
+        NeuralRendering::ObjectMaskSettings objectMasks{};
 		NeuralRendering::Reconstruction reconstruction{};
 		NeuralRendering::SecondPassSettings secondPass{};
 		// Per-frame appearance controller revision; zero preserves manual-edit resets.
@@ -49,6 +51,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	inline NeuralOptions SanitizeNeuralOptions(NeuralOptions options)
 	{
 		options.tuning = NeuralRendering::SanitizeBuild14Tuning(options.tuning);
+        options.objectMasks = NeuralRendering::SanitizeObjectMask(options.objectMasks);
 		options.passes = std::clamp(options.passes, 1, 2);
 		options.combat = NeuralRendering::SanitizeCombatSettings(options.combat);
 		options.passOverride = NeuralRendering::PassOverride::None;

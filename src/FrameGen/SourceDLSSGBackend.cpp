@@ -10,6 +10,7 @@
 #include "DlssgLiteBlending.h"
 #include "StreamlineRuntimeFolder.h"
 #include "../PluginPaths.h"
+#include "../NeuralObjectHooks.h"
 #include "../ScreenshotFile.h"
 #include "../RenderPipeline.h"
 #include "../PerformanceTuning.h"
@@ -416,9 +417,22 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 	void Backend::ReleaseGuides()
 	{
-		motion_ = {}; depth_ = {}; ui_ = {}; hudless_ = {}; earlyNeuralColor_ = {};
+		motion_ = {}; depth_ = {}; ui_ = {}; hudless_ = {}; earlyNeuralColor_ = {}; objectMask_ = {}; objectMaskCurrent_ = false;
 		uiSource_.Reset(); depthCopy_.ResetViews();
 	}
+    bool Backend::CopyObjectMask(FrameExtent extent)
+    {
+        objectMaskCurrent_ = false;
+#if !defined(TRP_NO_NEURAL_RENDERING)
+        if (!frameNeuralOptions_.enabled || !frameNeuralOptions_.objectMasks.enabled) { return true; }
+        auto* source = NeuralObjects::Current();
+        if (!source) { return true; }
+        if (!EnsureGuide(source,objectMask_,DXGI_FORMAT_R32G32_FLOAT,extent) ||
+            !Check(interop_.CopyInputRegion(source,objectMask_,extent),"NR object-classification copy")) { return false; }
+        objectMaskCurrent_ = true;
+#endif
+        return true;
+    }
 	bool Backend::EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair, DXGI_FORMAT a_format, FrameExtent a_extent)
 	{
 		if (!a_source) { return false; }
@@ -491,6 +505,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			neuralPass_->NeedsRecreation(frameNeuralOptions_, motion_.desc.Width, motion_.desc.Height)) { frameNeuralReset_ = true; }
 #endif
 		if (frameNeuralReset_) { frameConstants_.reset = sl::eTrue; }
+        if (!neuralEvaluatedEarly_ && !CopyObjectMask(a_renderExtent)) { return false; }
 		auto tag = [](const SharedTexture& pair) {
 			TaggedTexture t;
 			t.resource = sl::Resource(sl::ResourceType::eTex2d, pair.texture12.Get(), D3D12_RESOURCE_STATE_COMMON);
@@ -656,7 +671,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 				reset, frameConstants_.depthInverted == sl::eTrue,
 				frameConstants_.mvecScale.x * motion_.desc.Width, frameConstants_.mvecScale.y * motion_.desc.Height,
 				motion_.texture12.Get(), depth_.texture12.Get(), ui_.texture12.Get(), hudless_.texture12.Get(), a_source,
-				neuralTimestampFrequency_, interop_.Marks(Work::SwapChain))) {
+				neuralTimestampFrequency_, interop_.Marks(Work::SwapChain), objectMaskCurrent_ ? objectMask_.texture12.Get() : nullptr,
+                {frameConstants_.jitterOffset.x,frameConstants_.jitterOffset.y})) {
 				if (!RefuseNeuralCreation(options.runtimePath)) {
 					FailNeuralRecording();
 					return fault_; // Retain all objects and the unsubmitted list on unknown NGX failure.

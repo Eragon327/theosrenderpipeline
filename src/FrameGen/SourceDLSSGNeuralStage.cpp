@@ -6,6 +6,7 @@
 #include "NeuralRuntimeKernels.h"
 #include "SourceDLSSGSettings.h"
 #include "../PluginPaths.h"
+#include "../NeuralObjectHooks.h"
 #include <algorithm>
 #include <chrono>
 #include <format>
@@ -28,7 +29,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
-		neuralOptions_ = std::move(a_options);
+		NeuralObjects::Configure(a_options.enabled && a_options.objectMasks.enabled);
+        neuralOptions_ = std::move(a_options);
 	}
 	const std::string* Backend::SelectNeuralRuntime(NeuralOptions& options)
 	{
@@ -202,7 +204,7 @@ namespace TheosRenderPipeline::SourceDLSSG
             !EnsureGuide(depth, depth_, DXGI_FORMAT_R32_FLOAT, renderExtent) ||
             !EnsureGuide(color, earlyNeuralColor_, DXGI_FORMAT_UNKNOWN, colorExtent) ||
             !RecreateNeuralIfNeeded(frameNeuralOptions_)) { return false; }
-        if (!CopyDepth(depth) || !Check(interop_.CopyInputRegion(motion, motion_, renderExtent), "early NR motion copy") ||
+        if (!CopyObjectMask(renderExtent) || !CopyDepth(depth) || !Check(interop_.CopyInputRegion(motion, motion_, renderExtent), "early NR motion copy") ||
             !Check(interop_.CopyInputRegion(color, earlyNeuralColor_, colorExtent), "early NR world copy") ||
             !Check(interop_.SignalD3D11(Work::Upscaling), "early NR inputs ready")) { return false; }
         ID3D12GraphicsCommandList* list = nullptr;
@@ -212,7 +214,9 @@ namespace TheosRenderPipeline::SourceDLSSG
             frameNeuralReset_, camera->depthInverted == sl::eTrue,
             camera->mvecScale.x * motion_.desc.Width, camera->mvecScale.y * motion_.desc.Height,
             motion_.texture12.Get(), depth_.texture12.Get(), nullptr, earlyNeuralColor_.texture12.Get(), nullptr,
-            neuralTimestampFrequency_, interop_.Marks(Work::Upscaling))) {
+            neuralTimestampFrequency_, interop_.Marks(Work::Upscaling), objectMaskCurrent_ ? objectMask_.texture12.Get() : nullptr,
+            frameNeuralOptions_.beforeUpscaling ? std::array<float,2>{} :
+                std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y})) {
             if (!RefuseNeuralCreation(frameNeuralOptions_.runtimePath)) { return FailNeuralRecording(); }
             // Nothing was recorded: retire the empty list and run DLSS on the original
             // colour this frame. The next frame uses the next runtime.

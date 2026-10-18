@@ -287,7 +287,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<ID3D12Device> upgradedDevice12_;
 		Microsoft::WRL::ComPtr<ID3D12CommandQueue> queue_;
 		Microsoft::WRL::ComPtr<IDXGISwapChain> retainedNative_;
-		SharedTexture motion_, depth_, ui_, hudless_, earlyNeuralColor_;
+		SharedTexture motion_, depth_, ui_, hudless_, earlyNeuralColor_, objectMask_;
+        bool objectMaskCurrent_{};
+        bool CopyObjectMask(FrameExtent extent);
 #if !defined(TRP_NO_NEURAL_RENDERING)
 		std::unique_ptr<NeuralPass> neuralPass_;
 		NeuralRuntimeAvailability neuralAvailability_; // Protected by neuralMutex_.

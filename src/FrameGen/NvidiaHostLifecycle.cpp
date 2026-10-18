@@ -1,3 +1,4 @@
+#include "../NeuralObjectHooks.h"
 #include "DLSSBackend.h"
 #include "RenderPipeline.h"
 #include "NativeInput.h"
@@ -139,6 +140,7 @@ HRESULT NvidiaHost::ReleaseSourceUpscaler()
     EndNativeUIPass();
     startupOverlay_.ResetAfterRetirement();
     previewDraw_.ResetAfterRetirement();
+    TheosRenderPipeline::NeuralObjects::ResetAfterRetirement();
     uiBlendCoverage_.Reset();
     TheosRenderPipeline::LoadingArtwork::ResetAfterRetirement();
     loadingScreenUpscaler_.ResetAfterRetirement();
