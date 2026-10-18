@@ -20,6 +20,15 @@
   GPU policy. Explicit custom paths remain explicit.
 - Correct the installation notes for RTX 30's default DLSS-G 310.9.16 route
   and document runtime selection when upgrading.
+- Write DLSS and sharpening output directly into the output texture by
+  default, skipping a copy. Each route falls back to the copy for the session
+  if the texture does not qualify; `DirectRCASOutput`/`DirectDLSSOutput=false`
+  turn them off.
+- Restart the rolling timing window when the frame-generation provider,
+  preset, multiplier or dynamic mode changes, so each configuration's
+  percentiles and frame-generation time stand alone.
+- Lab A/B (developer controls): let the game's next frame render while NVIDIA
+  frame generation still reads the current frame's inputs. Off by default.
 
 The Standard/Universal runtime split, packaged settings defaults, NR tuning,
 placements and passes are unchanged. New game acceptance for this build is

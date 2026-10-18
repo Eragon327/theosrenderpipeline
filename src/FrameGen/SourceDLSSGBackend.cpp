@@ -868,6 +868,24 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 		}
 		const auto& state = session_.Snapshot();
+		{
+			// Frame generation's cost depends on these. A change restarts the
+			// rolling timing window so each configuration's percentiles stand alone.
+			const bool active = GenerationActive();
+			const bool dynamic = provider_ == FrameGenerationProvider::NVIDIA && state.options.mode == sl::DLSSGMode::eDynamic;
+			const auto key = static_cast<std::uint64_t>(provider_) | static_cast<std::uint64_t>(PresetConfiguration()) << 4 |
+				static_cast<std::uint64_t>(active ? EffectiveMultiplier() : 0) << 8 | std::uint64_t{dynamic} << 16 |
+				std::uint64_t{NvidiaOverlapNextFrame()} << 17;
+			if (key != frameGenerationTimingKey_) {
+				frameGenerationTimingKey_ = key;
+				if (auto* timing = PerformanceTuning::GetSingleton(); timing->TimingEnabled()) {
+					timing->ResetTimingWindow();
+					logger::info("[Performance] frame generation {} {} preset={} overlap={}; timing window restarted",
+						ProviderName(provider_), active ? std::format("x{}{}", EffectiveMultiplier(), dynamic ? " dynamic" : "") : "off",
+						PresetLabel(PresetConfiguration()), NvidiaOverlapNextFrame());
+				}
+			}
+		}
 		if (provider_ == FrameGenerationProvider::NVIDIA && (state.frameIndex <= 3 || state.frameIndex % 600 == 0)) {
 			const auto feedback = PresentationFeedback();
 			const auto reflex = session_.ReflexTelemetry();

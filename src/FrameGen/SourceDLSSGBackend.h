@@ -257,6 +257,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
 		std::atomic<bool> nvidiaOverlapNextFrame_{};
 		bool nvidiaOverlapLogged_{}; // Present thread.
+		std::uint64_t frameGenerationTimingKey_{ ~0ull }; // Present thread; the configuration being timed.
 		// Per-window CPU samples for the input-reuse A/B; logged and cleared every 600 presents.
 		std::vector<float> xefgReuseMs_, xefgSleepMs_;
 		bool xefgReuseWindowGpu_{};
