@@ -15,6 +15,7 @@
 #include "NvidiaBaselinePolicy.h"
 #include "NativeInput.h"
 #include "NativeUIBridge.h"
+#include "ReShadeIntegration.h"
 #include "../compatibility/ImGuiCompat/ImGuiIntegration.h"
 #include "UpscalerHooks.h"
 #include "CommunityShaderIntegration.h"
@@ -182,6 +183,8 @@ extern "C" DLLEXPORT bool __cdecl SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	logger::info("[Renderer] edition={} source={} module={}", Plugin::EDITION, Plugin::SOURCE_REVISION,
 		TheosRenderPipeline::PluginPaths::ModulePath(renderer).string());
 	logger::info("[Runtime] Skyrim {}", a_skse->RuntimeVersion().string());
+	// ReShade loads its add-ons when Skyrim creates its device, after plugins load.
+	logger::info("[ReShade] {}", TheosRenderPipeline::ReShadeIntegration::Get().PrepareAddonBridge());
 	SKSE::Init(a_skse);
 
 	// Before any settings are read: carry a customized packaged INI into the user file once.

@@ -292,9 +292,19 @@ does not resolve that conflict.
 ReShade 6.8 was tested with Universal on Skyrim 1.6.1170, Cabbage ENB and
 an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
-Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
+Rumble passed a separate initial test. Combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
 development builds; the exact 0.4.5 package has not been tested with ReShade.
+
+MartysMods ReGrade+ (ReShade 6.6 or newer) used to crash the game while TRP
+started ReShade: it prepares itself only in a device event that ReShade does not
+send to TRP's ReShade runtime. TRP now sends ReGrade+ that event itself. This was
+checked offline with ReGrade+'s build of 2026-03-13 on ReShade 6.8; gameplay is
+untested. ReGrade+ grades an 8-bit copy of the frame, so it is meant for SDR;
+HDR output with ReGrade+ is untested. If TRP cannot cover ReGrade+, for example
+when its add-on file is renamed, TRP leaves ReShade effects and its overlay off
+instead of crashing and shows the entry to add under `[ADDON] DisabledAddons` in
+ReShade.ini (Advanced → ReShade and the TRP log).
 
 Keep your existing ReShade installation, preset and hotkeys. **Disable SSE
 ReShade Helper.** TRP supplies the effects and overlay stages. Effects run after

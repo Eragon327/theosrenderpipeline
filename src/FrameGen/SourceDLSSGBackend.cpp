@@ -295,7 +295,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 				std::filesystem::path(adapterDesc.Description).string(), adapterDesc.VendorId, adapterDesc.DeviceId,
 				static_cast<std::uint32_t>(adapterDesc.AdapterLuid.HighPart), adapterDesc.AdapterLuid.LowPart);
 		}
-		logger::info("[ReShade] {}", ReShadeIntegration::Get().Status());
+		if (ReShadeIntegration::Get().Blocked()) { logger::warn("[ReShade] {}", ReShadeIntegration::Get().Status()); }
+		else { logger::info("[ReShade] {}", ReShadeIntegration::Get().Status()); }
 		adapterVendor_ = adapterDesc.VendorId;
 		adapterDevice_ = adapterDesc.DeviceId;
 		if (FAILED(adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &adapterDriver_))) { adapterDriver_ = {}; }
