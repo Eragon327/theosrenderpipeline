@@ -1,5 +1,9 @@
 # 0.4.5
 
+- Reduce repeated NR recording work: use constant parameter names, reuse
+  resolve descriptor tables while their resources stay the same, batch resource
+  transitions and read the second pass's result directly when a resolve follows.
+  Model inference, controls and settings defaults are unchanged.
 - Keep NR before upscaling active on world frames without frame-generation UI
   guides, including hidden-interface and Present fallback frames. Main menus
   and loading screens still suspend NR; after-upscaling composition keeps its

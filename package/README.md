@@ -4,7 +4,9 @@ Version 0.4.5 fixes NR before upscaling when the interface is hidden, checks
 RTX 20/30 driver prerequisites, stops repeated failed FG creation attempts,
 and lets Automatic NR use an available compatible runtime when legacy 310.8
 is missing. Both editions keep their runtime bundle, settings defaults and NR
-controls. New gameplay acceptance is pending; see CHANGELOG.md.
+controls. It also reduces repeated NR recording setup and avoids an
+intermediate copy in applicable two-pass paths. Model inference is unchanged.
+New gameplay acceptance is pending; see CHANGELOG.md.
 
 Version 0.4.4 adds Automatic NR runtime selection and NVIDIA NR 310.9.16 on
 RTX 20/30/40 through Universal's in-memory kernel pack. Install matching
