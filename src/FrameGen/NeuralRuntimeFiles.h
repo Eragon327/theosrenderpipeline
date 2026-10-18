@@ -15,8 +15,8 @@ namespace TheosRenderPipeline::SourceDLSSG
     // Runtimes relative to Data/SKSE/Plugins. NVIDIA's 310.8 runs on every RTX GPU
     // and is the fallback. NVIDIA's 310.9.16 has kernels only for RTX 50. TRP's
     // Universal adds Ada kernels in memory from a pinned adjacent pack. The
-    // standalone RTX 40 build remains a fallback. A community compat rebuild,
-    // if installed, adds RTX 20-40. See tools/nr-runtime.
+    // standalone RTX 40 build remains a fallback. The bundled community compat
+    // rebuild supplies the RTX 20/30 path. See tools/nr-runtime.
     inline constexpr std::string_view kDefaultNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr.dll";
     inline constexpr std::string_view kLatestNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16.dll";
     inline constexpr std::string_view kRTX40NeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16_rtx40.dll";
@@ -42,13 +42,17 @@ namespace TheosRenderPipeline::SourceDLSSG
     // Universal installer tries the original 310.9.16 first on RTX 40; a safe
     // installation refusal falls through to the remaining choices. The standalone
     // RTX 40 build keeps NVIDIA's RTX 50 code, so it also stands in there. The
-    // new model is unmeasured on RTX 20 and 30, which keep 310.8.
+    // community FP16 rebuild supplies the new model on RTX 20/30; 310.8 remains
+    // the fallback if that file is missing or feature creation is refused.
     inline std::vector<std::string_view> AutomaticNeuralRuntimes(int computeCapability, bool adaKernels = false)
     {
         if (computeCapability >= 120) { return { kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime }; }
         if (computeCapability == 89) {
             if (adaKernels) { return { kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime }; }
             return { kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime };
+        }
+        if (computeCapability == 75 || computeCapability == 86) {
+            return { kCompatNeuralRuntime, kDefaultNeuralRuntime };
         }
         return { kDefaultNeuralRuntime };
     }

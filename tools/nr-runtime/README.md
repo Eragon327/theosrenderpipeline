@@ -14,7 +14,9 @@ name that original DLL `nvngx_dlssnr_310.9.16.dll`; retain `nvngx_dlssnr.dll`
 RTX 40; a missing, damaged or incompatible pack safely falls through to the
 other installed choices. Explicitly selected original copies also use an
 adjacent pack. Standard never installs kernels in memory. RTX 50 uses the
-original runtime without the Ada patch; RTX 20/30 retain their existing choices.
+original runtime without the Ada patch. RTX 20/30 automatically try the bundled
+community FP16 310.9.16 rebuild (`nvngx_dlssnr_310.9.16_compat.dll`) first, with
+310.8 as fallback. That separate DLL is not produced by this RTX 40 builder.
 
 Universal verifies both complete file hashes, loaded headers (accounting for
 ASLR), original kernel bundles, all 35 patch sites, and signed displacement

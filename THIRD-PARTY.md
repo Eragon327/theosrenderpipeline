@@ -61,6 +61,18 @@ runtimes retain the license files accompanying their downloads.
   editions include this code; experimental XeFG MFG is off by default.
   https://github.com/Coldwood1026/OptiScalerDp4aUnlock/tree/9eea95bba9fda7121f214d2eba358423be598d7e
 
+## Community NR compatibility runtime
+
+The bundled `nvngx_dlssnr_310.9.16_compat.dll` is ShortFuse's community FP16
+compatibility build, reproduced by [openNR](https://github.com/clshortfuse/openNR).
+The pinned reference SHA-256 is
+`CDFA6C1EC784867182164C7836F324F087B5C9F374D0C9FE46F54999FEABF3ED`.
+It supplies compatibility kernels for RTX 20/30; TRP's RTX 40 builder and
+in-memory kernel pack are separate implementations. NVIDIA's underlying runtime
+and model retain their own terms; the compatibility DLL is not an unmodified
+NVIDIA-signed binary. openNR's toolchain source is MIT licensed and is not
+embedded in TRP's renderer or distributed as part of this runtime DLL.
+
 ## Libraries and SDKs
 
 CommonLibSSE-NG 8.1.0 (`3c0f5a87c3b166c9a6712d5c3bd180e9ac5ad0fd`) uses

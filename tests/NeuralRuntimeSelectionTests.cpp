@@ -81,9 +81,15 @@ int main()
             "Universal Ada installer prefers NVIDIA's original 310.9.16 with the kernel pack");
         Require(AutomaticNeuralRuntimes(120, true) == AutomaticNeuralRuntimes(120) &&
             AutomaticNeuralRuntimes(86, true) == AutomaticNeuralRuntimes(86), "Ada installer only changes RTX 40 Automatic choice");
-        for (const int capability : {0, 75, 86, 90}) {
+        for (const int capability : {75, 86}) {
+            Require(AutomaticNeuralRuntimes(capability) == List{kCompatNeuralRuntime, kDefaultNeuralRuntime},
+                "RTX 20/30 prefer the community 310.9.16 rebuild and retain 310.8 as fallback");
+            Require(AutomaticNeuralRuntimes(capability, true) == AutomaticNeuralRuntimes(capability),
+                "RTX 20/30 choose the same community runtime in both editions");
+        }
+        for (const int capability : {0, 80, 90}) {
             Require(AutomaticNeuralRuntimes(capability) == List{kDefaultNeuralRuntime},
-                "RTX 20/30, unverified and unknown GPUs keep 310.8");
+                "other and unknown GPUs keep 310.8");
         }
         Require(IsAutomaticNeuralRuntime("automatic") && !IsAutomaticNeuralRuntime(kDefaultNeuralRuntime), "Automatic is a name, not a file");
         const auto plugins = std::filesystem::path(L"C:/Game/Data/SKSE/Plugins");

@@ -3,7 +3,8 @@
 Version 0.4.4 adds Automatic NR runtime selection and NVIDIA NR 310.9.16 on
 RTX 40 through Universal's in-memory kernel pack. Install matching Standard
 first, then Universal after it in MO2. Standard includes the original runtime,
-the standalone RTX 40 fallback and the older NR runtime. Universal adds the
+the community FP16 build for RTX 20/30, the standalone RTX 40 fallback and the
+older NR runtime. Universal adds the
 kernel pack and compatibility code. NR remains available in both editions and
 defaults off. See CHANGELOG.md and the NR runtime notes below.
 
@@ -74,7 +75,8 @@ It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
 0.4.4 supplies the complete NVIDIA and Intel runtime bundles, including the
-original NR 310.9.16, standalone RTX 40 fallback and older NR runtime. In that setup,
+original NR 310.9.16, community RTX 20/30 compatibility build, standalone RTX
+40 fallback and older NR runtime. In that setup,
 skip the runtime downloads below.
 
 ## Install
@@ -108,12 +110,15 @@ adjacent `nvngx_dlssnr_310.9.16_rtx40.trpk` supplied in this Universal download.
 Keep the pack in `SKSE/Plugins/TheosRenderPipeline/NVIDIA/`. The installer
 checks the runtime, pack and memory changes before use; the original NVIDIA
 DLL is unchanged on disk. Safe refusal retains the fallback runtime choices.
-Standard does not install this pack in memory. Its runtime selector retains
-the supplied standalone RTX 40 build and older NR runtime. Explicit custom
+Standard does not install this pack in memory. On RTX 20/30, both editions automatically try
+`nvngx_dlssnr_310.9.16_compat.dll`, the community FP16 compatibility build
+supplied by Standard. The older 310.8 runtime remains the fallback if the
+community DLL is missing or feature creation is refused. The runtime selector
+also retains the standalone RTX 40 build and older NR runtime. Explicit custom
 runtime choices remain available; older default-runtime settings migrate to
 Automatic. Use the matching Standard/Universal pair for the complete bundle.
 
-The 0.4.4 Universal renderer and matching Standard runtime bundle passed a
+The RTX 40 in-memory path with Standard's runtime bundle passed a
 scoped game smoke test on RTX 4080 SUPER / driver 610.88: two NR passes before
 upscaling at 3413x960, x4 frame generation and a loading transition. The user
 reported that it looked good, and logs confirmed in-memory NR execution and
