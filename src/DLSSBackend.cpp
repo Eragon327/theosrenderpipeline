@@ -1,6 +1,7 @@
 #include "DLSSBackend.h"
 #include "DLSSPreset.h"
 #include "DLSSFeatureParameters.h"
+#include "DLSSFeatureRelease.h"
 
 #include <PCH.h>
 #include "PluginPaths.h"
@@ -199,26 +200,47 @@ bool DLSSBackend::IsDLSSAvailable()
 	return dlssAvailable;
 }
 
-void DLSSBackend::ReleaseFeature()
+HRESULT DLSSBackend::QueryInputRange(unsigned width, unsigned height, int quality,
+    TheosRenderPipeline::UpscalerInputResolution& range)
 {
-	// Startup, resize and live replacement all enter after host retirement.
-	if (dlssHandle) {
-		// The handle is not reused after a failed release; record the failure.
-		const auto released = NVSDK_NGX_D3D11_ReleaseFeature(dlssHandle);
-		if (!NGXSucceeded(released)) {
-			logger::error("[DLSSBackend] NGX ReleaseFeature failed (0x{:08X}); the feature may not have been freed", static_cast<std::uint32_t>(released));
-		}
-	}
-	ReleaseDirectDestinationUAV();
-	if (outputSRV) { outputSRV->Release(); }
-	if (sharpenUAV) { sharpenUAV->Release(); }
-	if (sharpenTexture) { sharpenTexture->Release(); }
-	if (outputTexture) { outputTexture->Release(); }
-	dlssHandle = nullptr;
-	outputTexture = nullptr;
-	sharpenTexture = nullptr;
-	outputSRV = nullptr;
-	sharpenUAV = nullptr;
+    if (!width || !height || quality < 0 || quality > 5) { return E_INVALIDARG; }
+    if (!IsDLSSAvailable()) { return DXGI_ERROR_UNSUPPORTED; }
+    unsigned optimalW{},optimalH{},maxW{},maxH{},minW{},minH{};float sharpness{};
+    const auto mode=TheosRenderPipeline::DLSS::CreationParameters(1,1,width,height,
+        DXGI_FORMAT_R8G8B8A8_UNORM,quality,false,true).Feature.InPerfQualityValue;
+    const auto result=NGX_DLSS_GET_OPTIMAL_SETTINGS(capabilityParams,width,height,mode,
+        &optimalW,&optimalH,&maxW,&maxH,&minW,&minH,&sharpness);
+    if (NVSDK_NGX_FAILED(result)) {
+        logger::warn("[DLSSBackend] input range query result=0x{:08X}",static_cast<unsigned>(result));
+        return DXGI_ERROR_UNSUPPORTED;
+    }
+    const TheosRenderPipeline::UpscalerInputResolution candidate{{optimalW,optimalH},{minW,minH},{maxW,maxH}};
+    if (!candidate.Valid()) { return DXGI_ERROR_UNSUPPORTED; }
+    range=candidate;return S_OK;
+}
+
+HRESULT DLSSBackend::ReleaseFeature()
+{
+    // Startup, resize and live replacement all enter after host retirement.
+    const auto result = TheosRenderPipeline::DLSS::ReleaseOwnedFeature(dlssHandle,
+        [](NVSDK_NGX_Handle* handle) { return NVSDK_NGX_D3D11_ReleaseFeature(handle); },
+        [&] {
+            ReleaseDirectDestinationUAV();
+            if (outputSRV) { outputSRV->Release(); }
+            if (sharpenUAV) { sharpenUAV->Release(); }
+            if (sharpenTexture) { sharpenTexture->Release(); }
+            if (outputTexture) { outputTexture->Release(); }
+            outputTexture = nullptr;
+            sharpenTexture = nullptr;
+            outputSRV = nullptr;
+            sharpenUAV = nullptr;
+        });
+    if (!NGXSucceeded(result)) {
+        logger::error("[DLSSBackend] feature release failed result=0x{:08X} ({}); retaining feature and output resources",
+            static_cast<std::uint32_t>(result), NGXResultToString(result));
+        return E_FAIL;
+    }
+    return S_OK;
 }
 
 bool DLSSBackend::InitUpscale(
@@ -241,6 +263,7 @@ bool DLSSBackend::InitUpscale(
 		return false;
 	}
 
+	if (FAILED(ReleaseFeature())) { return false; }
 	displayWidth = a_targetWidth;
 	displayHeight = a_targetHeight;
 	renderWidth = a_renderWidth;
@@ -259,8 +282,6 @@ bool DLSSBackend::InitUpscale(
 
 bool DLSSBackend::CreateFeature()
 {
-	ReleaseFeature();
-
 	// Render preset hints (NVSDK_NGX_DLSS_Hint_Render_Preset values; 0 =
 	// driver default, 5/6 = legacy CNN presets E/F, 10/11 = transformer
 	// presets J/K, 12/13 = L/M). Applied to every quality slot so the choice follows mode

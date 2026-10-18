@@ -4,6 +4,8 @@
 #include "DLSSBackend.h"
 #include "RenderPipeline.h"
 #include "CommunityShaderIntegration.h"
+#include "../PluginPaths.h"
+#include <chrono>
 
 void NvidiaHost::AdoptEffectiveSourceUpscalerSettings() const
 {
@@ -27,30 +29,82 @@ void NvidiaHost::RequestSourceUpscalerSettings(TheosRenderPipeline::Upscaler::Cr
 
 void NvidiaHost::ApplySourceUpscalerSettingsAfterPresent()
 {
-    if (FAILED(FailureResult()) || !sourceUpscalerSettings_.NeedsLiveChange() || nativeUIPass_.Active() || nativeUIPass_.HasEarlyEvaluation()) { return; }
+    if (FAILED(FailureResult()) || nativeUIPass_.Active() || nativeUIPass_.HasEarlyEvaluation()) { return; }
     auto& backend = TheosRenderPipeline::SourceDLSSG::Backend::Get();
+    sourceUpscalerSettings_.SetNvidiaServicesReady(backend.NvidiaServicesReady());
+    if (!sourceUpscalerSettings_.NeedsLiveChange()) { return; }
     auto* dlss = DLSSBackend::GetSingleton();
+    const auto candidate = sourceUpscalerSettings_.LiveCandidate();
+    const auto transitionBegin = std::chrono::steady_clock::now();
+    const int fromMode = sourceUpscalerSettings_.Effective().mode;
+    auto measure = [&](const char* stage, auto operation) {
+        const auto begin = std::chrono::steady_clock::now();
+        const auto result = operation();
+        const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+        logger::info("[SourceUpscalerTiming] from={} to={} stage={} cpuMs={:.3f} result={}",
+            fromMode, candidate.mode, stage, elapsed, static_cast<std::int64_t>(result));
+        return result;
+    };
+    if (candidate.mode == XeSS && !xeSSActive_) {
+        auto& sr = backend.XeSS();
+        auto hr = measure("preflight-open", [&] { return sr.Open(backend.Device12(), TheosRenderPipeline::PluginPaths::IntelDirectory()); });
+        TheosRenderPipeline::UpscalerInputResolution range;
+        if (SUCCEEDED(hr)) { hr = measure("preflight-range", [&] { return sr.QueryInputRange(outputWidth_, outputHeight_, candidate.AllocationQuality(), range); }); }
+        if (FAILED(hr) || !range.Accepts({renderWidth_, renderHeight_}, {outputWidth_, outputHeight_})) {
+            // Refuse before retiring the working method or touching its targets.
+            sourceUpscalerSettings_.RejectLiveMode();
+            status_ = std::format("Fixed-size XeSS switch refused: {}x{} input; {}. Saved mode requires restart.",
+                renderWidth_, renderHeight_, FAILED(hr) ? sr.Status() : "unsupported input extent");
+            logger::warn("[SourceUpscaler] {} hr=0x{:08X}", status_, static_cast<unsigned>(hr));
+            AdoptEffectiveSourceUpscalerSettings();
+            return;
+        }
+    }
+    if (candidate.mode == 0 && xeSSActive_ && sourceUpscalerSettings_.Startup().mode == XeSS) {
+        dlss->SetupDevice(device_.Get(), context_.Get());
+        TheosRenderPipeline::UpscalerInputResolution range;
+        const auto hr=measure("dlss-preflight-range", [&] { return dlss->QueryInputRange(outputWidth_,outputHeight_,candidate.AllocationQuality(),range); });
+        if (FAILED(hr) || !range.Accepts({renderWidth_,renderHeight_},{outputWidth_,outputHeight_})) {
+            sourceUpscalerSettings_.RejectLiveMode();
+            status_="Fixed-size DLSS return refused by SDK range; current XeSS retained, saved mode requires restart.";
+            logger::warn("[SourceUpscaler] {} hr=0x{:08X}",status_,static_cast<unsigned>(hr));
+            AdoptEffectiveSourceUpscalerSettings();return;
+        }
+    }
     D3D11_TEXTURE2D_DESC inputDesc{};
     gameTargets_.UpscaleInput()->GetDesc(&inputDesc);
     const bool applied = TheosRenderPipeline::Upscaler::ApplyLive(sourceUpscalerSettings_,
-        [&] { return backend.Quiesce(); },
+        [&] { return measure("retirement", [&] { return backend.Quiesce(TheosRenderPipeline::SourceDLSSG::RetirementPurpose::UpscalerReplacement); }); },
         [&](const TheosRenderPipeline::Upscaler::Creation& request) {
-            if (xeSSActive_) {
-                // Sharpening is applied live after XeSS; DLSS model/exposure settings do not affect XeSS.
-                return true;
+            if (request.mode == XeSS) {
+                if (xeSSActive_) { return true; } // XeSS sharpening remains a post pass.
+                const auto hr = measure("xess-create", [&] { return backend.XeSS().Initialize(backend.Transport(), device_.Get(),
+                    {outputWidth_, outputHeight_}, request.AllocationQuality(), inputDesc.Format, true,
+                    backend.XeSSPipelines(), {renderWidth_, renderHeight_}); });
+                if (FAILED(hr)) {
+                    logger::error("[SourceUpscaler] XeSS replacement failed {} hr=0x{:08X}", backend.XeSS().Status(), static_cast<unsigned>(hr));
+                    return false;
+                }
+                return SUCCEEDED(measure("dlss-release", [&] { return dlss->ReleaseFeature(); }));
             }
-            return dlss->InitUpscale(renderWidth_, renderHeight_, outputWidth_, outputHeight_, inputDesc.Format,
-                request.sharpening, request.autoExposure, request.preset, request.AllocationQuality());
+            dlss->SetupDevice(device_.Get(), context_.Get());
+            if (!measure("dlss-create", [&] { return dlss->InitUpscale(renderWidth_, renderHeight_, outputWidth_, outputHeight_, inputDesc.Format,
+                request.sharpening, request.autoExposure, request.preset, request.AllocationQuality()); })) { return false; }
+            return !xeSSActive_ || SUCCEEDED(measure("xess-release", [&] { return backend.XeSS().ReleaseAfterRetirement(); }));
         },
-        [&] { return backend.ResumeAfterResize(); });
+        [&] { return measure("resume", [&] { return backend.ResumeAfterUpscalerReplacement(); }); });
+    logger::info("[SourceUpscalerTiming] from={} to={} stage=total cpuMs={:.3f} result={}",
+        fromMode, candidate.mode, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - transitionBegin).count(), applied);
     if (!applied) {
         FailLifecycle(E_FAIL, "Source DLSS live settings");
         return;
     }
-    // Quiesce cleared guides and retired the last D3D11 work before replacing
-    // the feature. The next frame must republish guides and reset history.
+    // Reader retirement retains compatible guides/NR/HDR owners at fixed extent.
+    // The next frame republishes guides and resets temporal history.
     frameGenerationStateKnown_ = false;
     resetNextEvaluation_ = true;
+    xeSSActive_ = sourceUpscalerSettings_.Effective().mode == XeSS;
+    splitSourceDLSSActive_ = !xeSSActive_;
     AdoptEffectiveSourceUpscalerSettings();
     const auto& effective = sourceUpscalerSettings_.Effective();
     logger::info("[SourceUpscaler] applied after GPU retirement: mode={} quality={} preset={} autoExposure={} sharpening={}; restartPending={} unsaved={}",

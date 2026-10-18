@@ -6,6 +6,7 @@
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralRenderingReconstruction.h"
 #include "NeuralCombatPolicy.h"
+#include "NeuralObjectMask.h"
 #include "SourceDLSSGGeneration.h"
 #include "HDROutput.h"
 #include "FrameGenerationProvider.h"
@@ -38,6 +39,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		int neuralPasses{ 1 };
 		NeuralRendering::CombatSettings neuralCombat{};
 		NeuralRendering::Tuning neuralTuning{};
+        NeuralRendering::ObjectMaskSettings neuralObjectMasks{};
 		NeuralRendering::Reconstruction neuralReconstruction{};
 		NeuralRendering::SecondPassSettings neuralSecondPass{};
 		HDROutput::Settings hdrOutput{};
@@ -55,6 +57,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.generation = SanitizeGenerationRequest(value.generation);
 		if (!ValidPreset(static_cast<int>(value.preset))) { value.preset = DlssgPreset::B; }
 		value.neuralTuning = NeuralRendering::SanitizeBuild14Tuning(value.neuralTuning);
+        value.neuralObjectMasks = NeuralRendering::SanitizeObjectMask(value.neuralObjectMasks);
 		if (value.neuralRuntime.empty()) { value.neuralRuntime = kAutomaticNeuralRuntime; }
 		value.neuralPasses = std::clamp(value.neuralPasses, 1, 2);
 		value.neuralCombat = NeuralRendering::SanitizeCombatSettings(value.neuralCombat);
@@ -103,6 +106,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		nr.uiCorrection = ini.GetBoolValue(section, "NRUICorrection", false);
 		value.neuralReconstruction = NeuralRendering::LoadReconstruction(ini, section);
 		value.neuralSecondPass = NeuralRendering::LoadSecondPass(ini, section, value.neuralReconstruction, value.neuralTuning);
+        value.neuralObjectMasks = NeuralRendering::LoadObjectMask(ini, section);
 		value.hdrOutput = HDROutput::Load(ini);
 		return SanitizePreferences(value);
 	}
@@ -143,6 +147,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ini.SetBoolValue(section, "NRUICorrection", nr.uiCorrection);
 		NeuralRendering::StoreReconstruction(ini, section, value.neuralReconstruction);
 		NeuralRendering::StoreSecondPass(ini, section, value.neuralSecondPass);
+        NeuralRendering::StoreObjectMask(ini, section, value.neuralObjectMasks);
 		HDROutput::Store(ini, value.hdrOutput);
 	}
 }

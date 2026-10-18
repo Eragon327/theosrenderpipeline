@@ -252,7 +252,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const NeuralOptions& options, bool reset, bool depthInverted, float scaleX, float scaleY,
 		ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 		ID3D12Resource* hudless, ID3D12Resource* composed, std::uint64_t timestampFrequency,
-		const D3D12StageMarks& marks)
+		const D3D12StageMarks& marks, ID3D12Resource* objectMask, std::array<float,2> objectMaskGuideOffset)
 	{
 		if (!device || !list || slot >= heaps_.size() || options.passes < 1 || options.passes > 2 || !SameSize(motion, depth) ||
 			!Texture(hudless) || (options.WorldOnly() ? (ui || composed || options.tuning.uiCorrection) :
@@ -418,6 +418,35 @@ namespace TheosRenderPipeline::SourceDLSSG
 			key.secondIntensity = secondSettings_.tuning.intensity;
 		}
 		key.passOverride = options.passOverride; key.requestedPasses = options.passes;
+		if (options.objectMasks.enabled && objectMask) {
+			if (!objectResult_) {
+				auto desc = corrected_->GetDesc();
+				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+				const auto hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+					D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&objectResult_));
+				if (FAILED(hr)) { status_ = "NR object-result allocation failed"; return false; }
+			}
+			// The blend and its copy take corrected_ and the inputs in COMMON. A resolve
+			// already left them there; otherwise NGX left corrected_ writable and the
+			// inputs readable, and the code below expects those states back.
+			if (!resolving) {
+				Barriers barriers{list};
+				barriers.Add(corrected_.Get(), write, common);
+				transitionInputs(barriers, read, common);
+				barriers.Flush();
+			}
+			const auto hr = objectBlend_.Record(device, list, slot, options.objectMasks, hudless, corrected_.Get(), objectMask, depth,
+				objectResult_.Get(), objectMaskGuideOffset);
+			if (FAILED(hr)) { status_ = std::format("NR object-mask composition failed 0x{:08X}", static_cast<UINT>(hr)); return false; }
+			const auto copied = Interop::RecordCopy(list, objectResult_.Get(), corrected_.Get());
+			if (FAILED(copied)) { status_ = std::format("NR object-mask result copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
+			if (!resolving) {
+				Barriers barriers{list};
+				barriers.Add(corrected_.Get(), common, write);
+				transitionInputs(barriers, common, read);
+				barriers.Flush();
+			}
+		}
 		if (options.WorldOnly()) {
 			if (!resolving) {
 				// NGX wrote corrected_ directly; return it and its inputs to COMMON.

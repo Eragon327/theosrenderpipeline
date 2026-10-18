@@ -14,7 +14,7 @@ Rendering (NR), and native-resolution menus and HUD. Current version:
 - NR before or after DLSS/DLAA, one or two independently configured passes,
   input scaling and tuning, in both editions. NR defaults off.
 - Optional peripheral compression and combined NR preparation, both off by default.
-- Optional weather and time presets for any NR setting and sharpening, with smooth
+- Optional weather and time presets for NR appearance settings and sharpening, with smooth
   transitions and separate interior settings. Presets are shareable files. See
   [presets](package/APPEARANCE-PROFILES.md).
 - ReShade source-frame effects, explicit depth and placement controls.
@@ -37,10 +37,17 @@ with the game. Your saved pass count, resolution and tuning remain unchanged.
 The second pass stays allocated and its history resets when it resumes. These
 options default off; their effect on responsiveness depends on the workload.
 
+
+### Experimental NR object masks
+
+The NR tab can preserve first-person arms/weapons, player equipment, other humanoids and creatures independently. A group strength of 0 keeps the original pixels; 1 applies the complete NR result. This source-owned composition runs after the selected one/two-pass chain and its resolution/peripheral resolve, before native UI composition. It leaves automatic skin controls available and does not skip inference or expose per-group vendor tone/structure parameters. Mask rules are global rather than weather/time preset overrides and are saved with the ordinary NR preferences.
+
+Masks default off. The initial capture supports opaque lighting draws on Skyrim 1.6.1170, verifies the hook prologue, and checks capture-frame identity and final depth. Missing, conflicting, transparent, alpha-tested or unclassified capture keeps normal NR behavior. The feature adds geometry replay, classification storage and a composition pass; its game quality, mod compatibility, VRAM use and overhead still need acceptance.
+
 ## XeSS and XeFG (experimental)
 
-**Image > Mode > XeSS** selects Intel's upscaler; save and restart to apply it.
-Intel's runtime chooses the render resolution for each quality setting. XeSS
+**Image > Mode > XeSS** selects Intel's upscaler. Apply can exchange DLSS and XeSS at the existing render dimensions when host services and the SDK input range permit it. Quality/render-scale and native DLAA allocation changes require save and restart. A refused live switch preserves the current method and reports that restart is needed.
+At startup, Intel's runtime chooses the render resolution for each quality setting. XeSS
 keeps the SDR exposure from Skyrim or ENB, so the DLSS model and auto-exposure
 settings do not apply. XeSS is available when TRP owns upscaling; with Community
 Shaders, CS upscales.

@@ -17,8 +17,8 @@ int main()
         Upscaler::Configuration configuration;
         configuration.Initialize({0, 2, 11, true, true});
         configuration.Request({4, 0, 11, true, true});
-        Require(configuration.NeedsRestart() && configuration.LiveCandidate().mode == 0,
-            "XeSS selection leaves the running NVIDIA allocation intact until restart");
+        Require(configuration.NeedsRestart() && configuration.LiveCandidate().mode == 4,
+            "XeSS switches at fixed extent while pending quality waits for restart");
         configuration.Saved(); configuration.Initialize(configuration.Persisted());
         Require(configuration.Startup().mode == 4 && configuration.Startup().quality == 0 && !configuration.NeedsRestart(),
             "XeSS mode and quality survive save/restart without being sanitized into DLSS");

@@ -3,6 +3,7 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include "RCASParameters.h"
+#include "FrameGen/UpscalerInputResolution.h"
 
 // D3D11 DLSS Super Resolution backend using the public NVIDIA NGX SDK.
 // The interface retains the game integration's existing settings contract.
@@ -34,7 +35,7 @@ public:
 		int a_qualityLevel = 2);
 
 	// The host must retire all GPU users before releasing the feature/output.
-	void ReleaseFeature();
+	HRESULT ReleaseFeature();
 
 	// Runs DLSS on the host's render-sized inputs and publishes the native
 	// result to a_destination.
@@ -65,6 +66,8 @@ public:
 	bool IsHDRInput() const;
 
 	bool IsDLSSAvailable();
+	HRESULT QueryInputRange(unsigned width, unsigned height, int quality,
+		TheosRenderPipeline::UpscalerInputResolution& range);
 
 	float GetOptimalMipLodBias() const;
 	int GetJitterPhaseCount() const;

@@ -40,6 +40,9 @@ namespace TheosRenderPipeline
         RESOLVE(xessSetVelocityScale)
         RESOLVE(xessDestroyContext)
 #undef RESOLVE
+        // Optional for fixed-extent transitions; existing startup uses QuerySize.
+        xessGetOptimalInputResolution_ = reinterpret_cast<decltype(xessGetOptimalInputResolution_)>(
+            GetProcAddress(module_, "xessGetOptimalInputResolution"));
         return Result(xessD3D12CreateContext_(device, &context_), "create context");
     }
     HRESULT XeSSUpscaler::QuerySize(UINT width, UINT height, int quality, FrameExtent& input)
@@ -51,8 +54,22 @@ namespace TheosRenderPipeline
         if (!render.x || !render.y || render.x > width || render.y > height) { return E_UNEXPECTED; }
         input = {render.x, render.y}; return S_OK;
     }
+    HRESULT XeSSUpscaler::QueryInputRange(UINT width, UINT height, int quality, UpscalerInputResolution& range)
+    {
+        if (!context_ || !width || !height || quality < 0 || quality > 5) { return E_INVALIDARG; }
+        if (!xessGetOptimalInputResolution_) { status_ = "missing input resolution range query"; return E_NOINTERFACE; }
+        const xess_2d_t output{width, height};
+        xess_2d_t optimal{}, minimum{}, maximum{};
+        const auto hr = Result(xessGetOptimalInputResolution_(context_, &output, Quality(quality),
+            &optimal, &minimum, &maximum), "input resolution range");
+        if (FAILED(hr)) { return hr; }
+        const UpscalerInputResolution candidate{{optimal.x, optimal.y}, {minimum.x, minimum.y}, {maximum.x, maximum.y}};
+        if (!candidate.Valid()) { status_ = "invalid SDK input resolution range"; return E_UNEXPECTED; }
+        range = candidate; return S_OK;
+    }
     HRESULT XeSSUpscaler::Initialize(SourceDLSSG::Interop& transport, ID3D11Device* device,
-        FrameExtent output, int quality, DXGI_FORMAT format, bool invertedDepth, ID3D12PipelineLibrary* pipelines)
+        FrameExtent output, int quality, DXGI_FORMAT format, bool invertedDepth, ID3D12PipelineLibrary* pipelines,
+        FrameExtent fixedInput)
     {
         if (!context_ || !device || initialized_) { return E_UNEXPECTED; }
         // Skyrim's SDR source is RGBA8. HDR output remains a later, separate stage.
@@ -62,7 +79,17 @@ namespace TheosRenderPipeline
         }
         transport_ = &transport; device_ = device; outputSize_ = output; quality_ = quality; invertedDepth_ = invertedDepth;
         pipelines_ = pipelines;
-        auto hr = QuerySize(output.width, output.height, quality, input_);
+        HRESULT hr = S_OK;
+        if (fixedInput.width || fixedInput.height) {
+            UpscalerInputResolution range;
+            hr = QueryInputRange(output.width, output.height, quality, range);
+            if (FAILED(hr)) { return hr; }
+            if (!range.Accepts(fixedInput, output)) {
+                status_ = "existing render extent is outside the supported XeSS range or aspect";
+                return DXGI_ERROR_UNSUPPORTED;
+            }
+            input_ = fixedInput;
+        } else { hr = QuerySize(output.width, output.height, quality, input_); }
         if (FAILED(hr)) { return hr; }
         xess_d3d12_init_params_t init{};
         init.outputResolution = {output.width, output.height}; init.qualitySetting = Quality(quality);

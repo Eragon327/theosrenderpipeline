@@ -198,6 +198,8 @@ set(ARP_BASELINE_SOURCES
     src/RE/BSGraphics.h
     src/TextureProviderBridge.cpp
     src/TextureProviderBridge.h
+    src/NeuralObjectHooks.cpp
+    src/FrameGen/NeuralObjectCapture.cpp
     src/UpscalerHooks.cpp
     src/UpscalerHooks.h
     src/UpscalerDeviceHooks.cpp
@@ -218,6 +220,7 @@ set(ARP_NEURAL_SOURCES
     src/FrameGen/NeuralRenderingFeatureSession.cpp
     src/FrameGen/NeuralRenderingModulePathHook.cpp
     src/FrameGen/NeuralRenderingRuntimeIdentity.cpp
+    src/FrameGen/NeuralObjectBlend.cpp
     src/FrameGen/SourceDLSSGNeuralRendering.cpp
     src/FrameGen/SourceDLSSGNeuralStage.cpp
     src/FrameGen/SourceDLSSGNeuralResolve.cpp
