@@ -109,7 +109,7 @@ void DrawNeuralSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bo
     const auto height = draft.neuralBeforeUpscaling ? host->RenderHeight() : host->OutputHeight();
     const char* placements[]{"Before upscaling", "After upscaling"};
     const char* styles[]{"Style 0", "Style 1", "Style 2", "Style 3", "Style 4", "Style 5", "Style 6", "Style 7"};
-    const char* networks[]{"Default", "Shipping"};
+    const char* networks[]{"Default", "Previous model"};
     const char* methods[]{"Auto | Reconstruct reduced input", "Residual | Add NR changes",
                           "Ratio | Transfer lighting and colour"};
 
@@ -218,7 +218,7 @@ void DrawNeuralSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bo
         PassRow("Network preset", "Network", true, unavailable, enabled, [&](int pass) {
             const bool changed = ImGui::Combo("##v", pass ? &shown.preset : &reconstruction.preset, networks,
                                               IM_ARRAYSIZE(networks));
-            DrawSettingsHelp("NR network selection, separate from the DLSS model preset.");
+            DrawSettingsHelp("Default runs the runtime's newest network. Previous model runs the 310.8 network, which 310.9.16 also includes.");
             return changed;
         });
         ImGui::EndTable();

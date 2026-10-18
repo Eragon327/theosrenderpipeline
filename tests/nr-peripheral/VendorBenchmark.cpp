@@ -3,7 +3,7 @@
 #include <nvsdk_ngx.h>
 
 int wmain(int argc,wchar_t** argv){
-    Require(argc == 5, "usage: benchmark absolute-NR-DLL native|uniform|peripheral|passes|coldpasses width height");
+    Require(argc == 5 || argc == 6, "usage: benchmark absolute-NR-DLL native|uniform|peripheral|passes|coldpasses width height [preset]");
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
     const std::wstring mode=argv[2];
     const bool coldStart = mode == L"coldpasses";
@@ -29,6 +29,7 @@ int wmain(int argc,wchar_t** argv){
     NeuralOptions options;options.enabled=true;options.runtimePath=argv[1];options.beforeUpscaling=true;
     options.tuning.uiCorrection=false;options.reconstruction.inputScale=mode==L"uniform"?.9f:1.f;
     options.reconstruction.peripheralCompression=mode==L"peripheral";
+    if(argc==6)options.reconstruction.preset=std::stoi(argv[5]);
     std::vector<Pixel> pixels(size_t(w)*h);
     for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x)
         pixels[y*w+x]={.1f+.6f*x/w,.1f+.6f*y/h,.2f+.3f*((x/8+y/8)%2),1};
@@ -97,7 +98,9 @@ int wmain(int argc,wchar_t** argv){
         inputMean+=(pixels[i][0]+pixels[i][1]+pixels[i][2])/3.0;outputMean+=(result[i][0]+result[i][1]+result[i][2])/3.0;
         if(result[i][0]<.02f && result[i][1]<.02f && result[i][2]<.02f)++black;
     }
-    std::printf("OUTPUT input_mean=%.4f output_mean=%.4f black_share=%.4f\n",inputMean/result.size(),outputMean/result.size(),double(black)/result.size());
+    std::uint64_t fingerprint=1469598103934665603ull;
+    for(const auto& p:result)for(unsigned ch=0;ch<3;++ch){fingerprint^=static_cast<std::uint64_t>(std::llround(p[ch]*1000.0));fingerprint*=1099511628211ull;}
+    std::printf("OUTPUT input_mean=%.4f output_mean=%.4f black_share=%.4f fingerprint=%016llX\n",inputMean/result.size(),outputMean/result.size(),double(black)/result.size(),static_cast<unsigned long long>(fingerprint));
     auto mean=[](const auto& v){return std::accumulate(v.begin(),v.end(),0.0)/v.size();};
     std::printf("RESULT mode=%ls source=%ux%u model=%ux%u samples=%zu NR_total_ms=%.6f inference_ms=%.6f changed=%zu\n",mode.c_str(),w,h,
         TheosRenderPipeline::NeuralRendering::ModelExtent(w,options.reconstruction),TheosRenderPipeline::NeuralRendering::ModelExtent(h,options.reconstruction),
