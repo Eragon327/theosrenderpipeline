@@ -341,11 +341,7 @@ void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
                 }
                 ImGui::EndCombo();
             }
-            DrawSettingsHelp("Automatic picks the newest model your GPU runs: NVIDIA 310.9.16 on RTX 50, the 310.9.16 compat "
-                             "rebuild on RTX 40, and NVIDIA 310.8 otherwise. The compat build is a community rebuild by RenoDX, "
-                             "not an NVIDIA release. You can also pick any nvngx_dlssnr*.dll in "
-                             "Data/SKSE/Plugins/TheosRenderPipeline/NVIDIA; it loads by its file version (310 or later). "
-                             "A runtime that can't run on your GPU is replaced for the session. Apply switches it.");
+            DrawSettingsHelp("Automatic picks the newest model your GPU supports. Compat is a community rebuild by RenoDX.");
             return changed;
         });
         ImGui::EndTable();
