@@ -13,11 +13,13 @@
   and the D3D11/D3D12 handoff, helping identify which stages cost frame time.
 
 Both editions retain NR, existing frame-generation compatibility and packaged
-settings defaults. The preceding renderer passed a scoped RTX 4080 SUPER game
-test with two NR passes before upscaling, x4 frame generation and a loading
-transition. The versioned 0.4.4 binaries are new builds. Other hardware and
-physical display cadence remain unverified. A tiny 58x32 second-model stress
-case times out with both the in-memory and standalone paths.
+settings defaults. The exact 0.4.4 Universal renderer with Standard's runtime
+bundle passed a scoped RTX 4080 SUPER game test with two NR passes before
+upscaling, x4 frame generation and a loading transition. The user reported that
+it looked good; logs confirmed in-memory execution and generation resuming
+after loading. Standard-only gameplay, other hardware and physical display
+cadence remain unverified. A tiny 58x32 second-model stress case times out with
+both the in-memory and standalone paths.
 
 # 0.4.3
 

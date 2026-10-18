@@ -210,12 +210,14 @@ the supplied standalone RTX 40 build and older NR runtime. Explicit custom
 runtime choices remain available; older default-runtime settings migrate to
 Automatic. Use the matching Standard/Universal pair for the complete bundle.
 
-The preceding Universal renderer was tested on RTX 4080 SUPER / driver 610.88
-with two NR passes before upscaling at 3413x960, x4 frame generation and a
-loading transition. The user reported that it looked good. This does not
-establish other GPU/driver coverage or physical display cadence. The versioned
-0.4.4 DLLs are new builds. A tiny 58x32 second-model stress case times out with
-both the standalone and in-memory paths; use normal rendering dimensions.
+The 0.4.4 Universal renderer and matching Standard runtime bundle passed a
+scoped game smoke test on RTX 4080 SUPER / driver 610.88: two NR passes before
+upscaling at 3413x960, x4 frame generation and a loading transition. The user
+reported that it looked good, and logs confirmed in-memory NR execution and
+x4 resuming after loading. This does not establish Standard-only gameplay,
+other GPU/driver coverage, other-placement visual acceptance or physical display
+cadence. A tiny 58x32 second-model stress case times out with both the standalone
+and in-memory paths; use normal rendering dimensions.
 
 ## With the Universal edition
 
