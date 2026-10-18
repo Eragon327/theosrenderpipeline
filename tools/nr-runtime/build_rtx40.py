@@ -3,17 +3,20 @@
 NVIDIA ships this runtime with kernels for RTX 50 (sm_120) only, as PTX plus
 native code. This script compiles NVIDIA's own PTX for Ada (sm_89) with the
 CUDA toolkit, lowering the few sm_90+ features in four modules (ada_lowering.py),
-and adds those kernels next to NVIDIA's untouched sm_120 code and PTX.
+and adds those kernels next to NVIDIA's sm_120 code (byte for byte) and PTX
+(the same text, without the carriage returns Windows extraction adds).
 
 Host changes are limited to what loading them needs, and each patch site must
 hold NVIDIA's original bytes first, so any other input fails instead of
 producing a broken DLL:
-- the NR feature-requirements minimum and CreateFeature's architecture switch
-  admit Ada; Turing, Ampere and Hopper stay refused with NVIDIA's own error;
+- the D3D11/D3D12 feature requirements and CreateFeature's architecture switch
+  admit Ada; Turing, Ampere and Hopper stay refused with NVIDIA's own error.
+  CUDA and Vulkan requirements still say Blackwell; TRP uses D3D12;
 - the 7 network and 8 helper kernel bundles point at new bundles in an
   appended read-only section, with exact lengths.
 The result is unsigned: NVIDIA's certificate is removed because it no longer
-matches. Usage:
+matches. The qualified toolchain and output are pinned below; --unqualified
+builds anything else, marked as such in the report. Usage:
     python -I build_rtx40.py --official nvngx_dlssnr.dll --cuda <CUDA root> --output <dll>
 """
 from pathlib import Path
@@ -28,13 +31,16 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ada_lowering
+from ada_lowering import require
 
 OFFICIAL_SHA256 = '2BC19BC09A7B89DD44F73E2AC0108FCC586E2154BDD0830F242F4F040E28789F'
+QUALIFIED_TOOLCHAIN = 'Cuda compilation tools, release 13.4, V13.4.92 Build cuda_13.4.r13.4/compiler.38855100_0'
+QUALIFIED_OUTPUT_SHA256 = '41145ACB065FBC99FEFD9374E87D5883BFDDBEA0ED64911CA5D22AAA484A58D2'
 FATBIN_MAGIC = b'\x50\xed\x55\xba\x01\x00\x10\x00'
 IMAGE_BASE = 0x180000000
 SECTION_NAME = b'.trpnr'
 
-# Kernel bundles: (name, how the runtime references it, length variable).
+# Kernel bundles: (name, how the runtime references it, length variable, original RVA).
 # 'lea' sites are RIP-relative `lea reg, [bundle]`; 'pointer' sites are 64-bit
 # absolute pointers in .data that the existing relocation table already covers.
 BUNDLES = [
@@ -72,10 +78,10 @@ class Image:
         self.optional = self.pe + 24
         self.count = struct.unpack_from('<H', data, self.pe + 6)[0]
         size = struct.unpack_from('<H', data, self.pe + 20)[0]
-        assert struct.unpack_from('<H', data, self.optional)[0] == 0x20B, 'expected PE32+'
+        require(struct.unpack_from('<H', data, self.optional)[0] == 0x20B, 'expected PE32+')
         self.table = self.optional + size
         self.section_align, self.file_align = struct.unpack_from('<II', data, self.optional + 32)
-        assert struct.unpack_from('<Q', data, self.optional + 24)[0] == IMAGE_BASE
+        require(struct.unpack_from('<Q', data, self.optional + 24)[0] == IMAGE_BASE, 'unexpected image base')
 
     def sections(self):
         for i in range(self.count):
@@ -87,7 +93,7 @@ class Image:
         for s in self.sections():
             if s['va'] <= rva < s['va'] + max(s['vsize'], s['rawsize']):
                 return s['rawptr'] + rva - s['va']
-        raise ValueError(f'RVA 0x{rva:X} is not in a section')
+        raise RuntimeError(f'RVA 0x{rva:X} is not in a section')
 
     def read(self, rva, size):
         o = self.offset(rva)
@@ -95,7 +101,7 @@ class Image:
 
     def write(self, rva, value, expected):
         o = self.offset(rva)
-        assert self.data[o:o + len(value)] == expected, f'unexpected bytes at RVA 0x{rva:X}'
+        require(self.data[o:o + len(value)] == expected, f'unexpected bytes at RVA 0x{rva:X}')
         self.data[o:o + len(value)] = value
 
 
@@ -103,71 +109,110 @@ def align(value, alignment):
     return (value + alignment - 1) // alignment * alignment
 
 
+def sha256(data):
+    return hashlib.sha256(data).hexdigest().upper()
+
+
 def fatbin_at(image, rva):
     header = image.read(rva, 16)
-    assert header[:8] == FATBIN_MAGIC, f'no fatbin at RVA 0x{rva:X}'
+    require(header[:8] == FATBIN_MAGIC, f'no fatbin at RVA 0x{rva:X}')
     return image.read(rva, 16 + struct.unpack_from('<Q', header, 8)[0])
 
 
-def tool(cuda, name, *args):
-    return subprocess.run([str(Path(cuda) / 'bin' / name), *map(str, args)], check=True, capture_output=True, text=True).stdout
+def run(cuda, name, *args, cwd=None):
+    command = [str(Path(cuda) / 'bin' / name), *map(str, args)]
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(f'{name} failed ({result.returncode}): {" ".join(command)}\n{result.stdout}{result.stderr}')
+    return result.stdout
+
+
+def toolchain(cuda):
+    versions = {name: ' '.join(run(cuda, name, '--version').strip().splitlines()[-2:]) for name in ('ptxas', 'cuobjdump', 'fatbinary')}
+    require(len(set(versions.values())) == 1, f'mixed CUDA tools: {versions}')
+    return versions['ptxas']
+
+
+def unpack(cuda, folder, name, payload):
+    """Native code and PTX of one fatbin, by SM; PTX text without carriage returns."""
+    folder.mkdir()
+    (folder / name).write_bytes(payload)
+    run(cuda, 'cuobjdump', '-xelf', 'all', name, cwd=folder)
+    run(cuda, 'cuobjdump', '-xptx', 'all', name, cwd=folder)
+    cubins = {p.name.split('.')[-2]: p.read_bytes() for p in folder.glob('*.cubin')}
+    ptx = {p.name.split('.')[-2]: p.read_bytes().replace(b'\r', b'') for p in folder.glob('*.ptx')}
+    return cubins, ptx
 
 
 def build_bundle(cuda, index, original, work):
     """NVIDIA's sm_120 cubin and PTX, plus an sm_89 cubin compiled from that PTX."""
     folder = work / f'bundle{index:02}'
     folder.mkdir()
-    source = folder / 'nvidia.fatbin'
-    source.write_bytes(original)
-    subprocess.run([str(Path(cuda) / 'bin' / 'cuobjdump'), '-xelf', 'all', source.name], cwd=folder, check=True, capture_output=True)
-    subprocess.run([str(Path(cuda) / 'bin' / 'cuobjdump'), '-xptx', 'all', source.name], cwd=folder, check=True, capture_output=True)
-    cubins = sorted(folder.glob('*.sm_120.cubin'))
-    ptxs = sorted(folder.glob('*.sm_120.ptx'))
-    assert len(cubins) == 1 and len(ptxs) == 1, f'bundle {index}: expected one sm_120 cubin and PTX'
-    ptx = ptxs[0].read_bytes().decode('ascii').replace('\r', '')
+    cubins, ptxs = unpack(cuda, folder / 'nvidia', 'nvidia.fatbin', original)
+    require(set(cubins) == {'sm_120'} and set(ptxs) == {'sm_120'}, f'bundle {index}: expected sm_120 code and PTX only')
+    nvidia_ptx = ptxs['sm_120']
+    ptx = nvidia_ptx.decode('ascii')
     if index in LOWERED:
         ada, rewrites, _, _ = ada_lowering.lower(ptx, LOWERED[index])
     else:
-        assert ptx.count('.target sm_120') == 1, f'bundle {index}: unexpected target'
+        require(ptx.count('.target sm_120') == 1, f'bundle {index}: unexpected target')
         ada, rewrites = ptx.replace('.target sm_120', '.target sm_89'), {}
-    ada_ptx = folder / 'ada.ptx'
-    ada_ptx.write_text(ada, encoding='ascii', newline='\n')
-    ada_cubin = folder / 'ada.sm_89.cubin'
-    tool(cuda, 'ptxas', '-arch=sm_89', '-O3', ada_ptx, '-o', ada_cubin)
-    bundle = folder / 'trp.fatbin'
-    tool(cuda, 'fatbinary', '--64', '--compress-all', f'--create={bundle}',
-         f'--image3=kind=elf,sm=89,file={ada_cubin}',
-         f'--image3=kind=elf,sm=120,file={cubins[0]}',
-         f'--image3=kind=ptx,sm=120,file={ptxs[0]}')
-    payload = bundle.read_bytes()
-    assert payload[:8] == FATBIN_MAGIC
+    inputs = {'ada.ptx': ada.encode('ascii'), 'nvidia.sm_120.cubin': cubins['sm_120'], 'nvidia.sm_120.ptx': nvidia_ptx}
+    for name, data in inputs.items():
+        (folder / name).write_bytes(data)
+    run(cuda, 'ptxas', '-arch=sm_89', '-O3', 'ada.ptx', '-o', 'ada.sm_89.cubin', cwd=folder)
+    ada_cubin = (folder / 'ada.sm_89.cubin').read_bytes()
+    run(cuda, 'fatbinary', '--64', '--compress-all', '--create=trp.fatbin',
+        '--image3=kind=elf,sm=89,file=ada.sm_89.cubin',
+        '--image3=kind=elf,sm=120,file=nvidia.sm_120.cubin',
+        '--image3=kind=ptx,sm=120,file=nvidia.sm_120.ptx', cwd=folder)
+    payload = (folder / 'trp.fatbin').read_bytes()
+    require(payload[:8] == FATBIN_MAGIC, f'bundle {index}: fatbinary output is not a fatbin')
     payload = payload[:16 + struct.unpack_from('<Q', payload, 8)[0]]
-    # The new bundle must decode back to exactly NVIDIA's sm_120 code and our sm_89 code.
-    check = folder / 'check'
-    check.mkdir()
-    (check / 'trp.fatbin').write_bytes(payload)
-    subprocess.run([str(Path(cuda) / 'bin' / 'cuobjdump'), '-xelf', 'all', 'trp.fatbin'], cwd=check, check=True, capture_output=True)
-    extracted = {p.name.split('.')[-2]: p.read_bytes() for p in check.glob('*.cubin')}
-    assert extracted.get('sm_120') == cubins[0].read_bytes(), f'bundle {index}: sm_120 code changed'
-    assert extracted.get('sm_89') == ada_cubin.read_bytes(), f'bundle {index}: sm_89 code changed'
-    sha = lambda b: hashlib.sha256(b).hexdigest().upper()
-    return payload, dict(entries=re.findall(r'\.entry\s+(\w+)', ptx), rewrites=rewrites,
-                         nvidiaSm120=sha(cubins[0].read_bytes()), nvidiaPtx=sha(ptxs[0].read_bytes()),
-                         trpSm89=sha(ada_cubin.read_bytes()), bundle=sha(payload), bundleBytes=len(payload))
+    # The new bundle must decode back to NVIDIA's sm_120 code and PTX and our sm_89 code.
+    check_cubins, check_ptx = unpack(cuda, folder / 'check', 'trp.fatbin', payload)
+    require(set(check_cubins) == {'sm_89', 'sm_120'} and set(check_ptx) == {'sm_120'}, f'bundle {index}: unexpected contents')
+    require(check_cubins['sm_120'] == cubins['sm_120'], f'bundle {index}: sm_120 code changed')
+    require(check_cubins['sm_89'] == ada_cubin, f'bundle {index}: sm_89 code changed')
+    require(check_ptx['sm_120'] == nvidia_ptx, f'bundle {index}: sm_120 PTX changed')
+    entries = re.findall(r'\.entry\s+(\w+)', ptx)
+    require(entries and entries == re.findall(r'\.entry\s+(\w+)', ada), f'bundle {index}: kernel entries changed')
+    return payload, dict(entries=entries, rewrites=rewrites, nvidiaSm120=sha256(cubins['sm_120']),
+                         nvidiaPtx=sha256(nvidia_ptx), trpSm89=sha256(ada_cubin), bundle=sha256(payload), bundleBytes=len(payload))
 
 
 def checksum(data, field):
+    """The PE image checksum: a folded 16-bit sum skipping the checksum field, plus the length."""
     total = 0
     padded = bytes(data) + b'\0' * (len(data) % 2)
-    for (word,) in struct.iter_unpack('<H', padded):
-        total += word
+    for offset in range(0, len(padded), 2):
+        if field <= offset < field + 4:
+            continue
+        total += padded[offset] | padded[offset + 1] << 8
         total = (total & 0xFFFF) + (total >> 16)
-    for i in range(field, field + 4, 2):  # the checksum field itself counts as zero
-        total -= struct.unpack_from('<H', padded, i)[0]
-        if total < 0:
-            total += 0xFFFF
-    total = (total & 0xFFFF) + (total >> 16)
-    return ((total + (total >> 16)) & 0xFFFF) + len(data)
+    return ((total & 0xFFFF) + (total >> 16)) + len(data)
+
+
+def verify(data, report):
+    """Reads the finished image back: sections, references and lengths."""
+    image = Image(data)
+    sections = list(image.sections())
+    added = sections[-1]
+    require(added['name'] == SECTION_NAME, 'appended section missing')
+    require(struct.unpack_from('<II', image.data, image.optional + 112 + 8 * 4) == (0, 0), 'certificate directory present')
+    require(added['rawptr'] + added['rawsize'] == len(image.data), 'data after the appended section')
+    for (name, (kind, site), length, _), details in zip(BUNDLES, report['bundles']):
+        rva = int(details['rva'], 16)
+        if kind == 'lea':
+            target = site + 7 + struct.unpack_from('<i', image.read(site + 3, 4))[0]
+        else:
+            target = struct.unpack_from('<Q', image.read(site, 8))[0] - IMAGE_BASE
+        require(target == rva, f'{name}: reference does not reach its bundle')
+        bundle = fatbin_at(image, rva)
+        require(sha256(bundle) == details['bundle'], f'{name}: bundle bytes changed')
+        require(struct.unpack_from('<Q', image.read(length, 8))[0] == len(bundle), f'{name}: length differs')
+    field = image.optional + 64
+    require(struct.unpack_from('<I', image.data, field)[0] == checksum(image.data, field), 'checksum differs')
 
 
 def main():
@@ -175,10 +220,13 @@ def main():
     parser.add_argument('--official', type=Path, required=True)
     parser.add_argument('--cuda', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--unqualified', action='store_true', help='allow another toolchain or output, marked unqualified')
     args = parser.parse_args()
+    require(sys.flags.optimize == 0, 'run without -O: the safety checks must stay active')
     data = args.official.read_bytes()
-    assert hashlib.sha256(data).hexdigest().upper() == OFFICIAL_SHA256, 'not NVIDIA NR 310.9.16'
-    toolchain = tool(args.cuda, 'ptxas', '--version').strip().splitlines()[-1]
+    require(sha256(data) == OFFICIAL_SHA256, 'not NVIDIA NR 310.9.16')
+    tools = toolchain(args.cuda)
+    require(tools == QUALIFIED_TOOLCHAIN or args.unqualified, f'unqualified CUDA toolchain: {tools}')
     image = Image(data)
     sections = list(image.sections())
     last = sections[-1]
@@ -186,25 +234,26 @@ def main():
     # Drop NVIDIA's certificate, which follows the last section and no longer applies.
     security = image.optional + 112 + 8 * 4
     cert_offset, cert_size = struct.unpack_from('<II', image.data, security)
-    assert cert_offset == last['rawptr'] + last['rawsize'] and cert_offset + cert_size == len(image.data)
+    require(cert_offset == last['rawptr'] + last['rawsize'] and cert_offset + cert_size == len(image.data),
+            'certificate is not at the end of the file')
     del image.data[cert_offset:]
     struct.pack_into('<II', image.data, security, 0, 0)
 
-    report = dict(official=OFFICIAL_SHA256, toolchain=toolchain, bundles=[])
+    report = dict(official=OFFICIAL_SHA256, toolchain=tools, bundles=[])
     blob = bytearray()
     va = align(last['va'] + last['vsize'], image.section_align)
     with tempfile.TemporaryDirectory() as temporary:
         for index, (name, (kind, site), length, original_rva) in enumerate(BUNDLES):
             original = fatbin_at(image, original_rva)
-            assert struct.unpack_from('<Q', image.read(length, 8))[0] == len(original), f'{name}: length differs'
+            require(struct.unpack_from('<Q', image.read(length, 8))[0] == len(original), f'{name}: length differs')
             payload, details = build_bundle(args.cuda, index, original, Path(temporary))
             blob += b'\0' * (align(len(blob), 256) - len(blob))
             rva = va + len(blob)
             blob += payload
             if kind == 'lea':
                 code = image.read(site, 7)
-                assert code[0] in (0x48, 0x4C) and code[1] == 0x8D and code[2] & 0xC7 == 0x05, f'{name}: not lea'
-                assert site + 7 + struct.unpack_from('<i', code, 3)[0] == original_rva, f'{name}: lea target differs'
+                require(code[0] in (0x48, 0x4C) and code[1] == 0x8D and code[2] & 0xC7 == 0x05, f'{name}: not lea')
+                require(site + 7 + struct.unpack_from('<i', code, 3)[0] == original_rva, f'{name}: lea target differs')
                 image.write(site + 3, struct.pack('<i', rva - (site + 7)), code[3:])
             else:
                 image.write(site, struct.pack('<Q', IMAGE_BASE + rva), struct.pack('<Q', IMAGE_BASE + original_rva))
@@ -219,8 +268,8 @@ def main():
 
     # Append the read-only section that holds the new bundles.
     header = image.table + 40 * image.count
-    assert header + 40 <= min(s['rawptr'] for s in sections), 'no room for another section header'
-    assert image.data[header:header + 40] == b'\0' * 40
+    require(header + 40 <= min(s['rawptr'] for s in sections), 'no room for another section header')
+    require(image.data[header:header + 40] == b'\0' * 40, 'section header slot is in use')
     rawptr = align(len(image.data), image.file_align)
     rawsize = align(len(blob), image.file_align)
     image.data += b'\0' * (rawptr - len(image.data)) + blob + b'\0' * (rawsize - len(blob))
@@ -232,14 +281,21 @@ def main():
     field = image.optional + 64
     struct.pack_into('<I', image.data, field, checksum(image.data, field))
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_bytes(image.data)
-    report.update(output=hashlib.sha256(image.data).hexdigest().upper(), outputBytes=len(image.data),
+    verify(image.data, report)
+    output = sha256(image.data)
+    qualified = tools == QUALIFIED_TOOLCHAIN and output == QUALIFIED_OUTPUT_SHA256
+    require(qualified or args.unqualified, f'output {output} differs from the qualified build')
+    report.update(output=output, outputBytes=len(image.data), qualified=qualified,
                   patches=dict(requirements=[f'0x{s:X}' for s in REQUIREMENT_SITES], admitted='0x190 (Ada)',
                                jumpEntry=f'0x{JUMP_ENTRY:X}'))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_bytes(image.data)
     args.output.with_suffix('.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-    print(f'wrote {args.output} sha256={report["output"]}')
+    print(f'wrote {args.output} sha256={output}{"" if qualified else " (UNQUALIFIED)"}')
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except RuntimeError as error:
+        sys.exit(f'build_rtx40: {error}')

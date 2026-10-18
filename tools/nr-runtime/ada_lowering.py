@@ -7,20 +7,20 @@ before extending it. Full warps and warp-uniform bulk bases/predicates are launc
 contracts inherited from the original kernels.
 """
 import collections
-import hashlib
 import re
 
-MODULES = (4, 5, 6, 13)
+
+def require(condition, message):
+    # Unlike assert, never removed by python -O.
+    if not condition:
+        raise RuntimeError(message)
+
 EXPECTED = {
     4: dict(bulk=104, elect=104, init=59, expect=104, arrive=46, wait=46, red=0, relu=0, fence=0),
     5: dict(bulk=208, elect=208, init=61, expect=208, arrive=58, wait=58, red=176, relu=0, fence=22),
     6: dict(bulk=4, elect=4, init=4, expect=4, arrive=4, wait=4, red=16, relu=0, fence=0),
     13: dict(bulk=0, elect=0, init=0, expect=0, arrive=0, wait=0, red=0, relu=4, fence=0),
 }
-
-
-def sha(s):
-    return hashlib.sha256(s.encode()).hexdigest()
 
 
 def math_stream(s):
@@ -35,7 +35,7 @@ def math_stream(s):
 def lower(s, module):
     counts = collections.Counter()
     sizes = collections.Counter()
-    assert s.count('.target sm_120') == 1
+    require(s.count('.target sm_120') == 1, f'module {module}: expected one sm_120 target')
     s = s.replace('.target sm_120', '.target sm_89')
     original_math = math_stream(s)
 
@@ -45,7 +45,7 @@ def lower(s, module):
     def elect(m):
         counts['elect'] += 1
         prefix=s[max(0,m.start()-200):m.start()]
-        assert re.search(r'mov\.b32 '+re.escape(m[1])+r', -1;',prefix), 'Non-full-warp election'
+        require(re.search(r'mov\.b32 '+re.escape(m[1])+r', -1;',prefix), 'Non-full-warp election')
         return '// PORT: cooperative warp copy; all lanes participate.\nmov.pred P_OUT, 1;'
     s = re.sub(r'elect\.sync _\|P_OUT, (%r\d+);', elect, s)
 
@@ -59,11 +59,11 @@ def lower(s, module):
         # unexpected runtime-sized or different transfers rather than guessing.
         prefix = s[max(0, m.start()-300):m.start()]
         size_match = re.search(r'mov\.b32 '+re.escape(size_reg)+r', (512|1024);\s*$', prefix)
-        assert size_match, ('unknown bulk size', module, m.group())
+        require(size_match, f'module {module}: unknown bulk size in {m.group()}')
         size = int(size_match[1]); sizes[size] += 1
         covered = [lane*16+512*part+byte for part in range(size//512)
                    for lane in range(32) for byte in range(16)]
-        assert sorted(covered) == list(range(size))
+        require(sorted(covered) == list(range(size)), 'lane slices do not cover the bulk copy')
         instructions = [
             '// PORT: original %d-byte bulk copy; 16 bytes per lane per slice.' % size,
             '{', '.reg .u32 port_lane, port_off, port_dst;',
@@ -99,7 +99,7 @@ def lower(s, module):
     def arrive(m):
         counts['arrive'] += 1
         prefix=s[max(0,m.start()-200):m.start()]
-        assert re.search(r'mov\.b32 '+re.escape(m[2])+r', 1;\s*$',prefix), 'Non-unit arrival'
+        require(re.search(r'mov\.b32 '+re.escape(m[2])+r', 1;\s*$',prefix), 'Non-unit arrival')
         lines = ['// PORT: original stage boundary; preserve prior copy/compute overlap.',
                  'cp.async.commit_group;']
         lines += ['cp.async.wait_group 0;', 'bar.sync 0;']
@@ -116,7 +116,7 @@ def lower(s, module):
         pred, addr, values = m.groups()
         pred = pred or ''
         values = [x.strip() for x in values.split(',')]
-        assert len(values) == 4
+        require(len(values) == 4, 'expected a four-element vector reduction')
         return '\n'.join(
             f'{pred}red.global.add.noftz.f16x2 [{addr}{"+"+str(4*i) if i else ""}], {v};'
             for i,v in enumerate(values))
@@ -133,7 +133,8 @@ def lower(s, module):
         return 'fence.acq_rel.gpu; // PORT: strengthen original '+m[1]+' fence.'
     s = re.sub(r'fence\.(acquire|release)\.gpu;', fence, s)
     for k, n in EXPECTED[module].items():
-        assert counts[k] == n, (module, k, counts[k], n)
-    assert not re.search(r'^(?!//).*(?:cp\.async\.bulk|mbarrier\.|elect\.sync|min\.relu|red\.global\.v[24])',s,re.M)
-    assert math_stream(s) == original_math, 'Numerical instruction stream changed'
+        require(counts[k] == n, f'module {module}: {counts[k]} {k} rewrites, expected {n}')
+    require(not re.search(r'^(?!//).*(?:cp\.async\.bulk|mbarrier\.|elect\.sync|min\.relu|red\.global\.v[24])',s,re.M),
+            f'module {module}: unsupported instructions remain')
+    require(math_stream(s) == original_math, f'module {module}: numerical instruction stream changed')
     return s, dict(counts), dict(sizes), original_math
