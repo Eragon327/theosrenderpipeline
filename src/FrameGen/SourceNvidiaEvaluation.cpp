@@ -106,11 +106,16 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
         }
     }
 
-    bool NeuralEligible(const TheosRenderPipeline::SourceNvidiaFrameGuides& frame) const
+    bool NeuralEligible(const TheosRenderPipeline::SourceNvidiaFrameGuides& frame,
+        const TheosRenderPipeline::SourceDLSSG::NeuralOptions& options) const
     {
         auto* ui = RE::UI::GetSingleton();
-        return host.nativeUI_.Dedicated() && frame.uiColorAndAlpha && frame.hudLessColor && ui &&
-            !ui->IsMenuOpen(RE::MainMenu::MENU_NAME) && !ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+        const bool menu = ui && (ui->IsMenuOpen(RE::MainMenu::MENU_NAME) || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME));
+        // DLSS-G's UI and HUD-less guides are tagged only when the interface was
+        // drawn. NR before upscaling reads just the world frame, so hiding the
+        // interface (tm or the console) must not stop it with those guides.
+        const bool interfaceReady = frame.uiColorAndAlpha && frame.hudLessColor;
+        return host.nativeUI_.Dedicated() && !menu && (options.WorldOnly() || interfaceReady);
     }
 
     bool EvaluateNeuralBeforeDLSS(TheosRenderPipeline::SourceNvidiaFrameInputs& frame)
@@ -119,7 +124,7 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
         auto& backend = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         auto& options = neuralOptions;
         sl::Constants preview{};
-        const bool eligible = NeuralEligible(frame);
+        const bool eligible = NeuralEligible(frame, options);
         TheosRenderPipeline::NeuralRendering::ApplyCombatMode(options, eligible);
         const bool cameraValid = options.enabled && options.beforeUpscaling && eligible &&
             TheosRenderPipeline::SourceDLSSG::CaptureCameraConstants(upscaler.mGraphicsState,
@@ -212,7 +217,7 @@ struct NvidiaHost::SourceNvidiaEvaluationOperations
         }
         return TheosRenderPipeline::SourceDLSSG::Backend::Get().Prepare(constants, motion, frame.depth,
             frame.uiColorAndAlpha, frame.hudLessColor, {frame.renderWidth, frame.renderHeight},
-            frame.outputWidth, frame.outputHeight, NeuralEligible(frame));
+            frame.outputWidth, frame.outputHeight, NeuralEligible(frame, neuralOptions));
     }
     void PublishGeneration(bool prepared)
     {

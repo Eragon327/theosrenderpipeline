@@ -453,8 +453,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		uiSource_ = a_ui;
 		frameConstants_ = a_constants;
 		cameraAvailable_ = true;
-		const bool eligible = a_neuralEligible && !TransitionBlocked() && a_hudless &&
-			(a_ui || (neuralEvaluatedEarly_ && frameNeuralOptions_.worldOnly));
+		// NR before upscaling consumes only the world frame. Its early evaluation
+		// may run where the interface is hidden (tm/console) or where this frame
+		// falls back to Present, so neither DLSS-G guide is required for it.
+		const bool worldOnly = frameNeuralOptions_.WorldOnly();
+		const bool eligible = a_neuralEligible && !TransitionBlocked() &&
+			(worldOnly ? neuralEvaluatedEarly_ : (a_hudless && a_ui));
 		// The game host freezes settings before DLSS. Standalone callers that
 		// only Prepare retain the late-stage contract and never run early NR here.
 		if (!neuralFrameBegun_) {

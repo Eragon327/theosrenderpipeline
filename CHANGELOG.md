@@ -20,6 +20,11 @@
 - Fix flickering faces and lighting in dialogue with NR on, a 0.4.2
   regression. The underwater motion repair now runs only while the game reports
   the player underwater.
+- Fix NR before upscaling stopping while the interface is hidden. DLSS-G's UI
+  and HUD-less images are tagged only when the interface is drawn, so tm, the
+  console and frames that fall back to Present used to skip NR. NR reads only
+  the world image, so those frames now keep it; main menus and loading screens
+  still skip it.
 - On RTX 40 cards, a Frame Generation override from the NVIDIA app no longer
   stops Skyrim at startup. If x3-x6 cannot be enabled for that DLSS-G build,
   frame generation continues at x2.

@@ -1,7 +1,9 @@
 out/
 .dependencies/
 CMakeUserPresets.json
+compile_commands.json
 .vs/
+.vscode/
 *.user
 *.dll
 *.exe
@@ -13,6 +15,9 @@ __pycache__/
 /.agents/
 /docs/
 /.codex/
+/.dsh/
+.cache/
+.clangd
 
 # Private workstation tooling, knowledge and configuration
 /local/
