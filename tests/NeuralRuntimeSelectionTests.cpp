@@ -73,10 +73,10 @@ int main()
     {
         using namespace SourceDLSSG;
         using List = std::vector<std::string_view>;
-        Require(AutomaticNeuralRuntimes(120) == List{kLatestNeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
-            "RTX 50 prefers NVIDIA's 310.9.16, then the compat build");
-        Require(AutomaticNeuralRuntimes(89) == List{kCompatNeuralRuntime, kDefaultNeuralRuntime},
-            "RTX 40 never tries NVIDIA's RTX 50-only 310.9.16");
+        Require(AutomaticNeuralRuntimes(120) == List{kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
+            "RTX 50 prefers NVIDIA's signed 310.9.16, then builds that keep its RTX 50 code");
+        Require(AutomaticNeuralRuntimes(89) == List{kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
+            "RTX 40 prefers TRP's build and never tries NVIDIA's RTX 50-only 310.9.16");
         for (const int capability : {0, 75, 86, 90}) {
             Require(AutomaticNeuralRuntimes(capability) == List{kDefaultNeuralRuntime},
                 "RTX 20/30, unverified and unknown GPUs keep 310.8");
@@ -90,6 +90,7 @@ int main()
         Require(NeuralRuntimeLabel("Automatic") == "Automatic" && NeuralRuntimeLabel(kDefaultNeuralRuntime) == "NVIDIA 310.8" &&
             NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_310.9.16.DLL)") == "NVIDIA 310.9.16 (RTX 50)" &&
             NeuralRuntimeLabel(kCompatNeuralRuntime) == "310.9.16 compat (RTX 20-40)" &&
+            NeuralRuntimeLabel(kRTX40NeuralRuntime) == "310.9.16 (RTX 40, TRP build)" &&
             NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll") == "nvngx_dlssnr_int8.dll", "menu labels");
 
         // Saved settings: the old default means Automatic unless it was picked since.
