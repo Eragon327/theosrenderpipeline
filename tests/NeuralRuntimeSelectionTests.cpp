@@ -73,23 +73,23 @@ int main()
     {
         using namespace SourceDLSSG;
         using List = std::vector<std::string_view>;
-        Require(AutomaticNeuralRuntimes(120) == List{kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
-            "RTX 50 prefers NVIDIA's signed 310.9.16, then builds that keep its RTX 50 code");
-        Require(AutomaticNeuralRuntimes(89) == List{kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
-            "RTX 40 prefers TRP's build and never tries NVIDIA's RTX 50-only 310.9.16");
-        Require(AutomaticNeuralRuntimes(89, true) == List{kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime},
-            "Universal Ada installer prefers NVIDIA's original 310.9.16 with the kernel pack");
-        Require(AutomaticNeuralRuntimes(120, true) == AutomaticNeuralRuntimes(120) &&
-            AutomaticNeuralRuntimes(86, true) == AutomaticNeuralRuntimes(86), "Ada installer only changes RTX 40 Automatic choice");
-        for (const int capability : {75, 86}) {
-            Require(AutomaticNeuralRuntimes(capability) == List{kCompatNeuralRuntime, kDefaultNeuralRuntime},
-                "RTX 20/30 prefer the community 310.9.16 rebuild and retain 310.8 as fallback");
-            Require(AutomaticNeuralRuntimes(capability, true) == AutomaticNeuralRuntimes(capability),
-                "RTX 20/30 choose the same community runtime in both editions");
+        for (const bool installer : {false, true}) {
+            Require(AutomaticNeuralRuntimes(120, installer) == List{kLatestNeuralRuntime, kDefaultNeuralRuntime},
+                "RTX 50 uses original 310.9.16 without a compatibility pack");
+            for (const int capability : {0, 80, 90}) {
+                Require(AutomaticNeuralRuntimes(capability, installer) == List{kDefaultNeuralRuntime},
+                    "other and unknown GPUs keep legacy 310.8");
+            }
         }
-        for (const int capability : {0, 80, 90}) {
+        for (const int capability : {75, 86, 89}) {
             Require(AutomaticNeuralRuntimes(capability) == List{kDefaultNeuralRuntime},
-                "other and unknown GPUs keep 310.8");
+                "Standard keeps legacy NR on RTX 20/30/40");
+        }
+        Require(AutomaticNeuralRuntimes(89, true) == List{kLatestNeuralRuntime, kDefaultNeuralRuntime},
+            "Universal uses original 310.9.16 with its pack on RTX 40, never the incompatible legacy INT8");
+        for (const int capability : {75, 86}) {
+            Require(AutomaticNeuralRuntimes(capability, true) == List{kLatestNeuralRuntime, kInt8NeuralRuntime, kDefaultNeuralRuntime},
+                "Universal RTX 20/30 prefer original 310.9.16 with its pack, then retained INT8 and legacy 310.8");
         }
         Require(IsAutomaticNeuralRuntime("automatic") && !IsAutomaticNeuralRuntime(kDefaultNeuralRuntime), "Automatic is a name, not a file");
         const auto plugins = std::filesystem::path(L"C:/Game/Data/SKSE/Plugins");
@@ -97,13 +97,13 @@ int main()
             "Automatic resolves to 310.8 until the GPU is known");
         Require(ResolveNeuralRuntimeSetting("D:/x/nvngx_dlssnr_new.dll", plugins) == std::filesystem::path(L"D:/x/nvngx_dlssnr_new.dll"),
             "absolute paths are kept");
-        Require(NeuralRuntimeLabel("Automatic") == "Automatic" && NeuralRuntimeLabel(kDefaultNeuralRuntime) == "NVIDIA 310.8" &&
-            NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_310.9.16.DLL)") == "NVIDIA 310.9.16" &&
-            NeuralRuntimeLabel(kCompatNeuralRuntime) == "Community 310.9.16 (FP16)" &&
-            NeuralRuntimeLabel(kRTX40NeuralRuntime) == "TRP 310.9.16 (RTX 40)" &&
-            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll") == "Community 310.8 (INT8 v2)" &&
-            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8_ada.dll") == "Community 310.8 (INT8 v2, RTX 40 fix)" &&
-            NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_PD_BUILD21.DLL)") == "PureDark 310.9.16 (Build 21)" &&
+        Require(NeuralRuntimeLabel("Automatic") == "Automatic" && NeuralRuntimeLabel(kDefaultNeuralRuntime) == "310.8 - FP8/FP16 (legacy)" &&
+            NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_310.9.16.DLL)") == "310.9.16 - FP8/FP16 (NVIDIA)" &&
+            NeuralRuntimeLabel(kCompatNeuralRuntime) == "310.9.16 - FP8/FP16 (Community)" &&
+            NeuralRuntimeLabel(kRTX40NeuralRuntime) == "310.9.16 - FP8 (TRP, RTX 40)" &&
+            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll") == "310.8 - INT8 (Community v2)" &&
+            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8_ada.dll") == "310.8 - INT8 (Community v2, RTX 40 fix)" &&
+            NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_PD_BUILD21.DLL)") == "310.9.16 - FP8/FP16 (PureDark Build 21)" &&
             NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_custom.dll") == "nvngx_dlssnr_custom.dll", "menu labels");
 
         // Saved settings: the old default means Automatic unless it was picked since.

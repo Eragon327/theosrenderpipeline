@@ -9,8 +9,8 @@ carriage returns Windows extraction adds).
 
 The output is a kernel pack, not a DLL: the Universal renderer loads NVIDIA's
 unmodified runtime and, on RTX 40 only, points its bundle references at these
-bundles in memory (src/FrameGen/NeuralRuntimeAdaKernelPlan.cpp and
-NeuralRuntimeAdaKernelsInternal.h hold the patch plan, checked here too).
+bundles in memory (src/FrameGen/NeuralRuntimeKernelPlan.cpp and
+NeuralRuntimeKernelsInternal.h hold the patch plan, checked here too).
 Pack layout, little-endian:
     "TRPNRK1\\0", u32 version 1, u32 bundle count, 32-byte SHA-256 of the runtime,
     per bundle: u32 original RVA, u32 original bytes, u64 offset, u64 bytes,

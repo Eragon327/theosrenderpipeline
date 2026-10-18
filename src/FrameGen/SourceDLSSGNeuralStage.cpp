@@ -3,7 +3,7 @@
 #include "NeuralRenderingRuntimeIdentity.h"
 #include "PerformanceTuning.h"
 #include "NeuralRuntimeCompatibility.h"
-#include "NeuralRuntimeAdaKernels.h"
+#include "NeuralRuntimeKernels.h"
 #include "SourceDLSSGSettings.h"
 #include "../PluginPaths.h"
 #include <algorithm>
@@ -44,7 +44,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (neuralComputeCapability_ < 0 && device12_) {
 			neuralComputeCapability_ = NeuralRendering::ComputeCapability(device12_->GetAdapterLuid());
 		}
-		for (const auto candidate : AutomaticNeuralRuntimes((std::max)(neuralComputeCapability_, 0), NeuralRendering::AdaKernelsSupported())) {
+		for (const auto candidate : AutomaticNeuralRuntimes((std::max)(neuralComputeCapability_, 0), NeuralRendering::RuntimeKernelsSupported())) {
 			const auto path = PluginPaths::Directory() / std::filesystem::u8path(candidate);
 			if (const auto* why = refused(path)) { note = note ? note : why; continue; }
 			std::error_code error;

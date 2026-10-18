@@ -6,10 +6,10 @@
 #include <string>
 #include <vector>
 
-namespace TheosRenderPipeline::NeuralRendering::AdaKernels
+namespace TheosRenderPipeline::NeuralRendering::KernelPacks
 {
     inline constexpr std::uint32_t ImageSize = 0xFE2F000;
-    inline constexpr std::size_t PackSize = 4538144;
+    inline constexpr std::size_t PackSize = 12215592;
     inline constexpr std::uint32_t PageSize = 4096;
     // A touched image WRITECOPY page is private. Windows may report READWRITE
     // after restoring WRITECOPY; access permissions and modifiers must agree.

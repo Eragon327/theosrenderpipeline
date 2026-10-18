@@ -1,5 +1,5 @@
-#include "FrameGen/NeuralRuntimeAdaKernels.h"
-#include "FrameGen/NeuralRuntimeAdaKernelsInternal.h"
+#include "FrameGen/NeuralRuntimeKernels.h"
+#include "FrameGen/NeuralRuntimeKernelsInternal.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -14,7 +14,7 @@ static void Require(bool ok, const char* why)
 }
 
 #ifdef TRP_ADA_UNIVERSAL
-using namespace AdaKernels;
+using namespace KernelPacks;
 template<class T> static void Put(std::vector<std::uint8_t>& bytes, std::size_t at, T value)
 {
     std::memcpy(bytes.data()+at, &value, sizeof(T));
@@ -26,8 +26,8 @@ static std::vector<std::uint8_t> Pack()
     Put<std::uint32_t>(pack, 8, 1);
     Put<std::uint32_t>(pack, 12, 15);
     const auto nibble = [](char c) { return c <= '9' ? c-'0' : c-'A'+10; };
-    for (std::size_t i = 0; i < 32; ++i) { pack[16+i] = static_cast<std::uint8_t>((nibble(kAdaKernelRuntimeSha256[2*i]) << 4) | nibble(kAdaKernelRuntimeSha256[2*i+1])); }
-    constexpr std::uint64_t sizes[]{1077736,716432,605208,731024,541064,705912,90408,4448,4816,5168,5880,4704,3128,36344,3616};
+    for (std::size_t i = 0; i < 32; ++i) { pack[16+i] = static_cast<std::uint8_t>((nibble(kKernelRuntimeSha256[2*i]) << 4) | nibble(kKernelRuntimeSha256[2*i+1])); }
+    constexpr std::uint64_t sizes[]{3119832,1967472,1749664,1872504,1474848,1740184,180936,7152,7728,8240,9408,7640,5200,56808,5928};
     std::uint64_t end = 512;
     for (std::size_t i = 0; i < 15; ++i) {
         const auto offset = (end+255) & ~std::uint64_t(255);
@@ -95,7 +95,14 @@ static void UnitTests()
     std::vector<Patch> plan;
     std::string reason;
     constexpr std::uintptr_t module = 0x7FF800000000, storage = module+ImageSize;
-    Require(MakePlan(pack, module, storage, plan, reason) && plan.size() == 35, "35 checked patches include both CRT-cached lengths");
+    Require(MakePlan(pack, module, storage, plan, reason) && plan.size() == 38, "38 checked patches include CRT-cached lengths and all four architecture entries");
+    for (const int capability : {75, 86, 89}) { Require(NeedsRuntimeKernels(capability), "RTX 20/30/40 install the qualified pack"); }
+    for (const int capability : {0, 80, 90, 120, 121}) { Require(!NeedsRuntimeKernels(capability), "unknown and native RTX 50 adapters do not install a pack"); }
+    for (std::size_t i = 0; i < 4; ++i) {
+        const auto& entry = plan[34+i];
+        std::uint32_t target{}; std::memcpy(&target, entry.replacement.data(), 4);
+        Require(entry.rva == 0x18144+4*i && target == 0x17C2B, "each audited architecture entry reaches initialization");
+    }
     for (std::size_t i = 0; i < 13; ++i) {
         std::int32_t relative{}; std::memcpy(&relative, plan[2*i].replacement.data()+3, 4);
         std::uint64_t offset{}; std::memcpy(&offset, pack.data()+56+24*i, 8);
@@ -152,9 +159,9 @@ static void UnitTests()
     Require(!MakePlan(std::span(pack).first(24), module, storage, plan, reason), "truncated pack rejected");
     Require(!MakePlan(pack, module, module+0x90000000, plan, reason), "out-of-reach allocation rejected");
     Require(!MakePlan(pack, UINTPTR_MAX-1, storage, plan, reason), "address overflow rejected");
-    Require(!ApplyAdaKernels(nullptr, {}, true).applied, "null module refused");
-    Require(!ApplyAdaKernels(reinterpret_cast<HMODULE>(module), {}, false).applied, "unowned resident module refused before access");
-    std::puts("PASS Universal Ada planning, address reach, malformed packs, all partial writes/protection failures, rollback and competing edits");
+    Require(!ApplyRuntimeKernels(nullptr, {}, true).applied, "null module refused");
+    Require(!ApplyRuntimeKernels(reinterpret_cast<HMODULE>(module), {}, false).applied, "unowned resident module refused before access");
+    std::puts("PASS Universal RTX 20/30/40 planning, address reach, malformed packs, all partial writes/protection failures, rollback and competing edits");
 }
 static void ManualProbe(const wchar_t* runtime, const wchar_t* pack, bool expectRefusal)
 {
@@ -170,8 +177,8 @@ static void ManualProbe(const wchar_t* runtime, const wchar_t* pack, bool expect
         Require(VirtualQuery(reinterpret_cast<const std::uint8_t*>(module)+page, &info, sizeof(info)) != 0, "snapshot real page protection");
         protections.emplace(page, info.Protect);
     }
-    Require(!ApplyAdaKernels(module, pack, false).applied, "a resident image without installer ownership is refused");
-    const auto result = ApplyAdaKernels(module, pack, true);
+    Require(!ApplyRuntimeKernels(module, pack, false).applied, "a resident image without installer ownership is refused");
+    const auto result = ApplyRuntimeKernels(module, pack, true);
     std::printf("INSTALL applied=%d unsafe=%d status=%s\n", result.applied, result.unsafe, result.status.c_str());
     if (expectRefusal) {
         Require(!result.applied && !result.unsafe, "bad or missing pack is refused safely");
@@ -190,9 +197,9 @@ static void ManualProbe(const wchar_t* runtime, const wchar_t* pack, bool expect
     HMODULE resident{};
     Require(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         reinterpret_cast<LPCWSTR>(module), &resident) && resident == module, "installed image remains pinned");
-    std::array<AdaKernelResult, 4> results;
+    std::array<RuntimeKernelResult, 4> results;
     std::array<std::thread, 4> threads;
-    for (std::size_t i = 0; i < threads.size(); ++i) { threads[i] = std::thread([&, i] { results[i] = ApplyAdaKernels(module, L"missing-pack.trpk", false); }); }
+    for (std::size_t i = 0; i < threads.size(); ++i) { threads[i] = std::thread([&, i] { results[i] = ApplyRuntimeKernels(module, L"missing-pack.trpk", false); }); }
     for (auto& t : threads) { t.join(); }
     for (const auto& r : results) { Require(r.applied && !r.unsafe, "concurrent sessions reuse installation without reading pack file"); }
     std::puts("PASS real image patching, page restoration, lifetime pin and concurrent idempotent reuse");
@@ -205,7 +212,7 @@ static void ManualProbe(const wchar_t* runtime, const wchar_t* pack, bool expect
     Require(VirtualProtect(storage, PackSize, PAGE_READWRITE, &old) != 0, "simulate competing storage change");
     storage[1000] ^= 1;
     Require(VirtualProtect(storage, PackSize, old, &old) != 0, "restore storage read-only");
-    const auto changed = ApplyAdaKernels(module, pack, false);
+    const auto changed = ApplyRuntimeKernels(module, pack, false);
     Require(!changed.applied && changed.unsafe, "tampered installed storage blocks future runtime entry");
     std::puts("PASS installed pack tampering is detected before reuse");
 }
@@ -214,13 +221,13 @@ static void ManualProbe(const wchar_t* runtime, const wchar_t* pack, bool expect
 int wmain(int argc, wchar_t** argv)
 {
 #ifdef TRP_ADA_UNIVERSAL
-    Require(AdaKernelsSupported(), "Universal supplies installer");
+    Require(RuntimeKernelsSupported(), "Universal supplies installer");
     if (argc == 3 || argc == 4) { ManualProbe(argv[1], argv[2], argc == 4); }
     else { Require(argc == 1, "usage: AdaTests [absolute-runtime absolute-pack [expect-refusal]]"); UnitTests(); }
 #else
     (void)argc; (void)argv;
-    Require(!AdaKernelsSupported(), "Standard does not supply installer");
-    const auto result = ApplyAdaKernels(reinterpret_cast<HMODULE>(1), L"missing", true);
+    Require(!RuntimeKernelsSupported(), "Standard does not supply installer");
+    const auto result = ApplyRuntimeKernels(reinterpret_cast<HMODULE>(1), L"missing", true);
     Require(!result.applied && !result.unsafe, "Standard refuses without accessing image or pack");
     std::puts("PASS Standard leaves runtime unchanged");
 #endif

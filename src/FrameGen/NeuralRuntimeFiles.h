@@ -12,13 +12,13 @@
 namespace TheosRenderPipeline::SourceDLSSG
 {
     inline constexpr std::string_view kNeuralRuntimeFolder = "TheosRenderPipeline/NVIDIA";
-    // Runtimes relative to Data/SKSE/Plugins. NVIDIA's 310.8 runs on every RTX GPU
-    // and is the fallback. NVIDIA's 310.9.16 has kernels only for RTX 50. TRP's
-    // Universal adds Ada kernels in memory from a pinned adjacent pack. The
-    // standalone RTX 40 build remains a fallback. The bundled community compat
-    // rebuild supplies the RTX 20/30 path. See tools/nr-runtime.
+    // Runtimes relative to Data/SKSE/Plugins. Standard retains legacy 310.8 and
+    // original 310.9.16. Universal adds a pinned RTX 20/30/40 kernel pack plus
+    // the legacy INT8 alternative for RTX 20/30. See tools/nr-runtime.
     inline constexpr std::string_view kDefaultNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr.dll";
     inline constexpr std::string_view kLatestNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16.dll";
+    inline constexpr std::string_view kInt8NeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll";
+    // Optional standalone files from earlier packages remain selectable.
     inline constexpr std::string_view kRTX40NeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16_rtx40.dll";
     inline constexpr std::string_view kCompatNeuralRuntime = "TheosRenderPipeline/NVIDIA/nvngx_dlssnr_310.9.16_compat.dll";
     // The saved value that lets TRP choose a bundled runtime for the GPU.
@@ -37,22 +37,18 @@ namespace TheosRenderPipeline::SourceDLSSG
         return FoldRuntimePath(value) == FoldRuntimePath(kAutomaticNeuralRuntime);
     }
 
-    // Automatic's choices for a CUDA compute capability (89 is RTX 40, 120 is
-    // RTX 50, 0 unknown), best first; missing or refused files are skipped. The
-    // Universal installer tries the original 310.9.16 first on RTX 40; a safe
-    // installation refusal falls through to the remaining choices. The standalone
-    // RTX 40 build keeps NVIDIA's RTX 50 code, so it also stands in there. The
-    // community FP16 rebuild supplies the new model on RTX 20/30; 310.8 remains
-    // the fallback if that file is missing or feature creation is refused.
-    inline std::vector<std::string_view> AutomaticNeuralRuntimes(int computeCapability, bool adaKernels = false)
+    // Best first; missing or safely refused runtimes are skipped. Universal
+    // installs compatibility kernels into original 310.9.16 on RTX 20/30/40.
+    // INT8 is an older RTX 20/30 alternative, never an RTX 40 fallback. Both
+    // editions retain legacy 310.8 as the final fallback and unknown-GPU route.
+    inline std::vector<std::string_view> AutomaticNeuralRuntimes(int computeCapability, bool runtimeKernels = false)
     {
-        if (computeCapability >= 120) { return { kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime }; }
-        if (computeCapability == 89) {
-            if (adaKernels) { return { kLatestNeuralRuntime, kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime }; }
-            return { kRTX40NeuralRuntime, kCompatNeuralRuntime, kDefaultNeuralRuntime };
-        }
-        if (computeCapability == 75 || computeCapability == 86) {
-            return { kCompatNeuralRuntime, kDefaultNeuralRuntime };
+        if (computeCapability >= 120) { return { kLatestNeuralRuntime, kDefaultNeuralRuntime }; }
+        if (runtimeKernels) {
+            if (computeCapability == 89) { return { kLatestNeuralRuntime, kDefaultNeuralRuntime }; }
+            if (computeCapability == 75 || computeCapability == 86) {
+                return { kLatestNeuralRuntime, kInt8NeuralRuntime, kDefaultNeuralRuntime };
+            }
         }
         return { kDefaultNeuralRuntime };
     }
@@ -85,13 +81,13 @@ namespace TheosRenderPipeline::SourceDLSSG
         };
         const auto name = filename(value);
         const auto folded = FoldRuntimePath(name);
-        if (folded == FoldRuntimePath(filename(kDefaultNeuralRuntime))) { return "NVIDIA 310.8"; }
-        if (folded == FoldRuntimePath(filename(kLatestNeuralRuntime))) { return "NVIDIA 310.9.16"; }
-        if (folded == FoldRuntimePath(filename(kRTX40NeuralRuntime))) { return "TRP 310.9.16 (RTX 40)"; }
-        if (folded == FoldRuntimePath(filename(kCompatNeuralRuntime))) { return "Community 310.9.16 (FP16)"; }
-        if (folded == "nvngx_dlssnr_int8.dll") { return "Community 310.8 (INT8 v2)"; }
-        if (folded == "nvngx_dlssnr_int8_ada.dll") { return "Community 310.8 (INT8 v2, RTX 40 fix)"; }
-        if (folded == "nvngx_dlssnr_pd_build21.dll") { return "PureDark 310.9.16 (Build 21)"; }
+        if (folded == FoldRuntimePath(filename(kDefaultNeuralRuntime))) { return "310.8 - FP8/FP16 (legacy)"; }
+        if (folded == FoldRuntimePath(filename(kLatestNeuralRuntime))) { return "310.9.16 - FP8/FP16 (NVIDIA)"; }
+        if (folded == FoldRuntimePath(filename(kRTX40NeuralRuntime))) { return "310.9.16 - FP8 (TRP, RTX 40)"; }
+        if (folded == FoldRuntimePath(filename(kCompatNeuralRuntime))) { return "310.9.16 - FP8/FP16 (Community)"; }
+        if (folded == "nvngx_dlssnr_int8.dll") { return "310.8 - INT8 (Community v2)"; }
+        if (folded == "nvngx_dlssnr_int8_ada.dll") { return "310.8 - INT8 (Community v2, RTX 40 fix)"; }
+        if (folded == "nvngx_dlssnr_pd_build21.dll") { return "310.9.16 - FP8/FP16 (PureDark Build 21)"; }
         return name;
     }
 

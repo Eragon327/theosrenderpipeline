@@ -1,12 +1,11 @@
 # Theo's Render Pipeline — Standard, 0.4.4
 
 Version 0.4.4 adds Automatic NR runtime selection and NVIDIA NR 310.9.16 on
-RTX 40 through Universal's in-memory kernel pack. Install matching Standard
-first, then Universal after it in MO2. Standard includes the original runtime,
-the community FP16 build for RTX 20/30, the standalone RTX 40 fallback and the
-older NR runtime. Universal adds the
-kernel pack and compatibility code. NR remains available in both editions and
-defaults off. See CHANGELOG.md and the NR runtime notes below.
+RTX 20/30/40 through Universal's in-memory kernel pack. Install matching
+Standard first, then Universal after it in MO2. Standard retains legacy NR
+310.8 and the original NVIDIA 310.9.16 DLL. Universal adds the compatibility
+pack and retains legacy INT8 for RTX 20/30. NR remains available in both
+editions and defaults off. See CHANGELOG.md and the NR runtime notes below.
 
 Version 0.4.3 adds a frame generation preset dropdown (NVIDIA Presets A, B and
 C), bundles DLSS Frame Generation 310.9.16 for Preset C, adds an NR runtime
@@ -201,27 +200,36 @@ development builds; the exact 0.4.4 package has not been tested with ReShade.
 ## NR runtime notes
 
 Use **Neural Rendering > Runtime > Automatic** for the default selection.
-Universal on RTX 40 first tries the original NVIDIA 310.9.16 DLL with the
-adjacent `nvngx_dlssnr_310.9.16_rtx40.trpk` supplied in the Universal download.
-Keep the pack in `SKSE/Plugins/TheosRenderPipeline/NVIDIA/`. The installer
-checks the runtime, pack and memory changes before use; the original NVIDIA
-DLL is unchanged on disk. Safe refusal retains the fallback runtime choices.
-Standard does not install this pack in memory. On RTX 20/30, both editions automatically try
-`nvngx_dlssnr_310.9.16_compat.dll`, the community FP16 compatibility build
-supplied by Standard. The older 310.8 runtime remains the fallback if the
-community DLL is missing or feature creation is refused. The runtime selector
-also retains the standalone RTX 40 build and older NR runtime. Explicit custom
-runtime choices remain available; older default-runtime settings migrate to
-Automatic. Use the matching Standard/Universal pair for the complete bundle.
+Standard supplies two NR DLLs: legacy `nvngx_dlssnr.dll` (310.8) and original
+NVIDIA `nvngx_dlssnr_310.9.16.dll`. Universal supplies the adjacent
+`nvngx_dlssnr_310.9.16.trpk` and legacy `nvngx_dlssnr_int8.dll`.
 
-The RTX 40 in-memory path with Standard's runtime bundle passed a
-scoped game smoke test on RTX 4080 SUPER / driver 610.88: two NR passes before
-upscaling at 3413x960, x4 frame generation and a loading transition. The user
-reported that it looked good, and logs confirmed in-memory NR execution and
-x4 resuming after loading. This does not establish Standard-only gameplay,
-other GPU/driver coverage, other-placement visual acceptance or physical display
-cadence. A tiny 58x32 second-model stress case times out with both the standalone
-and in-memory paths; use normal rendering dimensions.
+On RTX 20/30/40, Universal first tries the original 310.9.16 DLL with the
+pack. RTX 20/30 use the community FP16 compatibility kernels; RTX 40 uses
+TRP's FP8 kernels. RTX 50 uses NVIDIA's original kernels without a patch.
+The installer verifies the complete runtime and pack hashes, original memory
+bytes and all changes before use. The original 310.9.16 file is unchanged on
+disk. A safe refusal falls back to legacy INT8 then 310.8 on RTX 20/30, or
+310.8 on RTX 40. The known incompatible INT8 path is blocked on RTX 40.
+Standard never installs compatibility kernels and keeps 310.8 on older GPUs.
+
+The separate community and standalone RTX 40 310.9.16 DLLs are no longer
+included. Explicit custom runtime choices remain available, including older
+files supplied separately. If an explicit choice names a file you removed,
+choose Automatic. Older default-runtime settings migrate to Automatic.
+Keep the pack in `SKSE/Plugins/TheosRenderPipeline/NVIDIA/` and use the matching
+Standard/Universal pair. Runtime labels put the version and precision first;
+hover an entry to see its filename.
+
+An earlier RTX 40-only kernel pack passed a scoped RTX 4080 SUPER / driver
+610.88 game smoke test with two NR passes before upscaling at 3413x960, x4
+frame generation and a loading transition. That acceptance belongs to the
+earlier binaries. The combined RTX 20/30/40 pack preserves the same RTX 40
+cubins, but has separate build and validation evidence. Local RTX 20/30/50
+hardware execution, Standard-only gameplay, other-placement visual acceptance
+and physical display cadence remain unverified. A tiny 58x32 second-model
+stress case times out with both standalone and in-memory paths; use normal
+rendering dimensions.
 
 ## With the Universal edition
 

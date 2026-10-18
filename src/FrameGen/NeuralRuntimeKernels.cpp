@@ -1,5 +1,5 @@
-#include "NeuralRuntimeAdaKernels.h"
-#include "NeuralRuntimeAdaKernelsInternal.h"
+#include "NeuralRuntimeKernels.h"
+#include "NeuralRuntimeKernelsInternal.h"
 
 #include <bcrypt.h>
 #include <algorithm>
@@ -16,10 +16,10 @@ namespace TheosRenderPipeline::NeuralRendering
 {
     namespace
     {
-        using namespace AdaKernels;
+        using namespace KernelPacks;
         // Pinning the image also prevents HMODULE address reuse. The raw storage
         // intentionally has process lifetime, including failed feature retirement.
-        struct Installation { void* storage{}; std::vector<Patch> plan; AdaKernelResult result; };
+        struct Installation { void* storage{}; std::vector<Patch> plan; RuntimeKernelResult result; };
         std::mutex installationMutex;
         std::map<HMODULE, Installation> installations;
 
@@ -208,11 +208,11 @@ namespace TheosRenderPipeline::NeuralRendering
         }
     }
 
-    bool AdaKernelsSupported() { return true; }
+    bool RuntimeKernelsSupported() { return true; }
 
-    AdaKernelResult ApplyAdaKernels(HMODULE module, const std::filesystem::path& packPath, bool newlyLoaded)
+    RuntimeKernelResult ApplyRuntimeKernels(HMODULE module, const std::filesystem::path& packPath, bool newlyLoaded)
     {
-        using namespace AdaKernels;
+        using namespace KernelPacks;
         std::scoped_lock lock(installationMutex);
         WinMemory memory(module);
         if (auto it = installations.find(module); it != installations.end()) {
@@ -221,27 +221,27 @@ namespace TheosRenderPipeline::NeuralRendering
                 MEMORY_BASIC_INFORMATION info{};
                 if (!Matches(memory, installed.plan, true) || !VirtualQuery(installed.storage, &info, sizeof(info)) ||
                     info.State != MEM_COMMIT || info.Protect != PAGE_READONLY || info.RegionSize < PackSize ||
-                    !HashIs({static_cast<const std::uint8_t*>(installed.storage), PackSize}, kAdaKernelPackSha256)) {
-                    installed.result = {false, true, "installed Ada runtime or storage changed; relaunch required"};
+                    !HashIs({static_cast<const std::uint8_t*>(installed.storage), PackSize}, kKernelPackSha256)) {
+                    installed.result = {false, true, "installed NR runtime or storage changed; relaunch required"};
                 }
             }
             return installed.result;
         }
-        if (!module || !newlyLoaded) { return {false, false, "Ada installation needs exclusive ownership of a fresh runtime; restart required"}; }
+        if (!module || !newlyLoaded) { return {false, false, "NR installation needs exclusive ownership of a fresh runtime; restart required"}; }
         std::wstring filename(32768, L'\0');
         const auto length = GetModuleFileNameW(module, filename.data(), static_cast<DWORD>(filename.size()));
         if (!length || length >= filename.size()) { return {false, false, "cannot identify the loaded NR module"}; }
         filename.resize(length);
         File runtime(filename, 266424944);
         File pack(packPath, PackSize);
-        if (!runtime.data || !HashIs(runtime.Bytes(), kAdaKernelRuntimeSha256)) { return {false, false, "loaded NR file is not the pinned NVIDIA 310.9.16 runtime"}; }
-        if (!pack.data || !HashIs(pack.Bytes(), kAdaKernelPackSha256)) { return {false, false, "Ada kernel pack is missing or its SHA-256 differs"}; }
+        if (!runtime.data || !HashIs(runtime.Bytes(), kKernelRuntimeSha256)) { return {false, false, "loaded NR file is not the pinned NVIDIA 310.9.16 runtime"}; }
+        if (!pack.data || !HashIs(pack.Bytes(), kKernelPackSha256)) { return {false, false, "NR compatibility kernel pack is missing or its SHA-256 differs"}; }
         if (!OriginalImage(memory, runtime.Bytes())) { return {false, false, "loaded NR image headers or original kernels differ"}; }
         auto storage = NearbyStorage(reinterpret_cast<std::uintptr_t>(module));
         if (!storage) { return {false, false, "no memory available within NR bundle instruction reach"}; }
         std::memcpy(storage.get(), pack.data, PackSize);
         DWORD old{};
-        if (!VirtualProtect(storage.get(), PackSize, PAGE_READONLY, &old)) { return {false, false, "Ada kernel storage could not be made read-only"}; }
+        if (!VirtualProtect(storage.get(), PackSize, PAGE_READONLY, &old)) { return {false, false, "NR compatibility kernel storage could not be made read-only"}; }
         Installation pending;
         if (!MakePlan(pack.Bytes(), reinterpret_cast<std::uintptr_t>(module), reinterpret_cast<std::uintptr_t>(storage.get()), pending.plan, pending.result.status)) { return pending.result; }
         if (!Matches(memory, pending.plan, false)) { return {false, false, "original NR patch bytes differ"}; }

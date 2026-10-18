@@ -3,7 +3,7 @@
 #include "NeuralRenderingCreationContext.h"
 #include "NeuralRenderingModulePathHook.h"
 #include "NeuralRenderingRuntimeIdentity.h"
-#include "NeuralRuntimeAdaKernels.h"
+#include "NeuralRuntimeKernels.h"
 #include "NeuralRuntimeCompatibility.h"
 
 #include <PCH.h>
@@ -30,7 +30,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		constexpr const char* kTheosRenderPipelineNGXEngineVersion = "0.1.0-neural-rendering-source";
 		constexpr auto kNeuralRenderingFeature = static_cast<NVSDK_NGX_Feature>(0x12);
 		std::atomic<bool> publicNGXInitialized{};
-		// Covers first load, Ada publication, public NGX and direct feature init.
+		// Covers first load, kernel publication, public NGX and direct feature init.
 		// Subsequent passes must not observe a partly initialized shared module.
 		std::mutex initializationMutex;
 
@@ -214,7 +214,7 @@ namespace TheosRenderPipeline::NeuralRendering
 			}
 		}
 
-		// Own the runtime before public NGX can discover it. On Ada, install the
+		// Own the runtime before public NGX can discover it. When needed, install the
 		// pack before either public NGX or the runtime's own init is entered.
 		// MO2's virtual path is not a reliable GetModuleHandle filename lookup.
 		const auto existingModule = PluginPaths::RetainLoadedModule(identity.path);
@@ -230,15 +230,15 @@ namespace TheosRenderPipeline::NeuralRendering
 			state.status = "loaded NR module does not match the requested runtime path";
 			return false;
 		}
-		if (identity.sha256 == kAdaKernelRuntimeSha256 &&
-			ComputeCapability(a_info.device->GetAdapterLuid()) == kAdaComputeCapability) {
+		if (identity.sha256 == kKernelRuntimeSha256 &&
+			NeedsRuntimeKernels(ComputeCapability(a_info.device->GetAdapterLuid()))) {
 			// Keep the requested Data path for siblings. MO2 can resolve the DLL
 			// to Standard's physical folder while Universal supplies the pack.
 			// identity.path identifies the module, not the merged asset directory.
-			const auto packPath = a_info.runtimePath.parent_path() / std::filesystem::u8path(kAdaKernelPackName);
-			logger::info("[DLSSNR Source] Ada kernel pack request={}", packPath.string());
-			const auto result = ApplyAdaKernels(state.module, packPath, !resident);
-			logger::info("[DLSSNR Source] Ada kernels applied={} unsafe={} status={}", result.applied, result.unsafe, result.status);
+			const auto packPath = a_info.runtimePath.parent_path() / std::filesystem::u8path(kKernelPackName);
+			logger::info("[DLSSNR Source] compatibility kernel pack request={}", packPath.string());
+			const auto result = ApplyRuntimeKernels(state.module, packPath, !resident);
+			logger::info("[DLSSNR Source] compatibility kernels applied={} unsafe={} status={}", result.applied, result.unsafe, result.status);
 			if (!result.applied) {
 				state.status = result.status;
 				state.runtimeRefused = !result.unsafe;

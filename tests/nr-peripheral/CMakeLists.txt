@@ -31,10 +31,10 @@ add_test(NAME NeuralShaderBytecode COMMAND TRPNeuralShaderBytecodeTests)
 option(TRP_NR_VENDOR_BENCHMARK "Build the manual hardware NR benchmark" OFF)
 if(TRP_NR_VENDOR_BENCHMARK)
     set(NGX_SDK "" CACHE PATH "Locally supplied NGX SDK")
-    option(TRP_NR_ADA_KERNELS "Include the Universal Ada kernel installer in manual probes" OFF)
-    set(nr_ada_sources ../../src/FrameGen/NeuralRuntimeAdaKernelsNative.cpp)
+    option(TRP_NR_ADA_KERNELS "Include the Universal RTX 20/30/40 kernel installer in manual probes" OFF)
+    set(nr_ada_sources ../../src/FrameGen/NeuralRuntimeKernelsNative.cpp)
     if(TRP_NR_ADA_KERNELS)
-        set(nr_ada_sources ../../src/FrameGen/NeuralRuntimeAdaKernels.cpp ../../src/FrameGen/NeuralRuntimeAdaKernelPlan.cpp)
+        set(nr_ada_sources ../../src/FrameGen/NeuralRuntimeKernels.cpp ../../src/FrameGen/NeuralRuntimeKernelPlan.cpp)
     endif()
     add_executable(TRPNeuralPeripheralBenchmark VendorBenchmark.cpp
         ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp

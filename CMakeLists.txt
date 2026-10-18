@@ -39,9 +39,9 @@ option(TRP_ENABLE_OPTIONAL_FEATURES "Include optional Ada/Ampere/Turing MFG comp
 if(TRP_ENABLE_NEURAL_RENDERING)
     target_sources(TheosRenderPipeline PRIVATE ${ARP_NEURAL_SOURCES})
     if(TRP_ENABLE_OPTIONAL_FEATURES)
-        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeAdaKernels.cpp src/FrameGen/NeuralRuntimeAdaKernelPlan.cpp)
+        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeKernels.cpp src/FrameGen/NeuralRuntimeKernelPlan.cpp)
     else()
-        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeAdaKernelsNative.cpp)
+        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeKernelsNative.cpp)
     endif()
     include(cmake/NeuralShaders.cmake)
     trp_target_neural_shaders(TheosRenderPipeline)
@@ -216,7 +216,7 @@ if(NOT EXISTS "${TRP_XEFG_SDK_DIR}/inc/xess_fg/xefg_swapchain_d3d12.h" OR
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${TRP_XEFG_SDK_DIR}/inc")
 set_source_files_properties(src/FrameGen/XeFGPresenter.cpp src/FrameGen/XeFGUnlock.cpp src/FrameGen/XeFGUnlockNative.cpp src/FrameGen/XeSSUpscaler.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
-set_source_files_properties(src/FrameGen/NeuralRuntimeAdaKernels.cpp src/FrameGen/NeuralRuntimeAdaKernelPlan.cpp src/FrameGen/NeuralRuntimeAdaKernelsNative.cpp
+set_source_files_properties(src/FrameGen/NeuralRuntimeKernels.cpp src/FrameGen/NeuralRuntimeKernelPlan.cpp src/FrameGen/NeuralRuntimeKernelsNative.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
 find_path(TRP_SIMPLEINI_INCLUDE_DIR SimpleIni.h REQUIRED)
 

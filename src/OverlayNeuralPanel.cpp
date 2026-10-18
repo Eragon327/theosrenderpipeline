@@ -344,7 +344,7 @@ void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
                 }
                 ImGui::EndCombo();
             }
-            DrawSettingsHelp("Automatic chooses the runtime for your GPU. Community FP16 supports RTX 20-40; TRP is the RTX 40 build. NVIDIA 310.9.16 runs on RTX 50, or RTX 40 with Universal's kernel pack. Hover an entry for its filename.");
+            DrawSettingsHelp("Automatic chooses the runtime for your GPU. Universal unlocks NVIDIA 310.9.16 on RTX 20/30/40; RTX 50 uses it natively. The kernel pack uses FP16 fallback on RTX 20/30 and FP8 on RTX 40. Legacy INT8 is an RTX 20/30 alternative. Hover an entry for its filename.");
             return changed;
         });
         ImGui::EndTable();
