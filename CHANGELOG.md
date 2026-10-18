@@ -18,6 +18,11 @@
 - Automatic NR can select an available compatible runtime when the legacy DLL
   is missing. Startup, Apply and the NR enable control use the same file and
   GPU policy. Explicit custom paths remain explicit.
+- Run MartysMods ReGrade+ with TRP's ReShade effects. ReGrade+ (ReShade 6.6 or
+  newer) prepares itself only in a device event that ReShade does not send to
+  TRP's ReShade runtime, so starting ReShade crashed the game. TRP now sends
+  ReGrade+ that event for its own runtime only. If it cannot, TRP turns its
+  ReShade effects off and names the `DisabledAddons` entry instead of crashing.
 - Correct the installation notes for RTX 30's default DLSS-G 310.9.16 route
   and document runtime selection when upgrading.
 - Write DLSS and sharpening output directly into the output texture by

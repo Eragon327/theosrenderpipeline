@@ -2,6 +2,7 @@
 #include "ScreenshotWorker.h"
 #include "ReShadeSwapChain.h"
 #include "FrameGen/D3D11ContextIsolation.h"
+#include "HookSafety.h"
 #include <Psapi.h>
 #include <filesystem>
 #include <reshade/reshade_events.hpp>
@@ -9,6 +10,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <cwctype>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -48,7 +50,7 @@ namespace TheosRenderPipeline
         api::effect_runtime* runtime{};
         std::atomic_bool overlayOpen{};
         static thread_local ComPtr<ID3D12Device>* capturingDevice;
-        bool nativeOutput{}, disabled{};
+        bool nativeOutput{}, disabled{}, blocked{}, bridged{}, creating{};
         std::atomic<api::effect_runtime*> overlayRuntime{};
         static thread_local bool internal;
         bool before{}, attempted{}, updated{}, screenshotOverlay{};
@@ -94,6 +96,208 @@ namespace TheosRenderPipeline
                 s.screenshotPending = true;
                 return S_OK;
             });
+        }
+        static std::vector<HMODULE> LoadedModules()
+        {
+            std::vector<HMODULE> modules(256); DWORD bytes{};
+            if (!K32EnumProcessModules(GetCurrentProcess(), modules.data(), static_cast<DWORD>(modules.size() * sizeof(HMODULE)), &bytes)) { return {}; }
+            if (bytes > modules.size() * sizeof(HMODULE)) {
+                modules.resize(bytes / sizeof(HMODULE));
+                if (!K32EnumProcessModules(GetCurrentProcess(), modules.data(), bytes, &bytes)) { return {}; }
+            }
+            modules.resize(std::min<std::size_t>(modules.size(), bytes / sizeof(HMODULE)));
+            return modules;
+        }
+        // Add-ons export NAME as a const char* variable, which ReShade reads at
+        // registration. Unrelated modules may export another NAME symbol.
+        static bool AddonNamed(HMODULE module, std::string_view name)
+        {
+            const auto exported = reinterpret_cast<std::uintptr_t>(GetProcAddress(module, "NAME"));
+            std::uintptr_t text{}; char value[64]{};
+            return exported && name.size() < sizeof(value) && HookSafety::Read(exported, &text, sizeof(text)) &&
+                HookSafety::Read(text, value, name.size() + 1) && std::string_view(value) == name;
+        }
+        // ReShadeCreateEffectRuntime wraps our device in new API objects that
+        // never receive init_device. ReGrade+ creates its per-device context
+        // only in that event and dereferences it unconditionally in
+        // init/destroy_effect_runtime, so our runtime creation would crash the
+        // game. The bridge captures its handlers as it registers them and runs
+        // its own init_device/destroy_device around its runtime events, for our
+        // runtime only, as ReShade does for devices it creates. Verified with
+        // ReGrade+'s API-18 build of 2026-03-13 on ReShade 6.8.0.
+        static constexpr std::string_view regrade{"MARTYSMODS ReGrade+"};
+        using DeviceEvent = void (*)(api::device*);
+        using RuntimeEvent = void (*)(api::effect_runtime*);
+        struct Bridge
+        {
+            using Change = void (*)(Event, void*);
+            using ChangeFor = void (*)(HMODULE, Event, void*);
+            Change registerEvent{}, unregisterEvent{};
+            ChangeFor registerFor{}, unregisterFor{};
+            HMODULE reshade{}, owner{};
+            std::atomic<void*> initDevice{}, destroyDevice{}, initRuntime{}, destroyRuntime{};
+            api::device* seeded{};
+            bool Covers(HMODULE host, HMODULE addon) const
+            { return host == reshade && addon == owner && initDevice && destroyDevice && initRuntime && destroyRuntime; }
+        };
+        static inline Bridge bridge;
+        static HMODULE BridgedAddon(void* callback)
+        {
+            HMODULE owner{};
+            return callback && GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                static_cast<LPCWSTR>(callback), &owner) && AddonNamed(owner, regrade) ? owner : nullptr;
+        }
+        // Its runtime events stay registered to ReGrade+ (removed when it
+        // unregisters), at its own place in ReShade's event order.
+        static void RegisterEvent(Event ev, void* callback)
+        {
+            if (const auto owner = BridgedAddon(callback)) {
+                bridge.owner = owner;
+                switch (ev) {
+                case Event::init_device: bridge.initDevice = callback; break;
+                case Event::destroy_device: bridge.destroyDevice = callback; break;
+                case Event::init_effect_runtime:
+                    bridge.initRuntime = callback;
+                    return bridge.registerFor(owner, ev, reinterpret_cast<void*>(&InitRuntime));
+                case Event::destroy_effect_runtime:
+                    bridge.destroyRuntime = callback;
+                    return bridge.registerFor(owner, ev, reinterpret_cast<void*>(&DestroyRuntime));
+                default: break;
+                }
+            }
+            bridge.registerEvent(ev, callback);
+        }
+        static void UnregisterEvent(Event ev, void* callback)
+        {
+            const auto take = [&](std::atomic<void*>& slot, Event expected) {
+                auto current = callback;
+                return callback && ev == expected && slot.compare_exchange_strong(current, nullptr);
+            };
+            if (take(bridge.initRuntime, Event::init_effect_runtime)) {
+                return bridge.unregisterFor(bridge.owner, ev, reinterpret_cast<void*>(&InitRuntime));
+            }
+            if (take(bridge.destroyRuntime, Event::destroy_effect_runtime)) {
+                return bridge.unregisterFor(bridge.owner, ev, reinterpret_cast<void*>(&DestroyRuntime));
+            }
+            take(bridge.initDevice, Event::init_device); take(bridge.destroyDevice, Event::destroy_device);
+            bridge.unregisterEvent(ev, callback);
+        }
+        static void InitRuntime(api::effect_runtime* runtime)
+        {
+            const auto init = reinterpret_cast<DeviceEvent>(bridge.initDevice.load());
+            if (Data().creating && init) { bridge.seeded = runtime->get_device(); init(bridge.seeded); }
+            if (const auto next = reinterpret_cast<RuntimeEvent>(bridge.initRuntime.load())) { next(runtime); }
+        }
+        static void DestroyRuntime(api::effect_runtime* runtime)
+        {
+            if (const auto next = reinterpret_cast<RuntimeEvent>(bridge.destroyRuntime.load())) { next(runtime); }
+            // ReShadeDestroyEffectRuntime deletes this device wrapper next.
+            if (bridge.seeded && bridge.seeded == runtime->get_device()) {
+                if (const auto destroy = reinterpret_cast<DeviceEvent>(bridge.destroyDevice.load())) { destroy(bridge.seeded); }
+                bridge.seeded = nullptr;
+            }
+        }
+        // ReShade's add-on search: [ADDON] AddonPath relative to its base path.
+        // Only a file named like ReGrade+ installs the bridge; a renamed copy
+        // is still caught by the block below.
+        static bool RegradeFilePresent(HMODULE module)
+        {
+            const auto basePath = reinterpret_cast<void (*)(char*, size_t*)>(GetProcAddress(module, "ReShadeGetBasePath"));
+            const auto getConfig = reinterpret_cast<GetConfig>(GetProcAddress(module, "ReShadeGetConfigValue"));
+            if (!basePath) { return false; }
+            try {
+                size_t length{}; basePath(nullptr, &length);
+                std::string base(length, '\0'); basePath(base.data(), &length); base.resize(std::strlen(base.c_str()));
+                auto directory = std::filesystem::u8path(base);
+                char configured[MAX_PATH]{}; size_t size = sizeof(configured);
+                if (getConfig && getConfig(nullptr, nullptr, "ADDON", "AddonPath", configured, &size) && *configured) {
+                    directory /= std::filesystem::u8path(configured);
+                }
+                std::error_code error;
+                for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
+                    auto name = entry.path().filename().wstring();
+                    std::transform(name.begin(), name.end(), name.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+                    if (entry.path().extension() == L".addon64" && name.find(L"regrade") != std::wstring::npos) { return true; }
+                }
+            } catch (...) {}
+            return false;
+        }
+        // Export entries are 32-bit image offsets, so the stubs that receive
+        // ReShade's redirected exports must be allocated above the image.
+        static std::uint8_t* AllocateAbove(HMODULE module)
+        {
+            MODULEINFO image{};
+            if (!K32GetModuleInformation(GetCurrentProcess(), module, &image, sizeof(image))) { return nullptr; }
+            SYSTEM_INFO system{}; GetSystemInfo(&system);
+            const std::uintptr_t base = reinterpret_cast<std::uintptr_t>(module), granularity = system.dwAllocationGranularity;
+            const auto align = [granularity](std::uintptr_t value) { return (value + granularity - 1) / granularity * granularity; };
+            MEMORY_BASIC_INFORMATION region{};
+            for (auto address = align(base + image.SizeOfImage); address < base + 0xFFFF0000ull;) {
+                if (!VirtualQuery(reinterpret_cast<void*>(address), &region, sizeof(region))) { break; }
+                if (region.State == MEM_FREE) {
+                    if (auto* page = VirtualAlloc(reinterpret_cast<void*>(address), system.dwPageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)) {
+                        return static_cast<std::uint8_t*>(page);
+                    }
+                }
+                address = align(reinterpret_cast<std::uintptr_t>(region.BaseAddress) + region.RegionSize);
+            }
+            return nullptr;
+        }
+        // Add-ons resolve ReShade's API with GetProcAddress, so pointing the
+        // export entries at our stubs sees every later registration without
+        // changing ReShade's code. Lookups made before this keep the original.
+        static const char* InstallBridge(HMODULE module)
+        {
+            const auto base = reinterpret_cast<std::uintptr_t>(module);
+            auto* registerSlot = HookSafety::ExportSlot(base, "ReShadeRegisterEvent");
+            auto* unregisterSlot = HookSafety::ExportSlot(base, "ReShadeUnregisterEvent");
+            const auto registerFor = reinterpret_cast<Bridge::ChangeFor>(GetProcAddress(module, "ReShadeRegisterEventForAddon"));
+            const auto unregisterFor = reinterpret_cast<Bridge::ChangeFor>(GetProcAddress(module, "ReShadeUnregisterEventForAddon"));
+            if (!registerSlot || !unregisterSlot || !registerFor || !unregisterFor) {
+                return "ReGrade+ bridge unavailable: ReShade lacks per-add-on event registration";
+            }
+            auto* stubs = AllocateAbove(module);
+            if (!stubs) { return "ReGrade+ bridge unavailable: no stub memory near ReShade"; }
+            bridge.registerEvent = reinterpret_cast<Bridge::Change>(base + *registerSlot);
+            bridge.unregisterEvent = reinterpret_cast<Bridge::Change>(base + *unregisterSlot);
+            bridge.registerFor = registerFor; bridge.unregisterFor = unregisterFor;
+            const auto write = [](std::uint8_t* stub, void* target) {
+                constexpr std::uint8_t jump[]{0xFF, 0x25, 0, 0, 0, 0}; // jmp [rip+0]
+                std::memcpy(stub, jump, sizeof(jump)); std::memcpy(stub + sizeof(jump), &target, sizeof(target));
+            };
+            write(stubs, reinterpret_cast<void*>(&RegisterEvent));
+            write(stubs + 16, reinterpret_cast<void*>(&UnregisterEvent));
+            DWORD previous{};
+            if (!VirtualProtect(stubs, 32, PAGE_EXECUTE_READ, &previous)) { VirtualFree(stubs, 0, MEM_RELEASE); return "ReGrade+ bridge unavailable: stub protection failed"; }
+            FlushInstructionCache(GetCurrentProcess(), stubs, 32);
+            const auto redirect = [&](DWORD* slot, std::uint8_t* stub) {
+                DWORD protection{};
+                if (!VirtualProtect(slot, sizeof(*slot), PAGE_READWRITE, &protection)) { return false; }
+                InterlockedExchange(reinterpret_cast<volatile LONG*>(slot), static_cast<LONG>(reinterpret_cast<std::uintptr_t>(stub) - base));
+                VirtualProtect(slot, sizeof(*slot), protection, &protection);
+                return true;
+            };
+            // Unregistration first: a captured callback is always released.
+            if (!redirect(unregisterSlot, stubs + 16) || !redirect(registerSlot, stubs)) { return "ReGrade+ bridge unavailable: export table is read-only"; }
+            bridge.reshade = module;
+            return "ReGrade+ bridge watching add-on registration";
+        }
+        bool BlockIncompatibleAddon()
+        {
+            if (blocked) { return true; }
+            for (const auto candidate : LoadedModules()) {
+                if (!AddonNamed(candidate, regrade)) { continue; }
+                if (bridge.Covers(module, candidate)) { bridged = true; return false; }
+                std::wstring path(32768, L'\0');
+                path.resize(GetModuleFileNameW(candidate, path.data(), static_cast<DWORD>(path.size())));
+                const auto file = std::filesystem::path(path).filename().u8string();
+                const auto entry = std::string(regrade) + "@" + std::string(reinterpret_cast<const char*>(file.data()), file.size());
+                status = "ReShade effects off: add-on " + std::string(regrade) + " is incompatible with TRP and would crash. "
+                    "To use ReShade, add " + entry + " to [ADDON] DisabledAddons in ReShade.ini";
+                blocked = true;
+                return true;
+            }
+            return false;
         }
         HRESULT Failed(HRESULT hr, const char* operation)
         {
@@ -183,7 +387,7 @@ namespace TheosRenderPipeline
         }
         HRESULT EnsureRuntime(DXGI_FORMAT format)
         {
-            if (!module || !nativeOutput || disabled || !device || !context) { return S_FALSE; }
+            if (!module || !nativeOutput || disabled || blocked || !device || !context) { return S_FALSE; }
             if (runtime) {
                 D3D11_TEXTURE2D_DESC old{}; ui->GetDesc(&old);
                 if (old.Width == output.width && old.Height == output.height && old.Format == StorageFormat(format)) { return S_OK; }
@@ -192,14 +396,18 @@ namespace TheosRenderPipeline
                 runtime->get_command_queue()->wait_idle();
                 ReleaseRuntime();
             }
+            if (BlockIncompatibleAddon()) { return S_FALSE; }
             auto hr = EnsureTexture(ui, output, StorageFormat(format), D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET);
             if (FAILED(hr)) { return hr; }
             facade.Attach(new ReShadeSwapChain(device.Get(), ui.Get(), window));
-            if (!create(api::device_api::d3d11, device.Get(), context.Get(), facade.Get(), config.c_str(), &runtime)) {
-                return E_FAIL;
-            }
+            creating = true;
+            const bool created = create(api::device_api::d3d11, device.Get(), context.Get(), facade.Get(), config.c_str(), &runtime);
+            creating = false;
+            // A failed creation deletes its device wrapper, whether or not it
+            // reached the destroy event; never treat it as still seeded.
+            if (!created) { bridge.seeded = nullptr; return E_FAIL; }
             overlayRuntime = runtime;
-            status = "ReShade source-frame stage active";
+            status = bridged ? "ReShade source-frame stage active; ReGrade+ device events bridged" : "ReShade source-frame stage active";
             return S_OK;
         }
     };
@@ -214,18 +422,21 @@ namespace TheosRenderPipeline
         static auto* state = new State;
         return *state;
     }
+    const char* ReShadeIntegration::PrepareAddonBridge()
+    {
+        if (State::bridge.reshade) { return "ReGrade+ bridge watching add-on registration"; }
+        for (const auto module : State::LoadedModules()) {
+            if (!GetProcAddress(module, "ReShadeRegisterAddon") || !GetProcAddress(module, "ReShadeRegisterEvent")) { continue; }
+            if (!State::RegradeFilePresent(module)) { return "ReShade loaded; no ReGrade+ add-on file"; }
+            return State::InstallBridge(module);
+        }
+        return "ReShade not loaded";
+    }
     void ReShadeIntegration::Discover(HWND window)
     {
         auto& s = Data(); s.window = window;
         if (s.module) { return; }
-        std::vector<HMODULE> modules(256); DWORD bytes{};
-        if (!K32EnumProcessModules(GetCurrentProcess(), modules.data(), static_cast<DWORD>(modules.size() * sizeof(HMODULE)), &bytes)) { return; }
-        if (bytes > modules.size() * sizeof(HMODULE)) {
-            modules.resize(bytes / sizeof(HMODULE));
-            if (!K32EnumProcessModules(GetCurrentProcess(), modules.data(), bytes, &bytes)) { return; }
-        }
-        modules.resize(std::min<std::size_t>(modules.size(), bytes / sizeof(HMODULE)));
-        for (const auto module : modules) {
+        for (const auto module : State::LoadedModules()) {
             const auto registerAddon = reinterpret_cast<bool (*)(HMODULE, uint32_t)>(GetProcAddress(module, "ReShadeRegisterAddon"));
             const auto registerEvent = reinterpret_cast<State::Register>(GetProcAddress(module, "ReShadeRegisterEvent"));
             const auto create = reinterpret_cast<State::Create>(GetProcAddress(module, "ReShadeCreateEffectRuntime"));
@@ -277,6 +488,11 @@ namespace TheosRenderPipeline
         s.nativeOutput = native != nullptr;
         if (s.module && s.nativeOutput && !s.disabled) {
             s.status = "ReShade native output isolated; waiting for source UI";
+            // ReShade's device hooks have loaded its add-ons by now, so the
+            // startup log reports the block. EnsureRuntime checks again.
+            if (!s.BlockIncompatibleAddon() && s.bridged) {
+                s.status = "ReShade native output isolated; ReGrade+ device events bridged; waiting for source UI";
+            }
         }
         if (s.module && !s.nativeOutput) {
             s.status = "ReShade native output ownership unavailable; keeping automatic effects";
@@ -420,6 +636,7 @@ namespace TheosRenderPipeline
     }
     bool ReShadeIntegration::Internal() const { return Data().internal; }
     bool ReShadeIntegration::OverlayOpen() const { return Data().overlayOpen; }
+    bool ReShadeIntegration::Blocked() const { return Data().blocked; }
     const std::string& ReShadeIntegration::Status() const { return Data().status; }
     ReShadeIntegration::Counters ReShadeIntegration::Snapshot() const
     { return Data().counts; }

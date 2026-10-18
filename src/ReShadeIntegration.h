@@ -13,6 +13,11 @@ namespace TheosRenderPipeline
     {
     public:
         static ReShadeIntegration& Get();
+        // At plugin load, before ReShade loads its add-ons on the first device
+        // creation. Watches ReGrade+'s event registration so our runtime can
+        // give it the device events ReShade sends only to devices it created.
+        // Returns a short description for the log.
+        const char* PrepareAddonBridge();
         void Discover(HWND window);
         HRESULT CreateSourceDevice(IUnknown* adapter, D3D_FEATURE_LEVEL minimum, ID3D12Device** out);
         void Configure(ID3D11Device* device, ID3D11DeviceContext* context, FrameExtent output);
@@ -39,6 +44,9 @@ namespace TheosRenderPipeline
         bool TakeScreenshotRequest(ScreenshotRequest& request);
         bool Internal() const;
         bool OverlayOpen() const;
+        // An incompatible add-on is loaded and the bridge could not cover it,
+        // so the owned runtime is withheld.
+        bool Blocked() const;
         const std::string& Status() const;
         struct Counters { std::uint64_t effects{}, updates{}, failures{}; };
         Counters Snapshot() const;
