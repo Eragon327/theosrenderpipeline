@@ -99,9 +99,12 @@ int main()
             "absolute paths are kept");
         Require(NeuralRuntimeLabel("Automatic") == "Automatic" && NeuralRuntimeLabel(kDefaultNeuralRuntime) == "NVIDIA 310.8" &&
             NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_310.9.16.DLL)") == "NVIDIA 310.9.16" &&
-            NeuralRuntimeLabel(kCompatNeuralRuntime) == "310.9.16 compat (RTX 20-40)" &&
-            NeuralRuntimeLabel(kRTX40NeuralRuntime) == "310.9.16 (RTX 40, TRP build)" &&
-            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll") == "nvngx_dlssnr_int8.dll", "menu labels");
+            NeuralRuntimeLabel(kCompatNeuralRuntime) == "Community 310.9.16 (FP16)" &&
+            NeuralRuntimeLabel(kRTX40NeuralRuntime) == "TRP 310.9.16 (RTX 40)" &&
+            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8.dll") == "Community 310.8 (INT8 v2)" &&
+            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_int8_ada.dll") == "Community 310.8 (INT8 v2, RTX 40 fix)" &&
+            NeuralRuntimeLabel(R"(C:\G\NVIDIA\NVNGX_DLSSNR_PD_BUILD21.DLL)") == "PureDark 310.9.16 (Build 21)" &&
+            NeuralRuntimeLabel("TheosRenderPipeline/NVIDIA/nvngx_dlssnr_custom.dll") == "nvngx_dlssnr_custom.dll", "menu labels");
 
         // Saved settings: the old default means Automatic unless it was picked since.
         struct Ini

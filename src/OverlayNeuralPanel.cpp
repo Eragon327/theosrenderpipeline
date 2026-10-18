@@ -335,13 +335,16 @@ void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
             bool changed = false;
             if (ImGui::BeginCombo("##v", NeuralRuntimeLabel(draft.neuralRuntime).c_str())) {
                 for (const auto& runtime : runtimes) {
+                    ImGui::PushID(runtime.c_str());
                     const bool selected = runtime == draft.neuralRuntime;
                     if (ImGui::Selectable(NeuralRuntimeLabel(runtime).c_str(), selected) && !selected) { draft.neuralRuntime = runtime; changed = true; }
                     if (selected) { ImGui::SetItemDefaultFocus(); }
+                    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("File: %s", runtime.c_str()); }
+                    ImGui::PopID();
                 }
                 ImGui::EndCombo();
             }
-            DrawSettingsHelp("Automatic picks the newest model your GPU supports. NVIDIA 310.9.16 runs on RTX 50, or RTX 40 with Universal's kernel pack. Compat is a community rebuild.");
+            DrawSettingsHelp("Automatic chooses the runtime for your GPU. Community FP16 supports RTX 20-40; TRP is the RTX 40 build. NVIDIA 310.9.16 runs on RTX 50, or RTX 40 with Universal's kernel pack. Hover an entry for its filename.");
             return changed;
         });
         ImGui::EndTable();

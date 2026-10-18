@@ -74,7 +74,8 @@ namespace TheosRenderPipeline::SourceDLSSG
         return ResolveRuntimePath(std::filesystem::u8path(IsAutomaticNeuralRuntime(value) ? kDefaultNeuralRuntime : value), pluginDirectory);
     }
 
-    // The menu name: what a bundled file is, or the file name of any other runtime.
+    // Friendly names for bundled and commonly installed runtime filenames.
+    // Unknown filenames stay visible; selection and saved paths are unchanged.
     inline std::string NeuralRuntimeLabel(std::string_view value)
     {
         if (IsAutomaticNeuralRuntime(value)) { return "Automatic"; }
@@ -86,8 +87,11 @@ namespace TheosRenderPipeline::SourceDLSSG
         const auto folded = FoldRuntimePath(name);
         if (folded == FoldRuntimePath(filename(kDefaultNeuralRuntime))) { return "NVIDIA 310.8"; }
         if (folded == FoldRuntimePath(filename(kLatestNeuralRuntime))) { return "NVIDIA 310.9.16"; }
-        if (folded == FoldRuntimePath(filename(kRTX40NeuralRuntime))) { return "310.9.16 (RTX 40, TRP build)"; }
-        if (folded == FoldRuntimePath(filename(kCompatNeuralRuntime))) { return "310.9.16 compat (RTX 20-40)"; }
+        if (folded == FoldRuntimePath(filename(kRTX40NeuralRuntime))) { return "TRP 310.9.16 (RTX 40)"; }
+        if (folded == FoldRuntimePath(filename(kCompatNeuralRuntime))) { return "Community 310.9.16 (FP16)"; }
+        if (folded == "nvngx_dlssnr_int8.dll") { return "Community 310.8 (INT8 v2)"; }
+        if (folded == "nvngx_dlssnr_int8_ada.dll") { return "Community 310.8 (INT8 v2, RTX 40 fix)"; }
+        if (folded == "nvngx_dlssnr_pd_build21.dll") { return "PureDark 310.9.16 (Build 21)"; }
         return name;
     }
 
