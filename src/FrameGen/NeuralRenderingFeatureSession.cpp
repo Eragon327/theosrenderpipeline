@@ -232,8 +232,12 @@ namespace TheosRenderPipeline::NeuralRendering
 		}
 		if (identity.sha256 == kAdaKernelRuntimeSha256 &&
 			ComputeCapability(a_info.device->GetAdapterLuid()) == kAdaComputeCapability) {
-			const auto result = ApplyAdaKernels(state.module,
-				identity.path.parent_path() / std::filesystem::u8path(kAdaKernelPackName), !resident);
+			// Keep the requested Data path for siblings. MO2 can resolve the DLL
+			// to Standard's physical folder while Universal supplies the pack.
+			// identity.path identifies the module, not the merged asset directory.
+			const auto packPath = a_info.runtimePath.parent_path() / std::filesystem::u8path(kAdaKernelPackName);
+			logger::info("[DLSSNR Source] Ada kernel pack request={}", packPath.string());
+			const auto result = ApplyAdaKernels(state.module, packPath, !resident);
 			logger::info("[DLSSNR Source] Ada kernels applied={} unsafe={} status={}", result.applied, result.unsafe, result.status);
 			if (!result.applied) {
 				state.status = result.status;
