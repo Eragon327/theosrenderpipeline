@@ -110,7 +110,7 @@ IDXGIAdapter* observedAdapter{};const NVSDK_NGX_FeatureDiscoveryInfo* observedDi
 ID3D12GraphicsCommandList* observedCommands{}; NVSDK_NGX_Feature observedFeature{};
 NVSDK_NGX_Parameter* observedParams{}; NVSDK_NGX_Handle** observedHandle{};
 NVSDK_NGX_Handle vendorHandle{};
-bool failInsideCreate{};
+bool failInsideCreate{}, nullCreateSuccess{};
 void ObserveArchitecture() {ArchInfo a{0x20010,0,0,0};Architecture(State().gpu,&a);observedArchitecture=a.architecture;}
 NVSDK_NGX_Result NVSDK_CONV MockRequirements(IDXGIAdapter* adapter,const NVSDK_NGX_FeatureDiscoveryInfo* discovery,NVSDK_NGX_FeatureRequirement* out) {
     ++vendorCalls;observedAdapter=adapter;observedDiscovery=discovery;ObserveArchitecture();if(out)*out=vendorRequirement;return vendorResult;
@@ -118,7 +118,7 @@ NVSDK_NGX_Result NVSDK_CONV MockRequirements(IDXGIAdapter* adapter,const NVSDK_N
 NVSDK_NGX_Result NVSDK_CONV MockParameters(NVSDK_NGX_Parameter** out) {++vendorCalls;ObserveArchitecture();if(out)*out=&vendorParams;return vendorResult;}
 NVSDK_NGX_Result NVSDK_CONV MockCreate(ID3D12GraphicsCommandList* commands,NVSDK_NGX_Feature feature,NVSDK_NGX_Parameter* params,NVSDK_NGX_Handle** out) {
     ++vendorCalls;observedCommands=commands;observedFeature=feature;observedParams=params;observedHandle=out;ObserveArchitecture();
-    if(out)*out=vendorResult==NVSDK_NGX_Result_Success ? &vendorHandle : nullptr;
+    if(out)*out=vendorResult==NVSDK_NGX_Result_Success && !nullCreateSuccess ? &vendorHandle : nullptr;
     if(failInsideCreate)Fail("internal kernel creation failure");
     return vendorResult;
 }
@@ -197,15 +197,11 @@ void CreationCalls(const std::string& mode) {
     s.create=MockCreate;
     if(mode=="create-ready") {
         Require(Verify(),"fixture publication complete");
-        vendorResult=NVSDK_NGX_Result_FAIL_OutOfGPUMemory;
-        Require(CreateFeature(commands,fg,&vendorParams,&output)==vendorResult && output==nullptr && vendorCalls==1,"vendor create error preserved without fabricated handle");
-        Require(Saw("creation failed") && Snapshot().createSeen && Snapshot().createCalls==1,"failed vendor create is visible and records consumer boundary");
-        Require(observedArchitecture==kAda && observedCommands==commands && observedFeature==fg && observedParams==&vendorParams && observedHandle==&output,"FG create ABI and scoped exposure preserved");
         vendorResult=NVSDK_NGX_Result_Success;
-        Require(CreateFeature(commands,fg,&vendorParams,&output)==vendorResult && output==&vendorHandle && vendorCalls==2,"successful vendor create forwards exact handle");
+        Require(CreateFeature(commands,fg,&vendorParams,&output)==vendorResult && output==&vendorHandle && vendorCalls==1,"successful vendor create forwards exact handle");
         Require(Saw("feature created") && !Snapshot().failed,"successful forwarding recorded");
         {ExposureScope startup(true);Require(CreateFeature(commands,NVSDK_NGX_Feature_SuperSampling,&vendorParams,&output)==vendorResult,"non-FG create forwarded inside startup scope");Require(observedArchitecture==State().nativeArchitecture,"non-FG create suppresses nested exposure");}
-        Require(Snapshot().createCalls==2 && vendorCalls==3,"non-FG call excluded from FG counters");
+        Require(Snapshot().createCalls==1 && vendorCalls==2,"non-FG call excluded from FG counters");
     } else {
         if(mode=="create-unprepared")s.prepared=false;
         else if(mode=="create-bridge-missing")s.installed=false;
@@ -334,6 +330,30 @@ void ModuleCalls(const std::string& mode) {
         Require(false,"failed kernel creation must never return into vendor code");
     }
 }
+void PersistentCreationFailure(bool nullSuccess) {
+    Published published;auto& s=State();s.create=MockCreate;
+    vendorResult=nullSuccess ? NVSDK_NGX_Result_Success : NVSDK_NGX_Result_FAIL_OutOfGPUMemory;
+    nullCreateSuccess=nullSuccess;
+    NVSDK_NGX_Handle* output=&vendorHandle;
+    const auto result=CreateFeature(nullptr,NVSDK_NGX_Feature_FrameGeneration,&vendorParams,&output);
+    Require(result==(nullSuccess ? NVSDK_NGX_Result_FAIL_FeatureNotSupported : vendorResult), "first vendor failure is preserved; null success is refused");
+    Require(!output && Snapshot().failed && Snapshot().error && !Verify(), "failed FG creation latches failure without publishing a handle");
+    Require(Saw("result=0x") && Saw("restart required"), "failure records the original result and restart advice");
+    const auto messagesAfterFailure=messages.size();
+    for(unsigned i=0;i<1252;++i) {
+        output=&vendorHandle;
+        Require(CreateFeature(nullptr,NVSDK_NGX_Feature_FrameGeneration,&vendorParams,&output)==NVSDK_NGX_Result_FAIL_FeatureNotSupported && !output,
+            "later FG requests cannot re-enter the failed vendor creation");
+    }
+    Require(vendorCalls==1 && messages.size()==messagesAfterFailure, "persistent failure invokes vendor once and does not repeat its diagnosis");
+    const auto firstError=Snapshot().error;
+    nullCreateSuccess=false;vendorResult=NVSDK_NGX_Result_Success;
+    Require(CreateFeature(nullptr,NVSDK_NGX_Feature_SuperSampling,&vendorParams,&output)==NVSDK_NGX_Result_Success && output==&vendorHandle,
+        "non-FG creation remains isolated from the FG failure latch");
+    Require(vendorCalls==2 && Snapshot().error==firstError && observedArchitecture==State().nativeArchitecture,
+        "SR keeps physical architecture and the first FG cause");
+}
+
 void FalseSuccess() {
     Published published;State().create=MockCreate;failInsideCreate=true;
     NVSDK_NGX_Handle* output{};
@@ -363,6 +383,8 @@ int main(int argc,char** argv) {try {
     else if(mode=="startup-reentry")StartupReentry();
     else if(mode.starts_with("module-"))ModuleCalls(mode);
     else if(mode=="false-success")FalseSuccess();
+    else if(mode=="persistent-failure")PersistentCreationFailure(false);
+    else if(mode=="null-success")PersistentCreationFailure(true);
     else throw std::runtime_error("unknown fixture case");
     std::cout<<"PASS "<<checks<<" checks; no GPU dispatch or physical compatibility claim"<<std::endl;return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<" after "<<checks<<" checks"<<std::endl;return 1;}}
