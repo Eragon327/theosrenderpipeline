@@ -16,14 +16,15 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 		const bool requested = a_options.enabled;
 		a_options = SanitizeNeuralOptions(std::move(a_options));
-		if (requested && !a_options.enabled) {
-			logger::warn("[SourceDLSSG NR] optional runtime not found at {}; NR disabled, standard DLSS continues",
-				a_options.runtimePath.string());
-		}
 		std::scoped_lock lock(neuralMutex_);
 		// The note stays only while the selected runtime is the one being replaced.
 		const auto* note = SelectNeuralRuntime(a_options);
 		neuralSnapshot_.fallback = note ? *note : std::string{};
+		if (requested && !a_options.enabled) {
+			logger::warn("[SourceDLSSG NR] optional runtime not found at {}; NR disabled, standard DLSS continues",
+				a_options.runtimePath.string());
+		}
+
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
@@ -39,12 +40,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		};
 		const std::string* note{};
 		if (!options.automaticRuntime && !(note = refused(options.runtimePath))) { return nullptr; }
-		// Until the device exists the GPU is unknown and 310.8 stands in; nothing
+		// Until the device exists any present candidate can stand in; nothing
 		// creates a feature before CreateSwapChain chooses again.
 		if (neuralComputeCapability_ < 0 && device12_) {
 			neuralComputeCapability_ = NeuralRendering::ComputeCapability(device12_->GetAdapterLuid());
 		}
-		for (const auto candidate : AutomaticNeuralRuntimes((std::max)(neuralComputeCapability_, 0), NeuralRendering::RuntimeKernelsSupported())) {
+		for (const auto candidate : AutomaticNeuralRuntimes(neuralComputeCapability_, NeuralRendering::RuntimeKernelsSupported())) {
 			const auto path = PluginPaths::Directory() / std::filesystem::u8path(candidate);
 			if (const auto* why = refused(path)) { note = note ? note : why; continue; }
 			std::error_code error;
@@ -115,6 +116,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (reason && reason != neuralReportedUnavailable_) { logger::warn("[SourceDLSSG NR] {}", reason); }
 		neuralReportedUnavailable_ = reason;
 		return reason;
+	}
+	int Backend::NeuralComputeCapability() const
+	{
+		std::scoped_lock lock(neuralMutex_); return neuralComputeCapability_;
 	}
 	NeuralOptions Backend::NeuralConfiguration() const
 	{

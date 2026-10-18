@@ -1,5 +1,31 @@
+# 0.4.5
+
+- Keep NR before upscaling active on world frames without frame-generation UI
+  guides, including hidden-interface and Present fallback frames. Main menus
+  and loading screens still suspend NR; after-upscaling composition keeps its
+  UI requirements.
+- Check the NVIDIA driver before preparing RTX 20/30 frame-generation
+  compatibility. Drivers older than 570.65 stop with update instructions;
+  572.16 or newer is recommended. An unreadable version is logged and remains
+  admitted to the existing runtime checks.
+- Stop repeated vendor FG creation attempts after the first failed RTX 20/30
+  feature creation. Preserve its original error, retain potentially in-flight
+  resources, and require a restart. Successful feature recreation is unchanged.
+- Automatic NR can select an available compatible runtime when the legacy DLL
+  is missing. Startup, Apply and the NR enable control use the same file and
+  GPU policy. Explicit custom paths remain explicit.
+- Correct the installation notes for RTX 30's default DLSS-G 310.9.16 route
+  and document runtime selection when upgrading.
+
+The Standard/Universal runtime split, packaged settings defaults, NR tuning,
+placements and passes are unchanged. New game acceptance for this build is
+pending; earlier package results do not establish its gameplay or hardware scope.
+
 # 0.4.4
 
+- RTX 30 Universal now uses DLSS-G 310.9.16 by default, including Preset C.
+  `RTX30LegacyDLSSG=true` retains the older 310.9.1 route. RTX 20 continues
+  using 310.9.1.
 - Universal runs original NVIDIA Neural Rendering 310.9.16 on RTX 20/30/40
   using a verified kernel pack installed in memory. The original DLL stays
   unchanged on disk. RTX 50 continues using NVIDIA's original kernels.

@@ -1,3 +1,5 @@
+#include "FrameGen/NeuralRuntimeKernels.h"
+#include "PluginPaths.h"
 #include "OverlayUI.h"
 #include "UserSettings.h"
 #include "OverlayFrameView.h"
@@ -319,8 +321,12 @@ void OverlayUI::RefreshNeuralRuntimeAvailability()
 {
 #if !defined(TRP_NO_NEURAL_RENDERING)
     // Refresh on menu open/settings actions, not on every rendered frame.
+    const auto& settings = SourceFrameGeneration::GetSingleton()->settings;
     nrRuntimePresent = TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(
-        SourceFrameGeneration::GetSingleton()->settings.neuralRenderingRuntimePath);
+        TheosRenderPipeline::SourceDLSSG::ResolveNeuralRuntimeSetting(settings.configuredRuntimePaths.neural,
+            TheosRenderPipeline::PluginPaths::Directory(),
+            TheosRenderPipeline::SourceDLSSG::Backend::Get().NeuralComputeCapability(),
+            TheosRenderPipeline::NeuralRendering::RuntimeKernelsSupported()));
     settingsDraft.sourceDLSSG.neuralEnabled &= nrRuntimePresent;
 #endif
 }

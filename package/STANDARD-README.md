@@ -1,4 +1,10 @@
-# Theo's Render Pipeline — Standard, 0.4.4
+# Theo's Render Pipeline — Standard, 0.4.5
+
+Version 0.4.5 fixes NR before upscaling when the interface is hidden, checks
+RTX 20/30 driver prerequisites, stops repeated failed FG creation attempts,
+and lets Automatic NR use an available compatible runtime when legacy 310.8
+is missing. Both editions keep their runtime bundle, settings defaults and NR
+controls. New gameplay acceptance is pending; see CHANGELOG.md.
 
 Version 0.4.4 adds Automatic NR runtime selection and NVIDIA NR 310.9.16 on
 RTX 20/30/40 through Universal's in-memory kernel pack. Install matching
@@ -195,7 +201,13 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.4 package has not been tested with ReShade.
+development builds; the exact 0.4.5 package has not been tested with ReShade.
+
+RTX 20/30 frame-generation compatibility requires NVIDIA driver 570.65 or
+newer; 572.16 or newer is recommended. An older detected driver stops startup
+with an update message. If vendor FG feature creation fails, TRP retains the
+first error and requires a restart instead of retrying every frame. Include
+`TheosRenderPipeline.log` when reporting it.
 
 ## NR runtime notes
 
@@ -217,6 +229,12 @@ The separate community and standalone RTX 40 310.9.16 DLLs are no longer
 included. Explicit custom runtime choices remain available, including older
 files supplied separately. If an explicit choice names a file you removed,
 choose Automatic. Older default-runtime settings migrate to Automatic.
+Install the matching Standard and Universal versions when updating. A merged
+update may retain older separately supplied DLLs; these remain selectable.
+Automatic uses the bundled GPU policy, while an explicit old choice stays
+selected. Select Automatic to move that choice to the current default. Do not
+remove legacy 310.8 or INT8 merely to update; both remain supplied for compatibility.
+
 Keep the pack in `SKSE/Plugins/TheosRenderPipeline/NVIDIA/` and use the matching
 Standard/Universal pair. Runtime labels put the version and precision first;
 hover an entry to see its filename.
@@ -234,7 +252,7 @@ rendering dimensions.
 ## With the Universal edition
 
 For the RTX 40 MFG unlock or experimental RTX 20/30 support, install the matching
-0.4.4 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
+0.4.5 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
 the NVIDIA runtimes included here, including NR.
 
 Both editions contain settings files; the later mod's files win. Switching
@@ -296,10 +314,12 @@ Documents/My Games/Skyrim Special Edition/SKSE/.
 Unchanged production DLLs from Streamline 2.14.1 provide DLSS 310.9.1 and the
 required Streamline components. `NVIDIA/Streamline/` contains NVIDIA's DLSS-G
 310.9.16, which adds Frame Generation Preset C. `NVIDIA/Streamline-RTX20-30/`
-retains the Streamline 2.14.1 set with DLSS-G 310.9.1, which experimental
-RTX 20/30 frame generation requires; TRP selects it automatically on those
-cards. The included NR runtime is
-310.8, matching the previously tested DLSS5 reshade/Build16 binary.
+retains the Streamline 2.14.1 set with DLSS-G 310.9.1 for experimental RTX 20
+frame generation. RTX 30 uses 310.9.16 by default; `RTX30LegacyDLSSG=true`
+under `[Experimental]` in the user INI selects the older set after restart.
+Standard includes both legacy NR 310.8 (the retained DLSS5 reshade/Build16
+binary) and original NVIDIA NR 310.9.16. Universal adds the matching kernel
+pack and legacy INT8 alternative.
 See LICENSE and THIRD-PARTY.md for renderer terms, source credits and NVIDIA
 RTX SDK/DLSS terms. NVIDIA-LICENSES.txt retains the accompanying runtime notices.
 NVIDIA components retain their own terms and are not relicensed under the

@@ -1,4 +1,5 @@
 #include <PCH.h>
+#include "FrameGen/NeuralRuntimeKernels.h"
 #include "RendererSettingsController.h"
 #include "RenderPipeline.h"
 #include "FrameGen/SourceFrameGeneration.h"
@@ -93,7 +94,8 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
 #if !defined(TRP_NO_NEURAL_RENDERING)
     // The draft may select a different runtime file; check the one it selects.
     const auto draftRuntime = TheosRenderPipeline::SourceDLSSG::ResolveNeuralRuntimeSetting(
-        settingsDraft.sourceDLSSG.neuralRuntime, PluginPaths::Directory()).string();
+        settingsDraft.sourceDLSSG.neuralRuntime, PluginPaths::Directory(),
+        SourceDLSSG::Backend::Get().NeuralComputeCapability(), NeuralRendering::RuntimeKernelsSupported()).string();
     capabilities.neuralRuntime = TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(draftRuntime);
     capabilities.neuralOperational = SourceDLSSG::Backend::Get().Ready() && !SourceDLSSG::Backend::Get().NeuralState().failed;
 #endif
@@ -236,13 +238,13 @@ RendererSettingsResult RendererSettingsController::SetNeuralRenderingEnabled(boo
     {
         auto& backend = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         auto options = backend.NeuralConfiguration();
-        options.runtimePath = frameGen_.settings.neuralRenderingRuntimePath;
-        options.automaticRuntime =
-            TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(frameGen_.settings.configuredRuntimePaths.neural);
+        options.runtimePath = SourceDLSSG::ResolveNeuralRuntimeSetting(frameGen_.settings.configuredRuntimePaths.neural,
+            PluginPaths::Directory(), backend.NeuralComputeCapability(), NeuralRendering::RuntimeKernelsSupported());
+        options.automaticRuntime = SourceDLSSG::IsAutomaticNeuralRuntime(frameGen_.settings.configuredRuntimePaths.neural);
         options.enabled = enabled;
         if (enabled && !TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(options.runtimePath))
         {
-            return {"NR runtime DLL not found. Install nvngx_dlssnr.dll at the configured path and restart Skyrim.",
+            return {"No NR runtime is available for this selection and GPU. Install the matching runtime package or select another runtime.",
                     true};
         }
         if (options.enabled && (!backend.Ready() ||

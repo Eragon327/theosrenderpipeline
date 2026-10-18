@@ -11,7 +11,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 	// contain PTX 8.7 (CUDA 12.8), which older drivers cannot compile; NGX then
 	// fails NvAPI_D3D12_CreateCuModule on every creation attempt. The R570
 	// branch is the first with CUDA 12.8; 572.16 is its first Game Ready release.
-	inline constexpr std::uint32_t kBackportMinimumDriver = 57000;
+	// CUDA 12.8 release notes list Windows toolkit driver >=570.65.
+    // https://docs.nvidia.com/cuda/archive/12.8.0/cuda-toolkit-release-notes/index.html
+	inline constexpr std::uint32_t kBackportMinimumDriver = 57065;
 	inline constexpr std::uint32_t kBackportRecommendedDriver = 57216;
 
 	// NVIDIA's driver number in hundredths (566.36 is 56636) from the low half

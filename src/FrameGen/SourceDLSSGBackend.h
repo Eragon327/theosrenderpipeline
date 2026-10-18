@@ -95,6 +95,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			bool eligible, ID3D11Texture2D* color, ID3D11Texture2D* motion, ID3D11Texture2D* depth,
 			FrameExtent guideExtent, FrameExtent colorExtent, bool& reset);
 		NeuralOptions NeuralConfiguration() const;
+		int NeuralComputeCapability() const;
 		NeuralSnapshot NeuralState() const;
 		bool ConfigureReflex(sl::ReflexMode a_mode)
 		{

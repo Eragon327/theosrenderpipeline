@@ -42,8 +42,8 @@ int main()
             NvidiaDriverVersion(low(15, 7216)) == 57216, "NVIDIA driver numbers decode from the user-mode version");
         Require(NvidiaDriverVersion(0) == 0 && NvidiaDriverVersion(low(16, 12000)) == 0, "malformed versions are unknown");
         Require(DriverVersionText(56636) == "566.36" && DriverVersionText(57005) == "570.05", "versions print as NVIDIA writes them");
-        Require(!BackportDriverSupported(56636) && BackportDriverSupported(57000) && BackportDriverSupported(57216) &&
-            BackportDriverSupported(61088), "RTX 20/30 frame generation needs the R570 branch or newer");
+        Require(!BackportDriverSupported(56636) && !BackportDriverSupported(57064) && BackportDriverSupported(57065) && BackportDriverSupported(57216) &&
+            BackportDriverSupported(61088), "RTX 20/30 frame generation needs the Windows CUDA 12.8 driver or newer");
         Require(BackportDriverSupported(0), "an unknown version is not refused");
     }
     Require(!Classify("Deferred source DLSS startup failed") && HintFor("Deferred source DLSS startup failed", {}).empty(),

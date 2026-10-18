@@ -2,6 +2,7 @@
 #include "FrameGen/NeuralRuntimeFiles.h"
 #include "FrameGen/NeuralRuntimeCompatibility.h"
 #include "FrameGen/SourceDLSSGSettings.h"
+#include "FrameGen/SourceDLSSGNeuralState.h"
 #include "RuntimePathSettings.h"
 #include <map>
 #include <cstdio>
@@ -68,6 +69,39 @@ int main()
     Require(SourceDLSSG::ListNeuralRuntimes(root / L"missing", "") == std::vector<std::string>{"Automatic"},
         "a missing folder still offers Automatic");
     std::filesystem::remove_all(root, error);
+
+    // Exercise file admission plus sanitizing, not only the candidate-name order.
+    {
+        using namespace SourceDLSSG;
+        std::filesystem::create_directories(folder);
+        const auto latest = root / kLatestNeuralRuntime;
+        const auto legacy = root / kDefaultNeuralRuntime;
+        std::ofstream(latest) << "presence-only fixture";
+        for (int capability : {-1, 75, 86, 89, 120}) {
+            const auto path = ResolveNeuralRuntimeSetting("Automatic", root, capability, true);
+            Require(path == latest && NeuralRuntimePresent(path), "Automatic admits latest when legacy is absent");
+            NeuralOptions options; options.enabled = true; options.automaticRuntime = true;
+            options.runtimePath = path;
+            Require(SanitizeNeuralOptions(options).enabled, "startup sanitizing retains the Automatic request before GPU selection");
+        }
+        Require(!NeuralRuntimePresent(ResolveNeuralRuntimeSetting("Automatic", root, 89, false)),
+            "Standard cannot admit latest on older GPUs without its legacy runtime");
+        Require(!NeuralRuntimePresent(ResolveNeuralRuntimeSetting("Automatic", root, 0, true)),
+            "unknown actual GPU does not run unsupported newer kernels");
+        NeuralOptions custom; custom.enabled = true; custom.runtimePath = legacy;
+        Require(!SanitizeNeuralOptions(custom).enabled, "explicit missing path does not silently migrate");
+        std::ofstream(legacy) << "presence-only fixture";
+        Require(ResolveNeuralRuntimeSetting("Automatic", root, 89, false) == legacy, "Standard retains legacy on RTX40");
+        std::filesystem::remove(latest);
+        Require(ResolveNeuralRuntimeSetting("Automatic", root, 89, true) == legacy, "missing latest falls back to legacy");
+        std::filesystem::remove(legacy);
+        const auto int8 = root / kInt8NeuralRuntime;
+        std::ofstream(int8) << "presence-only fixture";
+        Require(ResolveNeuralRuntimeSetting("Automatic", root, 86, true) == int8, "RTX30 can admit retained INT8 alone");
+        Require(!NeuralRuntimePresent(ResolveNeuralRuntimeSetting("Automatic", root, 89, true)), "RTX40 excludes INT8 even when it is the only file");
+        std::filesystem::remove_all(root, error);
+        Require(!NeuralRuntimePresent(ResolveNeuralRuntimeSetting("Automatic", root, 120, true)), "no files stays unavailable");
+    }
 
     // Automatic: the newest model each GPU generation runs, 310.8 always last.
     {

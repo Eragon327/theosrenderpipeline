@@ -1,4 +1,10 @@
-# Theo's Render Pipeline — Universal, 0.4.4
+# Theo's Render Pipeline — Universal, 0.4.5
+
+Version 0.4.5 fixes NR before upscaling when the interface is hidden, checks
+RTX 20/30 driver prerequisites, stops repeated failed FG creation attempts,
+and lets Automatic NR use an available compatible runtime when legacy 310.8
+is missing. Both editions keep their runtime bundle, settings defaults and NR
+controls. New gameplay acceptance is pending; see CHANGELOG.md.
 
 Version 0.4.4 adds Automatic NR runtime selection and NVIDIA NR 310.9.16 on
 RTX 20/30/40 through Universal's in-memory kernel pack. Install matching
@@ -73,7 +79,7 @@ This package includes the full renderer, configuration and sharpening shader.
 It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
-0.4.4 supplies the complete NVIDIA and Intel runtime bundles, including the
+0.4.5 supplies the complete NVIDIA and Intel runtime bundles, including the
 original NR 310.9.16 and the retained older NR runtime. Universal adds the
 compatibility pack and legacy INT8 alternative. In that setup,
 skip the runtime downloads below.
@@ -101,6 +107,12 @@ skip the runtime downloads below.
 The destination folders are included in the ZIP. Use the `bin/x64` files
 from the download, not its debug or development folders.
 
+RTX 20/30 frame-generation compatibility requires NVIDIA driver 570.65 or
+newer; 572.16 or newer is recommended. An older detected driver stops startup
+with an update message. If vendor FG feature creation fails, TRP retains the
+first error and requires a restart instead of retrying every frame. Include
+`TheosRenderPipeline.log` when reporting it.
+
 ## NR runtime notes
 
 Use **Neural Rendering > Runtime > Automatic** for the default selection.
@@ -121,6 +133,12 @@ The separate community and standalone RTX 40 310.9.16 DLLs are no longer
 included. Explicit custom runtime choices remain available, including older
 files supplied separately. If an explicit choice names a file you removed,
 choose Automatic. Older default-runtime settings migrate to Automatic.
+Install the matching Standard and Universal versions when updating. A merged
+update may retain older separately supplied DLLs; these remain selectable.
+Automatic uses the bundled GPU policy, while an explicit old choice stays
+selected. Select Automatic to move that choice to the current default. Do not
+remove legacy 310.8 or INT8 merely to update; both remain supplied for compatibility.
+
 Keep the pack in `SKSE/Plugins/TheosRenderPipeline/NVIDIA/` and use the matching
 Standard/Universal pair. Runtime labels put the version and precision first;
 hover an entry to see its filename.
@@ -155,8 +173,10 @@ DLSS/frame generation available. Install the DLL and restart to use NR.
 These downloads are the tested set: SR/FG 310.9.1, Streamline 2.14.1 and NR 310.8.
 Newer runtimes use the same filenames and folders; compatibility may vary.
 Preset C needs DLSS-G 310.9.16 or newer, which Standard 0.4.3 bundles; with
-the SDK's 310.9.1 the menu reports that Preset C is unavailable. RTX 20/30
-cards need 310.9.1 for frame generation.
+the SDK's 310.9.1 the menu reports that Preset C is unavailable. RTX 20
+still requires 310.9.1. RTX 30 uses 310.9.16 by default; set
+`RTX30LegacyDLSSG=true` under `[Experimental]` in the user INI to select the
+retained 310.9.1 set on the next restart.
 
 ## Controls
 
@@ -274,7 +294,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.4 package has not been tested with ReShade.
+development builds; the exact 0.4.5 package has not been tested with ReShade.
 
 Keep your existing ReShade installation, preset and hotkeys. **Disable SSE
 ReShade Helper.** TRP supplies the effects and overlay stages. Effects run after
