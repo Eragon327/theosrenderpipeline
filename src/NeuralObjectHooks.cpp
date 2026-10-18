@@ -2,7 +2,9 @@
 #include "NeuralObjectHooks.h"
 #include "HookDetour.h"
 #include "FrameGen/NvidiaHost.h"
+#include <Psapi.h>
 #include <array>
+#include <filesystem>
 
 namespace TheosRenderPipeline::NeuralObjects
 {
@@ -58,13 +60,27 @@ namespace TheosRenderPipeline::NeuralObjects
     {
         if (original || REL::Module::get().version() != REL::Version{1,6,1170,0}) { return; }
         const auto site = REL::ID(107644).address();
-        // Verified in the retained, statically unpacked executable. Recheck live
-        // bytes before patching, and decline competing entry patches safely.
+        // Verified in the retained, statically unpacked executable. SSE Engine
+        // Fixes already replaces this entry with a jump out of the image; chain
+        // behind such a plugin. Any other change is an unknown patch: decline it.
         constexpr std::array<std::uint8_t, 19> prefix{0x48,0x8b,0xc4,0x57,0x41,0x54,0x41,0x55,
             0x41,0x56,0x41,0x57,0x48,0x81,0xec,0x80,0x00,0x00,0x00};
-        if (!HookSafety::Bytes(site, prefix)) {
+        MODULEINFO image{};
+        if (!K32GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(nullptr), &image, sizeof(image)) ||
+            !HookSafety::Entry(site, prefix, REL::Module::get().base(), image.SizeOfImage)) {
             status.store("Object capture hook conflicts with another patch; normal NR retained");
-            logger::warn("[NR Objects] draw-helper prologue mismatch; capture unavailable"); return;
+            logger::warn("[NR Objects] draw-helper entry is neither the original code nor another plugin's jump; capture unavailable");
+            return;
+        }
+        if (const auto previous = HookSafety::EntryJumpTarget(site)) {
+            // A plugin stub usually forwards once more (SKSE trampoline); name the final owner.
+            const auto owner = HookSafety::EntryJumpTarget(previous) ? HookSafety::EntryJumpTarget(previous) : previous;
+            HMODULE module{};
+            std::array<wchar_t, MAX_PATH> path{};
+            if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCWSTR>(owner), &module)) { GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size())); }
+            logger::info("[NR Objects] draw-helper entry already patched by {}; chaining behind it",
+                path[0] ? std::filesystem::path(path.data()).filename().string() : "another plugin");
         }
         original = reinterpret_cast<DrawPass>(HookSafety::InstallEntryDetour(site, reinterpret_cast<std::uintptr_t>(&Pass)));
         status.store(original ? "Experimental opaque-object capture ready" : "Object capture hook unavailable; normal NR retained");

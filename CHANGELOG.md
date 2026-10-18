@@ -40,8 +40,8 @@
 - Experimental NR object masks, off by default: set how much NR applies to
   first-person arms and weapons, player equipment, other humanoids and
   creatures, from 0 (original) to 1 (full NR). Opaque objects only on Skyrim
-  1.6.1170; anything it cannot classify keeps normal NR. It does not reduce
-  NR's cost.
+  1.6.1170, alongside SSE Engine Fixes, which patches the same draw function;
+  anything it cannot classify keeps normal NR. It does not reduce NR's cost.
 
 Apart from direct output, packaged settings defaults are unchanged, as are the
 Standard/Universal runtime split, NR tuning, placements and passes. New game acceptance for this build is

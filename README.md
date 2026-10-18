@@ -42,7 +42,7 @@ options default off; their effect on responsiveness depends on the workload.
 
 The NR tab can preserve first-person arms/weapons, player equipment, other humanoids and creatures independently. A group strength of 0 keeps the original pixels; 1 applies the complete NR result. This source-owned composition runs after the selected one/two-pass chain and its resolution/peripheral resolve, before native UI composition. It leaves automatic skin controls available and does not skip inference or expose per-group vendor tone/structure parameters. Mask rules are global rather than weather/time preset overrides and are saved with the ordinary NR preferences.
 
-Masks default off. The initial capture supports opaque lighting draws on Skyrim 1.6.1170, verifies the hook prologue, and checks capture-frame identity and final depth. Missing, conflicting, transparent, alpha-tested or unclassified capture keeps normal NR behavior. The feature adds geometry replay, classification storage and a composition pass; its game quality, mod compatibility, VRAM use and overhead still need acceptance.
+Masks default off. The initial capture supports opaque lighting draws on Skyrim 1.6.1170, accepts the original hook entry or another plugin's entry jump (such as SSE Engine Fixes') and chains behind it, and checks capture-frame identity and final depth. Missing, conflicting, transparent, alpha-tested or unclassified capture keeps normal NR behavior. The feature adds geometry replay, classification storage and a composition pass; its game quality, mod compatibility, VRAM use and overhead still need acceptance.
 
 ## XeSS and XeFG (experimental)
 

@@ -52,6 +52,41 @@ namespace
         Require(result == a + b + 100 + (kind ? 7 : 0), "forward complete arguments and return value");
         Require(hookCalls == 1 && priorCalls == (kind ? 1u : 0u), "each hook executes once");
     }
+    // SSE Engine Fixes' shape: its entry patch is E9 rel32 plus a nop over the
+    // first two instructions, and its original path runs those instructions
+    // elsewhere and resumes at entry+6. Our 5-byte detour must leave that intact.
+    Function resume{};
+    std::uint64_t Resuming(std::uint64_t a, std::uint64_t b) { ++priorCalls; return resume(a, b) + 7; }
+    void ResumeCase()
+    {
+        Page page;
+        // mov rax,rcx; add rax,rdx; ret
+        constexpr std::array<std::uint8_t, 7> body{0x48,0x89,0xC8,0x48,0x01,0xD0,0xC3};
+        page.Put(0, body.data(), body.size());
+        // The predecessor's original: both relocated instructions, then jmp entry+6.
+        page.Put(256, body.data(), 6);
+        const std::uint8_t back = 0xE9;
+        const auto backRelative = static_cast<std::int32_t>(page.At(6) - page.At(262) - 5);
+        page.Put(262, &back, 1); page.Put(263, &backRelative, 4);
+        resume = reinterpret_cast<Function>(page.At(256));
+        const std::uint8_t stub[]{0x48,0xB8,0,0,0,0,0,0,0,0,0xFF,0xE0};
+        page.Put(1024, stub, sizeof(stub));
+        const auto handler = reinterpret_cast<std::uintptr_t>(&Resuming);
+        page.Put(1026, &handler, sizeof(handler));
+        const std::uint8_t entry[]{0xE9,0,0,0,0,0x90};
+        const auto relative = static_cast<std::int32_t>(page.At(1024) - page.At() - 5);
+        page.Put(0, entry, sizeof(entry)); page.Put(1, &relative, 4);
+        Require(Entry(page.At(), std::span(body).first(6), page.At(), 512), "Engine Fixes-style entry accepted");
+        original = reinterpret_cast<Function>(InstallEntryDetour(page.At(), reinterpret_cast<std::uintptr_t>(&Hook)));
+        Require(original != nullptr, "chain after an E9+nop entry patch");
+        std::array<std::uint8_t, 2> tail{};
+        std::memcpy(tail.data(), reinterpret_cast<const void*>(page.At(5)), tail.size());
+        Require(tail[0] == 0x90 && tail[1] == 0xC3, "detour leaves the predecessor's resume point intact");
+        constexpr std::uint64_t a = 0x123456789ABC0000, b = 0x987654321;
+        priorCalls = hookCalls = 0;
+        Require(reinterpret_cast<Function>(page.At())(a, b) == a + b + 7 + 100, "hook, predecessor and resumed engine body all run");
+        Require(hookCalls == 1 && priorCalls == 1, "each layer runs once");
+    }
     using RectFunction = decltype(&GetClientRect);
     RectFunction rectOriginal{};
     unsigned rectCalls{};
@@ -106,8 +141,9 @@ int main()
 {
     try {
         for (int kind = 0; kind < 3; ++kind) { EntryCase(kind); }
+        ResumeCase();
         ImportCase();
-        std::cout << "PASS: executable original/E9/FF25 detours and replacement GetClientRect call chain\n";
+        std::cout << "PASS: executable original/E9/FF25 detours, an Engine Fixes-style resuming predecessor, and replacement GetClientRect call chain\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
