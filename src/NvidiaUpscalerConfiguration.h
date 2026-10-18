@@ -41,8 +41,19 @@ namespace TheosRenderPipeline::Upscaler
             requested_ = submitted_ = effective_ = persisted_ = startup_ = Sanitize(value);
             initialized_ = true;
             ready_ = failed_ = false;
+            rejectedMode_ = -1;
+            nvidiaServicesReady_ = false;
         }
-        void Request(Creation value) { requested_ = Sanitize(value); }
+        void Request(Creation value)
+        {
+            value = Sanitize(value);
+            if (value.mode != requested_.mode) { rejectedMode_ = -1; }
+            requested_ = value;
+        }
+        void RejectLiveMode() { rejectedMode_ = requested_.mode; }
+        // Host publishes this only after its Streamline/device/module services
+        // initialize. It does not bypass the NR-first NVIDIA-FG startup guard.
+        void SetNvidiaServicesReady(bool ready) { nvidiaServicesReady_ = ready; }
         void Saved() { persisted_ = requested_; }
         const Creation& Requested() const { return requested_; }
         const Creation& Submitted() const { return submitted_; }
@@ -53,15 +64,21 @@ namespace TheosRenderPipeline::Upscaler
         bool Ready() const { return ready_ && !failed_; }
         bool Failed() const { return failed_; }
         bool Unsaved() const { return requested_ != persisted_; }
+        bool LiveModeRejected() const { return requested_.mode == rejectedMode_; }
         bool NeedsRestart() const
         {
-            return requested_.mode != startup_.mode ||
+            return requested_.mode != LiveCandidate().mode ||
                 (requested_.mode != 3 && requested_.quality != startup_.quality);
         }
         Creation LiveCandidate() const
         {
             auto value = requested_;
-            value.mode = startup_.mode;
+            const bool fixedAlgorithm = startup_.mode == 0 ||
+                (startup_.mode == 4 && nvidiaServicesReady_);
+            // Native allocation changes remain separate. A XeSS-started return
+            // requires initialized host NVIDIA services plus SDK extent preflight.
+            if (!fixedAlgorithm || value.mode == 3) { value.mode = effective_.mode; }
+            if (requested_.mode == rejectedMode_) { value.mode = effective_.mode; }
             value.quality = startup_.quality;
             return value;
         }
@@ -76,6 +93,8 @@ namespace TheosRenderPipeline::Upscaler
     private:
         Creation requested_, submitted_, effective_, persisted_, startup_;
         bool initialized_{}, ready_{}, failed_{};
+        int rejectedMode_{-1};
+        bool nvidiaServicesReady_{};
     };
 
     // One production/test boundary: a failed retirement must never reach feature

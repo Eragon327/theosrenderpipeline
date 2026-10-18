@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SourceDLSSGInterop.h"
+#include "UpscalerInputResolution.h"
 #include "../RCASParameters.h"
 #include <xess/xess_d3d12.h>
 #include <filesystem>
@@ -18,9 +19,10 @@ namespace TheosRenderPipeline
         XeSSUpscaler& operator=(const XeSSUpscaler&) = delete;
         HRESULT Open(ID3D12Device* device, const std::filesystem::path& directory);
         HRESULT QuerySize(UINT width, UINT height, int quality, FrameExtent& input);
+        HRESULT QueryInputRange(UINT width, UINT height, int quality, UpscalerInputResolution& range);
         HRESULT Initialize(SourceDLSSG::Interop& transport, ID3D11Device* device,
             FrameExtent output, int quality, DXGI_FORMAT format, bool invertedDepth = true,
-            ID3D12PipelineLibrary* pipelines = nullptr);
+            ID3D12PipelineLibrary* pipelines = nullptr, FrameExtent fixedInput = {});
         HRESULT Evaluate(ID3D11DeviceContext* context, ID3D11Texture2D* color,
             ID3D11Texture2D* motion, ID3D11Texture2D* depth, ID3D11Texture2D* destination,
             float jitterX, float jitterY, bool reset, bool invertedDepth, float sharpness);
@@ -43,6 +45,7 @@ namespace TheosRenderPipeline
         XESS_FUNCTION(xessD3D12Init)
         XESS_FUNCTION(xessD3D12Execute)
         XESS_FUNCTION(xessGetInputResolution)
+        XESS_FUNCTION(xessGetOptimalInputResolution)
         XESS_FUNCTION(xessSetVelocityScale)
         XESS_FUNCTION(xessDestroyContext)
 #undef XESS_FUNCTION

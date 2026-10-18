@@ -1,4 +1,5 @@
 #pragma once
+#include "SourceRetirementPolicy.h"
 
 #include "SourceDLSSGInterop.h"
 #include "SourceDLSSGDeviceLoss.h"
@@ -66,6 +67,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// A live switch to NVIDIA would be refused: NR initialized NGX before
 		// Streamline in this session. Saving NVIDIA and restarting resolves it.
 		bool NvidiaSwitchBlocked() const;
+		bool NvidiaServicesReady() const { return Ready() && nvidiaInitialized_; }
 		// CPU time of one host Present split into its phases: input/output
 		// recording, the presenter's own Present, and retirement/replacement.
 		void ObservePresentTiming(double prepareMs, double presentMs, double finishMs);
@@ -165,7 +167,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			std::scoped_lock lock(generationMutex_); return generationRequest_;
 		}
 		bool Ready() const { return ready_ && SUCCEEDED(fault_); }
-		bool Quiesce();
+		bool Quiesce(RetirementPurpose purpose = RetirementPurpose::Resize);
 		const SessionSnapshot& Snapshot() const { return session_.Snapshot(); }
 		PresentationFeedbackSnapshot PresentationFeedback() const;
 		RuntimeDiagnosticsSnapshot RuntimeDiagnosticState() const { return runtimeDiagnostics_.Snapshot(); }
@@ -188,6 +190,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		HRESULT PollOutputCapture(TheosRenderPipeline::SourceOutputCapture::Result& result) { return outputCapture_.Poll(result); }
 #endif
 		bool ResumeAfterResize();
+		bool ResumeAfterUpscalerReplacement();
 	private:
 		friend class SwapChain; // Transport failures use the same first-error latch.
 		Backend() = default;

@@ -172,7 +172,10 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
     }
     else
     {
-        ImGui::TextDisabled("Mode / scale: save and restart");
+        const auto& switchConfiguration = host->SourceUpscalerSettings();
+        const bool warmSwitch = view.sourceDLSSGActive && (switchConfiguration.Startup().mode == DLSS ||
+            (switchConfiguration.Startup().mode == XeSS && TheosRenderPipeline::SourceDLSSG::Backend::Get().NvidiaServicesReady()));
+        ImGui::TextDisabled(warmSwitch ? "DLSS / XeSS: Apply; render scale: restart" : "Mode / scale: save and restart");
         if (ImGui::BeginTable("##resolution", 2, ImGuiTableFlags_SizingStretchSame))
         {
             ImGui::TableNextColumn();
@@ -210,10 +213,15 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
             ImGui::EndTable();
         }
         DrawSettingsHelp(
-            "DLAA uses native resolution. XeSS uses Intel's quality resolutions, shown in the pipeline after restart.");
+            "Apply switches DLSS/XeSS at the current render size when the SDK accepts it and NVIDIA host services are ready. "
+            "Render scale and DLAA changes require restart. Other startup paths require restart to enter DLSS. "
+            "After restart, XeSS uses Intel's quality resolutions.");
         if (view.sourceDLSSGActive)
         {
             const auto& configuration = host->SourceUpscalerSettings();
+            if (configuration.LiveModeRejected()) {
+                ImGui::TextColored(kAmber, "Live switch unavailable; selected mode requires restart");
+            }
             if (configuration.NeedsRestart())
             {
                 ImGui::TextColored(kAmber, "Mode/render scale awaiting restart");

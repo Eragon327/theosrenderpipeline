@@ -939,7 +939,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			logger::info("[SourceDLSSG] transition gate opened; waiting for three real presents before generation resumes");
 		}
 	}
-	bool Backend::Quiesce()
+	bool Backend::Quiesce(RetirementPurpose purpose)
 	{
 		enabled_ = false;
 		ResetPresentationFeedback();
@@ -948,19 +948,29 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (provider_ == FrameGenerationProvider::XeFG) {
 			if (!CheckXeFG(xefg_.Disable())) { return false; }
 		} else if (session_.Snapshot().stage != SessionStage::Stopped && !CheckSession(session_.Stop())) { return false; }
-		if (!Check(interop_.SignalD3D11(Work::SwapChain), "last D3D11 work before resize") ||
-			!Check(interop_.Drain(), "retire before resize")) { return false; }
-		ReleaseGuides();
+		bool retainedNeural = false;
+#if !defined(TRP_NO_NEURAL_RENDERING)
+		retainedNeural = purpose == RetirementPurpose::UpscalerReplacement && neuralPass_;
+#endif
+		const auto retired = RetireSharedResources(purpose, [&] {
+			return Check(interop_.SignalD3D11(Work::SwapChain), "last D3D11 work before host retirement") &&
+				Check(interop_.Drain(), "retire shared host work");
+		}, [&] {
 #if !defined(TRP_NO_NEURAL_RENDERING)
 		if (neuralPass_) {
 			neuralPass_->RetireTelemetry();
 			std::scoped_lock lock(neuralMutex_);
 			neuralSnapshot_.telemetry = neuralPass_->Telemetry();
 		}
+#endif
+		}, [&] {
+		ReleaseGuides();
+#if !defined(TRP_NO_NEURAL_RENDERING)
 		neuralPass_.reset(); // The presenting queue and NVIDIA input readers are retired.
 #endif
 		hdrPass_.reset();
 		hdrOutputPass_.reset();
+		}, [&] {
 		hdrFrameTagged_ = false;
 		neuralHistory_.Invalidate();
 		neuralEligible_ = false;
@@ -968,9 +978,16 @@ namespace TheosRenderPipeline::SourceDLSSG
 		{
 			std::scoped_lock lock(neuralMutex_);
 			neuralSnapshot_.active = false;
-			neuralSnapshot_.status = "NR retired for resize; next eligible frame recreates the feature";
+			neuralSnapshot_.status = purpose == RetirementPurpose::Resize ?
+				"NR retired for resize; next eligible frame recreates the feature" :
+				"NR retained for fixed-size upscaler replacement; next eligible frame resets history";
 		}
-		return true;
+		});
+		if (retired) {
+			logger::info("[SourceHostRetirement] purpose={} resourcesRetained={} neuralFeatureRetained={}",
+				purpose == RetirementPurpose::Resize ? "resize" : "upscaler", purpose != RetirementPurpose::Resize, retainedNeural);
+		}
+		return retired;
 	}
 	void Backend::PollDisplayHDR(bool a_force)
 	{
@@ -1159,6 +1176,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (nvidiaNeedsPresent_) { return Ready(); }
 		if (provider_ == FrameGenerationProvider::XeFG) { xefg_.ResetHistory(); return Ready(); }
 		return Ready() && CheckSession(session_.ResumeAfterResize());
+	}
+	bool Backend::ResumeAfterUpscalerReplacement()
+	{
+		if (!ResumeAfterResize()) { return false; }
+		// Stop submitted Off without a real Present. Keep it Off while the new
+		// algorithm republishes reset guides; only successful real Presents count.
+		// Reuse the existing transition gate rather than discard option changes.
+		if (!TransitionBlocked()) {
+			transitionWarmupPresents_.store(TransitionWarmupPresents, std::memory_order_release);
+		}
+		logger::info("[SourceUpscaler] resumed with generation gated for three real presents");
+		return true;
 	}
 
 	bool Backend::PreflightProviderSwitch()
