@@ -7,7 +7,7 @@
 - Keep NR before upscaling active on world frames without frame-generation UI
   guides, including hidden-interface and Present fallback frames. Main menus
   and loading screens still suspend NR; after-upscaling composition keeps its
-  UI requirements.
+  UI requirements. Thanks to Eragon327 for the original fix (#104).
 - Check the NVIDIA driver before preparing RTX 20/30 frame-generation
   compatibility. Drivers older than 570.65 stop with update instructions;
   572.16 or newer is recommended. An unreadable version is logged and remains
@@ -34,9 +34,17 @@
   percentiles and frame-generation time stand alone.
 - Lab A/B (developer controls): let the game's next frame render while NVIDIA
   frame generation still reads the current frame's inputs. Off by default.
+- Switch between DLSS and XeSS with Apply at the current render size when the
+  SDK accepts it and NVIDIA's services are ready. Render scale and DLAA changes
+  still need a restart; a refused switch keeps the current mode and says so.
+- Experimental NR object masks, off by default: set how much NR applies to
+  first-person arms and weapons, player equipment, other humanoids and
+  creatures, from 0 (original) to 1 (full NR). Opaque objects only on Skyrim
+  1.6.1170; anything it cannot classify keeps normal NR. It does not reduce
+  NR's cost.
 
-The Standard/Universal runtime split, packaged settings defaults, NR tuning,
-placements and passes are unchanged. New game acceptance for this build is
+Apart from direct output, packaged settings defaults are unchanged, as are the
+Standard/Universal runtime split, NR tuning, placements and passes. New game acceptance for this build is
 pending; earlier package results do not establish its gameplay or hardware scope.
 
 # 0.4.4
