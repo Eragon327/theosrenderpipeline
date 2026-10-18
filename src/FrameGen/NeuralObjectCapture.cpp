@@ -1,6 +1,7 @@
 #include "NeuralObjectCapture.h"
 #include <d3dcompiler.h>
 #include <array>
+#include <cmath>
 #include <cstring>
 
 namespace TheosRenderPipeline::NeuralRendering
@@ -55,7 +56,7 @@ namespace TheosRenderPipeline::NeuralRendering
         FrameExtent active, ID3D11Resource* mainDepth, ID3D11Resource* copiedDepth, const std::function<void()>& draw)
     {
         if (!context || context->GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE ||
-            group == ObjectGroup::World || static_cast<unsigned>(group) > 4 || !active.width || !active.height) { return S_FALSE; }
+            group == ObjectGroup::World || static_cast<unsigned>(group) > 4 || !active.width || !active.height) { lastSkip_ = Skip::Input; return S_FALSE; }
         // Replaying must not append stream-output vertices or disturb a pixel
         // UAV binding. These uncommon draws keep the ordinary NR path.
         ID3D11Buffer* so[4]{}; context->SOGetTargets(4,so);
@@ -64,25 +65,30 @@ namespace TheosRenderPipeline::NeuralRendering
         ID3D11UnorderedAccessView* uavs[8]{};
         context->OMGetRenderTargetsAndUnorderedAccessViews(0,nullptr,nullptr,0,8,uavs);
         for (auto* view : uavs) { if (view) { sideEffects = true; view->Release(); } }
-        if (sideEffects) { return S_FALSE; }
+        if (sideEffects) { lastSkip_ = Skip::SideEffects; return S_FALSE; }
         ComPtr<ID3D11DepthStencilView> dsv;
         std::array<ComPtr<ID3D11RenderTargetView>, 8> targets;
         ID3D11RenderTargetView* rawTargets[8]{};
         context->OMGetRenderTargets(8, rawTargets, &dsv);
         unsigned targetCount{};
         for (unsigned i=0; i<8; ++i) { targets[i].Attach(rawTargets[i]); if (rawTargets[i]) { targetCount=i+1; } }
-        if (!dsv) { return S_FALSE; }
+        if (!dsv) { lastSkip_ = Skip::NoDepth; return S_FALSE; }
         ComPtr<ID3D11Resource> depthResource; dsv->GetResource(&depthResource);
-        if (depthResource.Get() != mainDepth && depthResource.Get() != copiedDepth) { return S_FALSE; }
+        if (depthResource.Get() != mainDepth && depthResource.Get() != copiedDepth) { lastSkip_ = Skip::DepthTarget; return S_FALSE; }
         ComPtr<ID3D11Texture2D> depthTexture;
-        if (FAILED(depthResource.As(&depthTexture))) { return S_FALSE; }
+        if (FAILED(depthResource.As(&depthTexture))) { lastSkip_ = Skip::DepthShape; return S_FALSE; }
         D3D11_TEXTURE2D_DESC depthDesc{}; depthTexture->GetDesc(&depthDesc);
         if (depthDesc.SampleDesc.Count != 1 || depthDesc.ArraySize != 1 ||
-            depthDesc.Width < active.width || depthDesc.Height < active.height) { return S_FALSE; }
+            depthDesc.Width < active.width || depthDesc.Height < active.height) { lastSkip_ = Skip::DepthShape; return S_FALSE; }
         D3D11_VIEWPORT viewport[16]{}; UINT viewportCount=16;
         context->RSGetViewports(&viewportCount, viewport);
+        // Skyrim scales its viewport by the render ratio, so it can be fractional
+        // (5120 x 2/3 = 3413.33) where the render extent is rounded.
+        auto within = [](float value, UINT extent) { return std::abs(value - float(extent)) < 1.0f; };
         if (viewportCount != 1 || viewport[0].TopLeftX != 0 || viewport[0].TopLeftY != 0 ||
-            viewport[0].Width != float(active.width) || viewport[0].Height != float(active.height)) { return S_FALSE; }
+            !within(viewport[0].Width, active.width) || !within(viewport[0].Height, active.height)) {
+            lastSkip_ = Skip::Viewport; lastViewport_ = viewport[0]; lastViewportCount_ = viewportCount; return S_FALSE;
+        }
         ComPtr<ID3D11DepthStencilState> depthState; UINT stencil{};
         context->OMGetDepthStencilState(&depthState, &stencil);
         D3D11_DEPTH_STENCIL_DESC state{};
@@ -91,12 +97,12 @@ namespace TheosRenderPipeline::NeuralRendering
         // Replaying a constant PS cannot reproduce alpha discard, pixel-depth
         // output or transparency. The game adapter excludes alpha-test passes;
         // here require an ordinary depth-writing draw and no stencil mutation.
-        if (!state.DepthEnable || state.DepthWriteMask != D3D11_DEPTH_WRITE_MASK_ALL) { return S_FALSE; }
+        if (!state.DepthEnable || state.DepthWriteMask != D3D11_DEPTH_WRITE_MASK_ALL) { lastSkip_ = Skip::DepthState; return S_FALSE; }
         ComPtr<ID3D11BlendState> blend; float factors[4]{}; UINT sampleMask{};
         context->OMGetBlendState(&blend, factors, &sampleMask);
         if (blend) {
             D3D11_BLEND_DESC blendDesc{}; blend->GetDesc(&blendDesc);
-            if (blendDesc.AlphaToCoverageEnable || blendDesc.RenderTarget[0].BlendEnable) { return S_FALSE; }
+            if (blendDesc.AlphaToCoverageEnable || blendDesc.RenderTarget[0].BlendEnable) { lastSkip_ = Skip::Blend; return S_FALSE; }
         }
         ComPtr<ID3D11Device> device; context->GetDevice(&device);
         auto hr = Initialize(device.Get(), depthDesc.Width, depthDesc.Height);
@@ -107,7 +113,7 @@ namespace TheosRenderPipeline::NeuralRendering
         }
         auto found = depths_.find(depthState.Get());
         if (found == depths_.end()) {
-            if (depths_.size() >= 64) { return S_FALSE; }
+            if (depths_.size() >= 64) { lastSkip_ = Skip::StateCache; return S_FALSE; }
             state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO; state.DepthFunc = D3D11_COMPARISON_EQUAL;
             state.StencilWriteMask = 0;
             if (!state.StencilEnable) {
@@ -138,6 +144,6 @@ namespace TheosRenderPipeline::NeuralRendering
         context->OMSetRenderTargets(targetCount, rawTargets, dsv.Get());
         context->OMSetDepthStencilState(depthState.Get(), stencil);
         context->OMSetBlendState(blend.Get(), factors, sampleMask);
-        ++draws_; return S_OK;
+        ++draws_; lastSkip_ = Skip::None; return S_OK;
     }
 }

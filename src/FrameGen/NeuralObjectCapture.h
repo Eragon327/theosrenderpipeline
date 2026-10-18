@@ -15,6 +15,14 @@ namespace TheosRenderPipeline::NeuralRendering
     class ObjectCapture
     {
     public:
+        // Why the latest Record call kept the ordinary path (S_FALSE).
+        enum class Skip : std::uint8_t { None, Input, SideEffects, NoDepth, DepthTarget, DepthShape, Viewport, DepthState, Blend, StateCache, Count };
+        static constexpr const char* kSkipNames[]{ "none", "input", "side-effects", "no-depth", "depth-target", "depth-shape",
+            "viewport", "depth-state", "blend", "state-cache" };
+        Skip LastSkip() const { return lastSkip_; }
+        // The values the latest viewport or depth-target check rejected, for diagnostics.
+        D3D11_VIEWPORT LastViewport() const { return lastViewport_; }
+        UINT LastViewportCount() const { return lastViewportCount_; }
         HRESULT Record(ID3D11DeviceContext* context, ObjectGroup group, std::uint64_t frame,
             FrameExtent active, ID3D11Resource* mainDepth, ID3D11Resource* copiedDepth,
             const std::function<void()>& draw);
@@ -33,5 +41,8 @@ namespace TheosRenderPipeline::NeuralRendering
         struct DepthState { Microsoft::WRL::ComPtr<ID3D11DepthStencilState> original, readOnly; };
         std::unordered_map<ID3D11DepthStencilState*, DepthState> depths_;
         std::uint64_t frame_{(std::numeric_limits<std::uint64_t>::max)()}, draws_{};
+        Skip lastSkip_{Skip::None};
+        D3D11_VIEWPORT lastViewport_{};
+        UINT lastViewportCount_{};
     };
 }

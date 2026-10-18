@@ -20,6 +20,31 @@ namespace TheosRenderPipeline::NeuralObjects
         NeuralRendering::ObjectCapture capture;
         std::array<bool,4> loggedGroups{};
         std::atomic<const char*> status{"Object capture is unavailable on this Skyrim version"};
+        // Where draws leave the capture path, summarized in the log while masks are on.
+        using Skip = NeuralRendering::ObjectCapture::Skip;
+        struct Counters
+        {
+            std::atomic<std::uint64_t> passes, eligible, draws, tagged, hostSkipped, captured;
+            std::array<std::atomic<std::uint64_t>, 5> groups;
+            std::array<std::atomic<std::uint64_t>, static_cast<std::size_t>(Skip::Count)> skips;
+        };
+        Counters counters;
+        std::array<bool, static_cast<std::size_t>(Skip::Count)> detailLogged{};
+        std::atomic<std::uint64_t> lastSummary{};
+        void Summarize(std::uint64_t frame)
+        {
+            auto previous = lastSummary.load(std::memory_order_relaxed);
+            if (frame < previous + 600 || !lastSummary.compare_exchange_strong(previous, frame)) { return; }
+            auto n = [](const std::atomic<std::uint64_t>& value) { return value.load(std::memory_order_relaxed); };
+            std::string skipped;
+            for (std::size_t i = 1; i < counters.skips.size(); ++i) {
+                if (n(counters.skips[i])) { skipped += std::format(" {}={}", NeuralRendering::ObjectCapture::kSkipNames[i], n(counters.skips[i])); }
+            }
+            logger::info("[NR Objects] frame={} passes={} eligible={} classified world={} firstPerson={} player={} humanoid={} creature={} "
+                "draws={} tagged={} hostSkipped={} captured={} skipped:{}", frame, n(counters.passes), n(counters.eligible),
+                n(counters.groups[0]), n(counters.groups[1]), n(counters.groups[2]), n(counters.groups[3]), n(counters.groups[4]),
+                n(counters.draws), n(counters.tagged), n(counters.hostSkipped), n(counters.captured), skipped.empty() ? " none" : skipped);
+        }
 
         Group Classify(RE::BSGeometry* geometry)
         {
@@ -51,7 +76,16 @@ namespace TheosRenderPipeline::NeuralObjects
         void Pass(RE::BSRenderPass* pass, std::uint32_t technique, bool alphaTest, std::uint32_t flags)
         {
             const auto previous = currentGroup;
-            currentGroup = enabled.load(std::memory_order_relaxed) && pass && pass->shader && pass->shader->shaderType == RE::BSShader::Type::Lighting && !alphaTest ? Classify(pass->geometry) : Group::World;
+            const bool on = enabled.load(std::memory_order_relaxed);
+            const bool eligible = on && pass && pass->shader && pass->shader->shaderType == RE::BSShader::Type::Lighting && !alphaTest;
+            currentGroup = eligible ? Classify(pass->geometry) : Group::World;
+            if (on) {
+                counters.passes.fetch_add(1, std::memory_order_relaxed);
+                if (eligible) {
+                    counters.eligible.fetch_add(1, std::memory_order_relaxed);
+                    counters.groups[static_cast<std::size_t>(currentGroup)].fetch_add(1, std::memory_order_relaxed);
+                }
+            }
             original(pass, technique, alphaTest, flags);
             currentGroup = previous;
         }
@@ -99,14 +133,35 @@ namespace TheosRenderPipeline::NeuralObjects
     }
     void RecordDraw(ID3D11DeviceContext* context, const std::function<void()>& draw)
     {
-        if (!enabled.load(std::memory_order_relaxed) || currentGroup == Group::World) { return; }
+        if (!enabled.load(std::memory_order_relaxed)) { return; }
         auto* host = NvidiaHost::GetSingleton();
-        if (!host->UpscalerReady() || !host->SourceContext(context) || host->NativeUIPassActive()) { return; }
+        counters.draws.fetch_add(1, std::memory_order_relaxed);
+        Summarize(host->PresentCount());
+        if (currentGroup == Group::World) { return; }
+        counters.tagged.fetch_add(1, std::memory_order_relaxed);
+        if (!host->UpscalerReady() || !host->SourceContext(context) || host->NativeUIPassActive()) {
+            counters.hostSkipped.fetch_add(1, std::memory_order_relaxed); return;
+        }
         auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
-        if (!renderer) { return; }
+        if (!renderer) { counters.hostSkipped.fetch_add(1, std::memory_order_relaxed); return; }
         const auto& targets = renderer->GetDepthStencilData().depthStencils;
-        const auto hr = capture.Record(context, currentGroup, host->PresentCount(), {host->RenderWidth(),host->RenderHeight()},
+        const FrameExtent active{host->RenderWidth(), host->RenderHeight()};
+        const auto hr = capture.Record(context, currentGroup, host->PresentCount(), active,
             reinterpret_cast<ID3D11Resource*>(targets[0].texture), reinterpret_cast<ID3D11Resource*>(targets[7].texture), draw);
+        if (hr == S_OK) { counters.captured.fetch_add(1, std::memory_order_relaxed); }
+        else if (hr == S_FALSE) {
+            const auto skip = static_cast<std::size_t>(capture.LastSkip());
+            if (skip < counters.skips.size()) {
+                counters.skips[skip].fetch_add(1, std::memory_order_relaxed);
+                if (!detailLogged[skip]) {
+                    detailLogged[skip] = true;
+                    const auto viewport = capture.LastViewport();
+                    logger::info("[NR Objects] first skip reason={} active={}x{} viewport={}x{} at {},{} count={}",
+                        NeuralRendering::ObjectCapture::kSkipNames[skip], active.width, active.height,
+                        viewport.Width, viewport.Height, viewport.TopLeftX, viewport.TopLeftY, capture.LastViewportCount());
+                }
+            }
+        }
         const auto group = static_cast<unsigned>(currentGroup)-1;
         if (hr == S_OK && group < loggedGroups.size() && !loggedGroups[group]) {
             loggedGroups[group] = true;

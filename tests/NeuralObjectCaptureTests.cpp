@@ -73,8 +73,19 @@ float4 ps():SV_Target {return float4(0.25,0.5,0.75,1);})";
     ID3D11UnorderedAccessView* nullUav{};
     context->OMSetRenderTargetsAndUnorderedAccessViews(D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL,nullptr,nullptr,1,1,&nullUav,nullptr);
     Require(capture.Record(context.Get(),ObjectGroup::World,20,{16,16},depth.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws,"unclassified objects never replay");
-    Require(capture.Record(context.Get(),ObjectGroup::Player,20,{8,8},depth.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws,"other viewport rejected");
-    Require(capture.Record(context.Get(),ObjectGroup::Player,20,{16,16},color.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws,"unrelated depth rejected");
+    Require(capture.Record(context.Get(),ObjectGroup::Player,20,{8,8},depth.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws&&
+        capture.LastSkip()==ObjectCapture::Skip::Viewport&&capture.LastViewport().Width==16,"other viewport rejected and reported");
+    Require(capture.Record(context.Get(),ObjectGroup::Player,20,{16,16},color.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws&&
+        capture.LastSkip()==ObjectCapture::Skip::DepthTarget,"unrelated depth rejected and reported");
+    // Skyrim scales its viewport by the render ratio: 5120 x 2/3 is 3413.33 where
+    // the render extent is 3413. A sub-pixel difference is the same viewport.
+    D3D11_VIEWPORT fractional{0,0,16.333f,15.6f,0,1};context->RSSetViewports(1,&fractional);
+    Require(capture.Record(context.Get(),ObjectGroup::Player,21,{16,16},depth.Get(),nullptr,[&]{++draws;})==S_OK&&draws==1&&
+        capture.LastSkip()==ObjectCapture::Skip::None,"fractional render-ratio viewport is captured");
+    draws=0;
+    D3D11_VIEWPORT oneOff{0,0,17,16,0,1};context->RSSetViewports(1,&oneOff);
+    Require(capture.Record(context.Get(),ObjectGroup::Player,21,{16,16},depth.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws,"a whole-pixel difference is rejected");
+    D3D11_VIEWPORT exact{0,0,16,16,0,1};context->RSSetViewports(1,&exact);
     D3D11_BLEND_DESC blendDesc{};blendDesc.RenderTarget[0].BlendEnable=TRUE;blendDesc.RenderTarget[0].SrcBlend=blendDesc.RenderTarget[0].SrcBlendAlpha=D3D11_BLEND_ONE;
     blendDesc.RenderTarget[0].DestBlend=blendDesc.RenderTarget[0].DestBlendAlpha=D3D11_BLEND_ZERO;blendDesc.RenderTarget[0].BlendOp=blendDesc.RenderTarget[0].BlendOpAlpha=D3D11_BLEND_OP_ADD;
     blendDesc.RenderTarget[0].RenderTargetWriteMask=D3D11_COLOR_WRITE_ENABLE_ALL;ComPtr<ID3D11BlendState> blend;Check(device->CreateBlendState(&blendDesc,&blend),"blend");
