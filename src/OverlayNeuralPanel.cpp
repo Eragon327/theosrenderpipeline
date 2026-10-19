@@ -511,15 +511,6 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             DrawSettingsHelp("Finds skin automatically for Skin structure.");
             return changed;
         });
-        // UI correction applies only after upscaling without Community Shaders.
-        const bool noUICorrection = cs || draft.neuralBeforeUpscaling;
-        SettingRow("UI correction", key("UICorrection").c_str(), false, unavailable || noUICorrection, [&] {
-            const bool changed = ImGui::Checkbox("##v", &tuning.uiCorrection);
-            DrawSettingsHelp(cs ? "Community Shaders draws the UI after NR, so there is nothing to correct."
-                             : draft.neuralBeforeUpscaling ? "Applies only when NR runs after upscaling."
-                                                           : "Corrects the UI NR sees before composition.");
-            return changed;
-        });
         ImGui::EndTable();
     }
     ImGui::Spacing();
@@ -556,6 +547,16 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             DrawSettingsHelp("Combines colour encoding with downsampling where needed, and depth/motion packing with "
                              "peripheral compression. Some configurations have no passes to combine. Applies to both "
                              "passes.");
+            return changed;
+        });
+        // UI correction applies only after upscaling without Community Shaders.
+        const bool noUICorrection = cs || draft.neuralBeforeUpscaling;
+        SettingRow("UI correction", key("UICorrection").c_str(), false, unavailable || noUICorrection, [&] {
+            const bool changed = ImGui::Checkbox("##v", &tuning.uiCorrection);
+            DrawSettingsHelp(cs ? "NVIDIA's UI correction flag. Asks NR to treat the area around the HUD separately. Only "
+                                  "used when NR runs after upscaling. Community Shaders draws the UI after NR, so it is off."
+                                : "NVIDIA's UI correction flag. Asks NR to treat the area around the HUD separately. Only "
+                                  "used when NR runs after upscaling.");
             return changed;
         });
         ImGui::EndTable();
