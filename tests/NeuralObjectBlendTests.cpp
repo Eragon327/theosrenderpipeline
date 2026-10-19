@@ -127,10 +127,9 @@ int main(){
     Check(gpu.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&gpu.allocator)),"allocator");
     Check(gpu.device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,gpu.allocator.Get(),nullptr,IID_PPV_ARGS(&gpu.list)),"list");
     Check(gpu.device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gpu.fence)),"fence");
-    ObjectMaskSettings settings;settings.enabled=true;settings.strength={0,0.25f,0.5f,1};
-    auto sanitized=settings;sanitized.strength={-1,2,std::numeric_limits<float>::quiet_NaN(),0.75f};
-    Require(SanitizeObjectMask(sanitized).strength==std::array<float,4>{0,1,1,0.75f},"sanitize invalid tuning");
-    Require(ObjectStrength(settings,ObjectGroup::World)==1,"world unchanged");
+    ObjectBlendRequest settings;settings.strength={0,0.25f,0.5f,1};
+    Require(SanitizeStrengths({-1,2,std::numeric_limits<float>::quiet_NaN(),0.75f})==std::array<float,4>{0,1,1,0.75f},"sanitize invalid strengths");
+    Require(ObjectBlendRequest{}.strength==std::array<float,4>{1,1,1,1},"a default request keeps the full result");
     ObjectBlend blend;
     for(unsigned iteration=0;iteration<72;++iteration){
         const bool peripheral=iteration>=36;

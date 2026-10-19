@@ -336,7 +336,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::array<ID3D12Resource*,2> controls{};
 		bool controlReset=false;
 		for (unsigned pass=0;pass<2;++pass) {
-			const bool active=options.objectMasks.enabled&&objectMask&&pass<unsigned(effectivePasses)&&
+			const bool active=objectMask&&pass<unsigned(effectivePasses)&&
 				NeuralRendering::UsesReconstructionContract(feature_.Build())&&options.objectMasks.passes[pass].Active();
 			controlReset|=active!=objectControlActive_[pass];
 			if(active) {
@@ -391,7 +391,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// at zero. Each pass owns its scratch texture and retired-slot descriptors.
 		// The existing chain timing includes these blends and pass-2 preparation.
 		auto applyObjectStrength = [&](unsigned pass, const NeuralRendering::FeatureSession::EvaluationInput& evaluation) {
-			if (!options.objectMasks.enabled || !objectMask) { return true; }
+			if (!objectMask) { return true; }
 			const auto strengths = options.objectMasks.passes[pass].Strengths();
 			if (std::all_of(strengths.begin(), strengths.end(), [](float value) { return value == 1; })) { return true; }
 			auto& result = passObjectResult_[pass];
@@ -409,9 +409,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 			before.Add(evaluation.color, read, common).Add(evaluation.output, write, common);
 			if (rawDepthRead) { before.Add(depth, read, common); }
 			before.Flush();
-			NeuralRendering::ObjectMaskSettings settings;
-			settings.enabled = true; settings.strength = strengths;
-			const auto hr = passObjectBlend_[pass].Record(device, list, slot, settings,
+			NeuralRendering::ObjectBlendRequest request;
+			request.strength = strengths;
+			const auto hr = passObjectBlend_[pass].Record(device, list, slot, request,
 				evaluation.color, evaluation.output, objectMask, depth, result.Get(), objectMaskGuideOffset,
 				reconstruction.peripheralCompression);
 			if (FAILED(hr) || FAILED(Interop::RecordCopy(list, result.Get(), evaluation.output))) {
@@ -486,10 +486,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		key.passOverride = options.passOverride; key.requestedPasses = options.passes;
 		key.objectControls=objectControlActive_;
-		key.objectControlsUnavailable=options.objectMasks.enabled&&
+		key.objectControlsUnavailable=
 			(options.objectMasks.passes[0].Active()||options.objectMasks.passes[1].Active())&&
 			!NeuralRendering::UsesReconstructionContract(feature_.Build());
-		if (options.objectMasks.enabled && objectMask) {
+		// The mask preview is drawn over the finished result at full strength;
+		// each pass has already applied its own object strength.
+		if (options.objectMasks.preview != NeuralRendering::ObjectPreview::Off && objectMask) {
 			if (!objectResult_) {
 				auto desc = corrected_->GetDesc();
 				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -506,11 +508,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 				transitionInputs(barriers, read, common);
 				barriers.Flush();
 			}
-			const auto hr = objectBlend_.Record(device, list, slot, options.objectMasks, hudless, corrected_.Get(), objectMask, depth,
+			NeuralRendering::ObjectBlendRequest preview;
+			preview.preview = options.objectMasks.preview; preview.previewGroup = options.objectMasks.previewGroup;
+			const auto hr = objectBlend_.Record(device, list, slot, preview, hudless, corrected_.Get(), objectMask, depth,
 				objectResult_.Get(), objectMaskGuideOffset);
-			if (FAILED(hr)) { status_ = std::format("NR object-mask composition failed 0x{:08X}", static_cast<UINT>(hr)); return false; }
+			if (FAILED(hr)) { status_ = std::format("NR object-mask preview failed 0x{:08X}", static_cast<UINT>(hr)); return false; }
 			const auto copied = Interop::RecordCopy(list, objectResult_.Get(), corrected_.Get());
-			if (FAILED(copied)) { status_ = std::format("NR object-mask result copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
+			if (FAILED(copied)) { status_ = std::format("NR object-mask preview copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
 			if (!resolving) {
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), common, write);

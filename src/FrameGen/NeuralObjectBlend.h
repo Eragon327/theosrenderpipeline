@@ -15,6 +15,19 @@ namespace TheosRenderPipeline::NeuralRendering
         UINT preview{},previewGroup{},peripheral{},reserved{};
     };
     static_assert(sizeof(ObjectBlendConstants) == 64);
+    // One blend: per-group strength (1 keeps the result, 0 the original) and an
+    // optional diagnostic tint. Invalid strengths become 1.
+    struct ObjectBlendRequest
+    {
+        std::array<float,4> strength{1,1,1,1};
+        ObjectPreview preview{};
+        unsigned previewGroup{};
+    };
+    inline std::array<float,4> SanitizeStrengths(std::array<float,4> value)
+    {
+        for (auto& strength : value) { strength = std::isfinite(strength) ? std::clamp(strength, 0.0f, 1.0f) : 1.0f; }
+        return value;
+    }
     inline const std::string kObjectBlendShader = std::string(R"(
 cbuffer Params:register(b0) { uint Width,Height,GuideWidth,GuideHeight; float4 Strength; float2 GuideOffset,Padding; uint Preview,PreviewGroup,Peripheral,Reserved; };
 Texture2D<float4> Original:register(t0);
@@ -46,7 +59,7 @@ RWTexture2D<float4> Result:register(u0);
         // One dispatch per source frame/retired slot. Inputs/output enter and
         // leave COMMON; no queue submission or wait is introduced here.
         HRESULT Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
-            const ObjectMaskSettings& settings, ID3D12Resource* original, ID3D12Resource* neural,
+            const ObjectBlendRequest& request, ID3D12Resource* original, ID3D12Resource* neural,
             ID3D12Resource* objects, ID3D12Resource* depth, ID3D12Resource* output,
             std::array<float,2> guideOffset = {}, bool peripheral = false);
     private:

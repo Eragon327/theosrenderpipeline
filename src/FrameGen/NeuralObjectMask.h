@@ -30,12 +30,11 @@ namespace TheosRenderPipeline::NeuralRendering
         bool operator==(const ObjectPassTuning&) const = default;
     };
 
-    // Source-owned composition of the complete NR result. No inference is skipped.
-    // Unknown/unavailable classification preserves normal NR behavior.
+    // Object rules live in each NR pass; nothing applies to the chain as a whole.
+    // Unknown/unavailable classification preserves normal NR behavior and no
+    // inference is skipped.
     struct ObjectMaskSettings
     {
-        bool enabled{};
-        std::array<float, 4> strength{0, 0, 0, 0};
         std::array<ObjectPassTuning,2> passes{};
         ObjectPreview preview{};
         unsigned previewGroup{}; // 0 shows all groups, 1..4 isolates a group.
@@ -43,9 +42,6 @@ namespace TheosRenderPipeline::NeuralRendering
     };
     inline ObjectMaskSettings SanitizeObjectMask(ObjectMaskSettings value)
     {
-        for (auto& strength : value.strength) {
-            strength = std::isfinite(strength) ? std::clamp(strength, 0.0f, 1.0f) : 1.0f;
-        }
         for (auto& pass : value.passes) for (auto& group : pass.groups) {
             group.strength = std::isfinite(group.strength) ? std::clamp(group.strength,0.0f,1.0f) : 1.0f;
             group.tone = std::isfinite(group.tone) ? std::clamp(group.tone,0.0f,1.0f) : 1.0f;
@@ -66,22 +62,19 @@ namespace TheosRenderPipeline::NeuralRendering
     }
     inline ObjectGroup PackedObjectGroup(float value) { return static_cast<ObjectGroup>(std::bit_cast<std::uint32_t>(value) & 7u); }
     inline float PackedObjectDepth(float value) { return std::bit_cast<float>(std::bit_cast<std::uint32_t>(value) & ~7u); }
-    inline float ObjectStrength(const ObjectMaskSettings& settings, ObjectGroup group)
+    // Classification is captured while a running pass overrides a group or the
+    // mask preview is on. passes is the number of passes that run.
+    inline bool ObjectsInUse(const ObjectMaskSettings& settings, int passes)
     {
-        const auto index = static_cast<unsigned>(group);
-        return settings.enabled && index >= 1 && index <= 4 ? settings.strength[index - 1] : 1.0f;
+        const auto count = static_cast<std::size_t>(std::clamp(passes, 0, 2));
+        return settings.preview != ObjectPreview::Off ||
+               std::any_of(settings.passes.begin(), settings.passes.begin() + count, [](const auto& pass) { return pass.Active(); });
     }
     inline constexpr const char* kObjectGroups[]{"First-person arms / weapons", "Player body / equipment",
         "Other humanoids / equipment", "Creatures"};
-    inline constexpr const char* kObjectMaskKeys[]{"NRFirstPersonStrength", "NRPlayerStrength",
-        "NRHumanoidStrength", "NRCreatureStrength"};
     template<class Ini> ObjectMaskSettings LoadObjectMask(const Ini& ini, const char* section)
     {
         ObjectMaskSettings value;
-        value.enabled = ini.GetBoolValue(section, "NRObjectMasks", false);
-        for (unsigned i = 0; i < 4; ++i) {
-            value.strength[i] = static_cast<float>(ini.GetDoubleValue(section, kObjectMaskKeys[i], 0));
-        }
         for (unsigned pass=0;pass<2;++pass) for (unsigned group=0;group<4;++group) {
             auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
             auto& rule=value.passes[pass].groups[group];
@@ -96,8 +89,7 @@ namespace TheosRenderPipeline::NeuralRendering
     template<class Ini> void StoreObjectMask(Ini& ini, const char* section, ObjectMaskSettings value)
     {
         value = SanitizeObjectMask(value);
-        ini.SetBoolValue(section, "NRObjectMasks", value.enabled);
-        for (unsigned i = 0; i < 4; ++i) { ini.SetDoubleValue(section, kObjectMaskKeys[i], value.strength[i]); }
+        // Released whole-chain keys (NRObjectMasks, NR*Strength) are no longer read or written.
         for (unsigned pass=0;pass<2;++pass) for (unsigned group=0;group<4;++group) {
             auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
             const auto& rule=value.passes[pass].groups[group];

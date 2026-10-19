@@ -97,64 +97,50 @@ const char* NeuralUnavailableReason(int upscaleType, bool nrRuntimePresent)
 // Base and presets share these controls. Presets add each row's state column.
 void DrawNeuralObjectSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bool unavailable)
 {
+    // Object rules belong to each pass; there is no switch or limit for the chain.
     namespace NR = TheosRenderPipeline::NeuralRendering;
     auto& masks = draft.neuralObjectMasks;
     ImGui::BeginDisabled(unavailable);
-    ImGui::Checkbox("Object-specific NR (experimental)", &masks.enabled);
-    if (masks.enabled) {
-        const char* previews[]{"Off","Color overlay","Classes only"};
-        int preview=static_cast<int>(masks.preview);
-        if(ImGui::Combo("Mask preview (session only)",&preview,previews,3)){masks.preview=static_cast<NR::ObjectPreview>(preview);}
-        const char* selections[]{"All groups","First-person","Player","Other humanoids","Creatures"};
-        int selection=static_cast<int>(masks.previewGroup);
-        if(preview&&ImGui::Combo("Preview group",&selection,selections,5)){masks.previewGroup=static_cast<unsigned>(selection);}
-        ImGui::TextDisabled("Green: first-person | Blue: player | Orange: humanoids | Purple: creatures");
-        ImGui::TextWrapped("Strength 0 keeps this pass's input; 1 keeps its full result. Pass 2 at 0 keeps Pass 1's work. "
-            "Tone and structure replace that pass's values and require a reconstruction NR runtime; active controls pause its automatic skin mask. "
-            "Object rules are independent of Match Pass 1 and weather presets.");
-        const bool protectedObjects = std::any_of(masks.strength.begin(), masks.strength.end(), [](float value) { return value < 1; });
-        if (protectedObjects) {
-            ImGui::TextColored(kAmber, "Final object protection limits the per-pass result (Advanced below).");
-            if (ImGui::SmallButton("Allow full per-pass result")) { masks.strength.fill(1); }
-            DrawSettingsHelp("Sets all final object-strength limits to 1. Each pass's own strength still applies. Existing settings change only when you press this button.");
-        }
-        if (ImGui::BeginTable("objectPasses", 2, ImGuiTableFlags_SizingStretchSame)) {
-            for(unsigned pass=0;pass<2;++pass) {
-                ImGui::TableNextColumn();
-                ImGui::PushID(static_cast<int>(pass));
-                ImGui::BeginDisabled(pass==1&&draft.neuralPasses!=2);
-                ImGui::TextColored(kAmber, "Pass %u",pass+1);
-                for(unsigned group=0;group<4;++group) {
-                    ImGui::PushID(static_cast<int>(group));
-                    auto& rule=masks.passes[pass].groups[group];
-                    ImGui::Checkbox(NR::kObjectGroups[group],&rule.enabled);
-                    ImGui::BeginDisabled(!rule.enabled);
-                    ImGui::SliderFloat("Strength",&rule.strength,0,1,"%.2f");
-                    ImGui::SliderFloat("Tone",&rule.tone,0,1,"%.2f");
-                    ImGui::SliderFloat("Structure",&rule.structure,0,1,"%.2f");
-                    if (rule.enabled && masks.strength[group] < 1) {
-                        ImGui::TextColored(kAmber, "Final limit: %.0f%%", masks.strength[group] * 100);
-                    }
-                    ImGui::EndDisabled();ImGui::PopID();
-                }
+    ImGui::TextUnformatted("Object-specific NR (experimental)");
+    const char* previews[]{"Off","Color overlay","Classes only"};
+    int preview=static_cast<int>(masks.preview);
+    if(ImGui::Combo("Mask preview (session only)",&preview,previews,3)){masks.preview=static_cast<NR::ObjectPreview>(preview);}
+    const char* selections[]{"All groups","First-person","Player","Other humanoids","Creatures"};
+    int selection=static_cast<int>(masks.previewGroup);
+    ImGui::BeginDisabled(!preview);
+    if(ImGui::Combo("Preview group",&selection,selections,5)){masks.previewGroup=static_cast<unsigned>(selection);}
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Green: first-person | Blue: player | Orange: humanoids | Purple: creatures");
+    ImGui::TextWrapped("Tick a group to override it in that pass. Strength 0 keeps this pass's input; 1 keeps its full "
+        "result. Pass 2 at 0 keeps Pass 1's work. Tone and structure replace that pass's values and require a "
+        "reconstruction NR runtime; active controls pause its automatic skin mask. Object rules are independent of "
+        "Match Pass 1 and weather presets.");
+    if (ImGui::BeginTable("objectPasses", 2, ImGuiTableFlags_SizingStretchSame)) {
+        for(unsigned pass=0;pass<2;++pass) {
+            ImGui::TableNextColumn();
+            ImGui::PushID(static_cast<int>(pass));
+            ImGui::BeginDisabled(pass==1&&draft.neuralPasses!=2);
+            ImGui::TextColored(kAmber, "Pass %u",pass+1);
+            for(unsigned group=0;group<4;++group) {
+                ImGui::PushID(static_cast<int>(group));
+                auto& rule=masks.passes[pass].groups[group];
+                ImGui::Checkbox(NR::kObjectGroups[group],&rule.enabled);
+                ImGui::BeginDisabled(!rule.enabled);
+                ImGui::SliderFloat("Strength",&rule.strength,0,1,"%.2f");
+                ImGui::SliderFloat("Tone",&rule.tone,0,1,"%.2f");
+                ImGui::SliderFloat("Structure",&rule.structure,0,1,"%.2f");
                 ImGui::EndDisabled();ImGui::PopID();
             }
-            ImGui::EndTable();
+            ImGui::EndDisabled();ImGui::PopID();
         }
-        if (ImGui::TreeNode("Advanced: final object protection")) {
-            ImGui::TextWrapped("Applies after both passes. 0 restores the original object from before NR; 1 leaves the per-pass result. "
-                "A final limit of 0 hides all per-pass changes for that group.");
-            for (unsigned i=0; i<4; ++i) {
-                ImGui::SliderFloat(NR::kObjectGroups[i], &masks.strength[i], 0.0f, 1.0f, "%.2f");
-            }
-            ImGui::TreePop();
-        }
-        ImGui::TextWrapped("%s", TheosRenderPipeline::NeuralObjects::Status());
-        ImGui::TextDisabled(TheosRenderPipeline::NeuralObjects::Current() ?
-            "Current-frame classification available" : "No current-frame classification; normal NR");
-        DrawSettingsHelp("Experimental opaque-object capture for Skyrim 1.6.1170; transparent/alpha-tested or unclassified pixels keep normal NR. "
-            "Strength adds blending work and memory; both inference passes still run. UI is composed afterwards.");
+        ImGui::EndTable();
     }
+    ImGui::TextWrapped("%s", TheosRenderPipeline::NeuralObjects::Status());
+    ImGui::TextDisabled(TheosRenderPipeline::NeuralObjects::Current() ?
+        "Current-frame classification available" : "No current-frame classification; normal NR");
+    DrawSettingsHelp("Experimental opaque-object capture for Skyrim 1.6.1170, captured only while a running pass overrides a "
+        "group or the preview is on. Transparent/alpha-tested or unclassified pixels keep normal NR. Strength adds blending "
+        "work and memory; both inference passes still run. UI is composed afterwards.");
     ImGui::EndDisabled();
 }
 
