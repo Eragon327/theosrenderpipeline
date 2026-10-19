@@ -377,7 +377,12 @@ int wmain(int argc, wchar_t** argv)
             }
             if (GetEnvironmentVariableW(L"TRP_XEFG_PACING_TEST",nullptr,0)) {
                 Require((paced.flags & TheosRenderPipeline::XeFGPacing::Registered)!=0,"private pacing context registration");
-                Require(paced.deadlines>0&&paced.extraPaces>0,"actual SDK deadlines and intermediate output pacing");
+                Require(paced.deadlines>0,"actual SDK deadline callbacks");
+                // When Auto follows sync1 after capability refusal, the SDK's
+                // synchronous Present path supplies the waits. Extra async
+                // output waits are not expected on that path.
+                if (!(expectedAllRefusal && vsyncPolicy))
+                    Require(paced.extraPaces>0,"intermediate output pacing on the async path");
                 Require(meteringOff ? paced.flipCalls==0 : paced.flipCalls>0,"driver metering requests observed");
                 Require(expectedAllRefusal ? paced.driverFailures>0&&paced.meteredCalls==0 :
                     expectedUpdateFailure ? (pacingException || paced.driverFailures>0)&&paced.driverStatus==0 :
