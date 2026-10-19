@@ -4,10 +4,24 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 namespace TheosRenderPipeline::NeuralRendering
 {
     enum class ObjectGroup : unsigned { World, FirstPerson, Player, Humanoid, Creature };
+    enum class ObjectPreview : unsigned { Off, Overlay, Classes };
+    struct ObjectGroupTuning
+    {
+        bool enabled{};
+        float tone{1}, structure{1};
+        bool operator==(const ObjectGroupTuning&) const = default;
+    };
+    struct ObjectPassTuning
+    {
+        std::array<ObjectGroupTuning,4> groups{};
+        bool Active() const { return std::any_of(groups.begin(),groups.end(),[](const auto& g){return g.enabled;}); }
+        bool operator==(const ObjectPassTuning&) const = default;
+    };
 
     // Source-owned composition of the complete NR result. No inference is skipped.
     // Unknown/unavailable classification preserves normal NR behavior.
@@ -15,6 +29,9 @@ namespace TheosRenderPipeline::NeuralRendering
     {
         bool enabled{};
         std::array<float, 4> strength{0, 0, 0, 0};
+        std::array<ObjectPassTuning,2> passes{};
+        ObjectPreview preview{};
+        unsigned previewGroup{}; // 0 shows all groups, 1..4 isolates a group.
         bool operator==(const ObjectMaskSettings&) const = default;
     };
     inline ObjectMaskSettings SanitizeObjectMask(ObjectMaskSettings value)
@@ -22,6 +39,12 @@ namespace TheosRenderPipeline::NeuralRendering
         for (auto& strength : value.strength) {
             strength = std::isfinite(strength) ? std::clamp(strength, 0.0f, 1.0f) : 1.0f;
         }
+        for (auto& pass : value.passes) for (auto& group : pass.groups) {
+            group.tone = std::isfinite(group.tone) ? std::clamp(group.tone,0.0f,1.0f) : 1.0f;
+            group.structure = std::isfinite(group.structure) ? std::clamp(group.structure,0.0f,1.0f) : 1.0f;
+        }
+        if (static_cast<unsigned>(value.preview)>2) { value.preview=ObjectPreview::Off; }
+        if (value.previewGroup>4) { value.previewGroup=0; }
         return value;
     }
     // The captured classification is one R32_FLOAT per pixel: the object's depth
@@ -51,6 +74,14 @@ namespace TheosRenderPipeline::NeuralRendering
         for (unsigned i = 0; i < 4; ++i) {
             value.strength[i] = static_cast<float>(ini.GetDoubleValue(section, kObjectMaskKeys[i], 0));
         }
+        for (unsigned pass=0;pass<2;++pass) for (unsigned group=0;group<4;++group) {
+            auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
+            auto& rule=value.passes[pass].groups[group];
+            rule.enabled=ini.GetBoolValue(section,(prefix+"Enabled").c_str(),false);
+            rule.tone=static_cast<float>(ini.GetDoubleValue(section,(prefix+"Tone").c_str(),1));
+            rule.structure=static_cast<float>(ini.GetDoubleValue(section,(prefix+"Structure").c_str(),1));
+        }
+        // Diagnostic preview is session-only; loading settings always clears it.
         return SanitizeObjectMask(value);
     }
     template<class Ini> void StoreObjectMask(Ini& ini, const char* section, ObjectMaskSettings value)
@@ -58,5 +89,12 @@ namespace TheosRenderPipeline::NeuralRendering
         value = SanitizeObjectMask(value);
         ini.SetBoolValue(section, "NRObjectMasks", value.enabled);
         for (unsigned i = 0; i < 4; ++i) { ini.SetDoubleValue(section, kObjectMaskKeys[i], value.strength[i]); }
+        for (unsigned pass=0;pass<2;++pass) for (unsigned group=0;group<4;++group) {
+            auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
+            const auto& rule=value.passes[pass].groups[group];
+            ini.SetBoolValue(section,(prefix+"Enabled").c_str(),rule.enabled);
+            ini.SetDoubleValue(section,(prefix+"Tone").c_str(),rule.tone);
+            ini.SetDoubleValue(section,(prefix+"Structure").c_str(),rule.structure);
+        }
     }
 }

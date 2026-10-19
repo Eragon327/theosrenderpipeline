@@ -102,8 +102,36 @@ void DrawNeuralObjectSettings(TheosRenderPipeline::SourceDLSSG::Preferences& dra
     ImGui::BeginDisabled(unavailable);
     ImGui::Checkbox("Object-specific NR (experimental)", &masks.enabled);
     if (masks.enabled) {
+        const char* previews[]{"Off","Color overlay","Classes only"};
+        int preview=static_cast<int>(masks.preview);
+        if(ImGui::Combo("Mask preview (session only)",&preview,previews,3)){masks.preview=static_cast<NR::ObjectPreview>(preview);}
+        const char* selections[]{"All groups","First-person","Player","Other humanoids","Creatures"};
+        int selection=static_cast<int>(masks.previewGroup);
+        if(preview&&ImGui::Combo("Preview group",&selection,selections,5)){masks.previewGroup=static_cast<unsigned>(selection);}
+        ImGui::TextDisabled("Green: first-person | Blue: player | Orange: humanoids | Purple: creatures");
+        ImGui::TextUnformatted("Final NR strength (after both passes)");
         for (unsigned i=0; i<4; ++i) {
             ImGui::SliderFloat(NR::kObjectGroups[i], &masks.strength[i], 0.0f, 1.0f, "%.2f");
+        }
+        if(ImGui::TreeNode("Tone and structure inside each pass")) {
+            ImGui::TextWrapped("Group overrides replace that pass's tone and structure controls. The final strength above still applies. "
+                "An active control mask pauses automatic skin masking for that pass; the saved skin setting is retained. Requires a reconstruction NR runtime.");
+            for(unsigned pass=0;pass<2;++pass) {
+                ImGui::PushID(static_cast<int>(pass));
+                ImGui::BeginDisabled(pass==1&&draft.neuralPasses!=2);
+                ImGui::Text("Pass %u",pass+1);
+                for(unsigned group=0;group<4;++group) {
+                    ImGui::PushID(static_cast<int>(group));
+                    auto& rule=masks.passes[pass].groups[group];
+                    ImGui::Checkbox(NR::kObjectGroups[group],&rule.enabled);
+                    ImGui::BeginDisabled(!rule.enabled);
+                    ImGui::SliderFloat("Tone",&rule.tone,0,1,"%.2f");
+                    ImGui::SliderFloat("Structure",&rule.structure,0,1,"%.2f");
+                    ImGui::EndDisabled();ImGui::PopID();
+                }
+                ImGui::EndDisabled();ImGui::PopID();
+            }
+            ImGui::TreePop();
         }
         ImGui::TextWrapped("%s", TheosRenderPipeline::NeuralObjects::Status());
         ImGui::TextDisabled(TheosRenderPipeline::NeuralObjects::Current() ?

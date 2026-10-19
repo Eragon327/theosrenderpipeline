@@ -78,6 +78,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 
 	inline bool SameHistoryOptions(NeuralOptions current, const NeuralOptions& previous)
 	{
+		auto previousComparable=previous;
+		current.objectMasks.preview=previousComparable.objectMasks.preview=NeuralRendering::ObjectPreview::Off;
+		current.objectMasks.previewGroup=previousComparable.objectMasks.previewGroup=0;
 		if (current.appearanceRevision && current.appearanceRevision == previous.appearanceRevision) {
 			const auto retain = [](NeuralRendering::Tuning& value, const NeuralRendering::Tuning& old) {
 				value.intensity = old.intensity;
@@ -87,7 +90,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			retain(current.tuning, previous.tuning);
 			retain(current.secondPass.tuning, previous.secondPass.tuning);
 		}
-		return current == previous;
+		return current == previousComparable;
 	}
 
 	// A frame decision, not a generation policy. NR continues when FG is off.

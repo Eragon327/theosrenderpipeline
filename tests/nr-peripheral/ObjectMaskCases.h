@@ -14,6 +14,9 @@ static void ObjectMaskCases(GPU& gpu)
         options.secondPass.linked=false; options.secondPass.inputScale=.5f; options.secondPass.preset=1;
         options.secondPass.tuning.intensity=.6f; options.secondPass.tuning.uiCorrection=!world;
         options.objectMasks={true,{0,.25f,.5f,1}};
+        options.objectMasks.passes[0].groups[0]={true,.25f,.75f};
+        options.objectMasks.passes[1].groups[1]={true,.75f,.25f};
+        options.tuning.useAutoSkinMask=true;options.secondPass.tuning.useAutoSkinMask=true;
         Fixture::peripheral=peripheral; Fixture::worldOnly=world; Fixture::sourceWidth=w; Fixture::sourceHeight=h;
         Fixture::guideWidth=gw; Fixture::guideHeight=gh; Fixture::transform=true;
         Fixture::workWidth=ModelExtent(w,options.reconstruction); Fixture::workHeight=ModelExtent(h,options.reconstruction);
@@ -30,10 +33,12 @@ static void ObjectMaskCases(GPU& gpu)
         std::vector<Pixel> baseline;
         for(bool masked:{false,true}) {
             Fixture::creations=Fixture::evaluations=Fixture::resets=0;
+            Fixture::objectControls=masked;Fixture::controlEvaluations=0;
             NeuralPass pass;
             auto scene=gpu.Texture(w,h,pixels);
             gpu.Begin(); Require(pass.Record(gpu.device.Get(),gpu.list.Get(),0,options,true,true,float(gw),float(gh),
                 motion.Get(),depth.Get(),world?nullptr:ui.Get(),scene.Get(),world?nullptr:composed.Get(),0,{},masked?mask.Get():nullptr,offset),pass.Status().c_str()); gpu.End();
+            Require(Fixture::controlEvaluations==(masked?unsigned(passes):0),"every requested pass receives its own model-grid controls");
             const auto actual=gpu.Read(pass.Corrected());
             if(!masked){baseline=actual;continue;}
             for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x) {
@@ -56,5 +61,6 @@ static void ObjectMaskCases(GPU& gpu)
         }
     }
     Fixture::secondWidth=Fixture::secondHeight=0;Fixture::transform=false;
+    Fixture::objectControls=false;
     std::puts("PASS object masks inside production NR recorder: both placements, one/two independent passes, scaled/peripheral grids, UI and FG tags");
 }

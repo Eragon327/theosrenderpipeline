@@ -21,10 +21,24 @@ int main()
         values.neuralObjectMasks = {true,{0,0.25f,0.5f,1}};
         StorePreferences(saved,values);
         Require(LoadPreferences(saved).neuralObjectMasks == values.neuralObjectMasks, "all four object mask rules round trip");
+        for(unsigned pass=0;pass<2;++pass)for(unsigned group=0;group<4;++group){
+            values.neuralObjectMasks.passes[pass].groups[group]={group%2==0,float(pass+group)/5,float(group)/4};
+        }
+        StorePreferences(saved,values);
+        Require(LoadPreferences(saved).neuralObjectMasks==values.neuralObjectMasks,"both passes' group controls round trip independently");
+        values.neuralObjectMasks.preview=NeuralRendering::ObjectPreview::Classes;
+        values.neuralObjectMasks.previewGroup=3;
+        StorePreferences(saved,values);
+        Require(LoadPreferences(saved).neuralObjectMasks.preview==NeuralRendering::ObjectPreview::Off,"diagnostic preview never persists");
         NeuralOptions options; options.enabled=true; options.automaticRuntime=true;
         options.objectMasks=values.neuralObjectMasks;
         NeuralHistory history; Require(history.ResetFor(options,true,false),"first object policy resets");
         Require(!history.ResetFor(options,true,false),"unchanged object policy retains history");
+        options.objectMasks.preview=NeuralRendering::ObjectPreview::Overlay;
+        options.objectMasks.previewGroup=2;
+        Require(!history.ResetFor(options,true,false),"preview edits do not invalidate inference history");
+        options.objectMasks.passes[1].groups[1].tone=.125f;
+        Require(history.ResetFor(options,true,false),"per-pass object controls invalidate history");
         options.objectMasks.strength[2]=0.75f;
         Require(history.ResetFor(options,true,false),"object policy edit resets NR history");
     }

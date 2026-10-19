@@ -1,4 +1,5 @@
 #include "FrameGen/NeuralObjectBlend.h"
+#include "FrameGen/NeuralObjectControl.h"
 #include <dxgi1_6.h>
 #include <d3d12sdklayers.h>
 #include <cstdio>
@@ -131,7 +132,8 @@ int main(){
     Require(SanitizeObjectMask(sanitized).strength==std::array<float,4>{0,1,1,0.75f},"sanitize invalid tuning");
     Require(ObjectStrength(settings,ObjectGroup::World)==1,"world unchanged");
     ObjectBlend blend;
-    for(unsigned iteration=0;iteration<12;++iteration){
+    for(unsigned iteration=0;iteration<36;++iteration){
+        settings.preview=static_cast<ObjectPreview>(iteration/12);settings.previewGroup=iteration%2?2:0;
         const UINT gw=iteration%2 ? W/2:W, gh=iteration%2 ? H/2:H;
         const std::array<float,2> offset{iteration%3==0?0.0f:iteration%3==1?0.75f:-0.75f,iteration%2?0.375f:-0.375f};
         std::vector<float> original(W*H*4),neural(W*H*4),objects(gw*gh),depth(gw*gh,0.5f);
@@ -153,11 +155,54 @@ int main(){
         for(UINT y=0;y<H;++y)for(UINT x=0;x<W;++x){
             unsigned qx=unsigned(std::clamp(int(std::floor((x+0.5f)*gw/W+offset[0])),0,int(gw)-1)),
                 qy=unsigned(std::clamp(int(std::floor((y+0.5f)*gh/H+offset[1])),0,int(gh)-1)),i=y*W+x;
-            unsigned group=qx%8;float amount=(qy%4==0&&group>=1&&group<=4)?settings.strength[group-1]:1;
+            unsigned group=qx%8;if(qy%4!=0||group>4)group=0;
+            float amount=group?settings.strength[group-1]:1;
             for(unsigned c=0;c<4;++c){float expected=amount==0?original[i*4+c]:amount==1?neural[i*4+c]:c==3?original[i*4+c]:original[i*4+c]+(neural[i*4+c]-original[i*4+c])*amount;
-                Require(pixels[i*4+c]==expected,"all channels match independent group/occlusion oracle");}
+                const bool selected=group&&(settings.previewGroup==0||settings.previewGroup==group);
+                const std::array<std::array<float,3>,4> colors{{{.2f,.9f,.4f},{.25f,.55f,1},{1,.65f,.15f},{.8f,.3f,.95f}}};
+                if(c<3&&settings.preview==ObjectPreview::Overlay&&selected)expected+=(colors[group-1][c]-expected)*.6f;
+                if(c<3&&settings.preview==ObjectPreview::Classes)expected=selected?colors[group-1][c]:0;
+                Require(std::abs(pixels[i*4+c]-expected)<.000001f,"all channels match independent group/occlusion/preview oracle");}
         }
         Require(blend.Record(gpu.device.Get(),gpu.list.Get(),0,settings,a.Get(),b.Get(),m.Get(),d.Get(),a.Get())==E_INVALIDARG,"alias refused before recording");
+    }
+    // Read the actual shader-generated vendor controls, including independent
+    // pass resources and the nonlinear peripheral grid. No vendor model double
+    // is used for this pixel oracle.
+    for(bool peripheral:{false,true})for(unsigned shift=0;shift<3;++shift){
+        constexpr UINT gw=16,gh=12;
+        const std::array<float,2> offset{shift==0?0.f:shift==1?.75f:-.75f,-.375f};
+        std::vector<float> objects(gw*gh),depth(gw*gh,.5f);
+        for(unsigned y=0;y<gh;++y)for(unsigned x=0;x<gw;++x){
+            const auto i=y*gw+x;objects[i]=PackObjectPixel(static_cast<ObjectGroup>(x%6),.5f);
+            if(y%3==1)depth[i]=.25f;if(y%3==2)objects[i]=std::numeric_limits<float>::quiet_NaN();
+        }
+        auto m=gpu.Texture(DXGI_FORMAT_R32_FLOAT,false,gw,gh),d=gpu.Texture(DXGI_FORMAT_R32_FLOAT,false,gw,gh);
+        gpu.Upload(m.Get(),objects,1);gpu.Upload(d.Get(),depth,1);gpu.Submit();
+        ObjectControl control;Tuning tuning;tuning.intensity=.8f;tuning.localStructureStrength=.6f;tuning.localToneStrength=.4f;
+        for(unsigned pass=0;pass<2;++pass){
+            ObjectPassTuning rules;
+            for(unsigned group=0;group<4;++group)rules.groups[group]={group!=2,float(group+pass)/5,float(4-group)/5};
+            const UINT w=pass?W/2:W,h=pass?H/2:H;
+            Check(control.Record(gpu.device.Get(),gpu.list.Get(),shift%TheosRenderPipeline::SourceDLSSG::kCommandSlots,pass,
+                rules,tuning,m.Get(),d.Get(),w,h,peripheral,offset),"per-pass object controls");
+            auto bytes=gpu.Read(control.Output(pass),16);std::vector<float> pixels(w*h*4);std::memcpy(pixels.data(),bytes.data(),bytes.size());
+            auto coordinate=[&](unsigned p,unsigned size,unsigned guide,float jitter){
+                float uv=(p+.5f)/size;
+                if(peripheral){float r=(2*uv-1)*.9f,a=std::abs(r),unpacked=a;
+                    if(a>.8f){float y=(a-.8f)/.1f;unpacked=.8f+.2f*(.5f*y/(1-.5f*y));}
+                    uv=(std::copysign(unpacked,r)+1)*.5f;}
+                return unsigned(std::clamp(int(std::floor(uv*guide+jitter)),0,int(guide)-1));
+            };
+            for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x){
+                const auto qx=coordinate(x,w,gw,offset[0]),qy=coordinate(y,h,gh,offset[1]);
+                const unsigned group=qx%6;std::array<float,4> expected{.8f,.6f,.4f,1};
+                if(qy%3==0&&group>=1&&group<=4&&rules.groups[group-1].enabled)
+                    expected={.8f,rules.groups[group-1].structure,rules.groups[group-1].tone,1};
+                for(unsigned c=0;c<4;++c)Require(pixels[(y*w+x)*4+c]==expected[c],"RGBA control contract, defaults and mapped groups");
+            }
+        }
+        Require(control.Output(0)!=control.Output(1),"passes retain distinct control resources");
     }
     ComPtr<ID3D12InfoQueue> info;if(SUCCEEDED(gpu.device.As(&info))){
         for(UINT64 i=0;i<info->GetNumStoredMessages();++i){SIZE_T size{};info->GetMessage(i,nullptr,&size);std::vector<char> bytes(size);auto* m=reinterpret_cast<D3D12_MESSAGE*>(bytes.data());info->GetMessage(i,m,&size);

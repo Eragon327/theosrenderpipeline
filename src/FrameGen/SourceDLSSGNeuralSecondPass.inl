@@ -20,6 +20,8 @@ bool NeuralPass::RecordSecond(ID3D12Device* device, ID3D12GraphicsCommandList* l
 	second.color = first.output;
 	second.output = secondOutput_.Get();
 	second.tuning = options.EffectiveSecond().tuning;
+	second.controlMask = secondControlMask_;
+	if (second.controlMask) { second.tuning.useAutoSkinMask = false; }
 	second.reset = first.reset || secondHistoryInvalid_ || secondFeature_.EvaluationsRecorded() == 0;
 	if (secondInput_) {
 		// Already encoded/warped model colour: resize it without encoding or

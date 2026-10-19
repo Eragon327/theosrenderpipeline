@@ -372,7 +372,7 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_link_libraries(TRPNeuralObjectCaptureTests PRIVATE d3d11 d3d12 dxgi d3dcompiler)
     add_test(NAME NeuralObjectCapture COMMAND TRPNeuralObjectCaptureTests)
 
-    add_executable(TRPNeuralObjectBlendTests tests/NeuralObjectBlendTests.cpp src/FrameGen/NeuralObjectBlend.cpp)
+    add_executable(TRPNeuralObjectBlendTests tests/NeuralObjectBlendTests.cpp src/FrameGen/NeuralObjectBlend.cpp src/FrameGen/NeuralObjectControl.cpp)
     target_compile_features(TRPNeuralObjectBlendTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPNeuralObjectBlendTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_include_directories(TRPNeuralObjectBlendTests PRIVATE src)

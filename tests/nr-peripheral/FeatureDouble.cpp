@@ -41,6 +41,13 @@ bool FeatureSession::EnsureInitialized(const CreateInfo& info) {
 }
 bool FeatureSession::RecordEvaluation(const EvaluationInput& in) {
     Require(state_->initialized && in.commandList && in.backbuffer==in.output, "modern feature input contract");
+    Require(bool(in.controlMask)==Fixture::objectControls,"per-pass control mask presence");
+    if(in.controlMask){
+        Extent(in.controlMask,state_->w,state_->h,"control mask follows each model extent");
+        Require(in.controlMask->GetDesc().Format==DXGI_FORMAT_R32G32B32A32_FLOAT,"control mask is RGBA float");
+        Require(!in.tuning.useAutoSkinMask,"object controls take precedence over automatic skin mask");
+        ++Fixture::controlEvaluations;
+    }
     Extent(in.color, state_->w, state_->h,"colour extent");
     Extent(in.output, state_->w, state_->h,"output extent");
     const auto gw=state_->gw;

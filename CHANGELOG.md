@@ -1,3 +1,13 @@
+# Unreleased
+
+- Add a session-only NR object-mask preview with colored overlay, classes-only
+  view and individual group selection.
+- Add independent per-group tone/structure overrides inside each NR pass while
+  retaining final object-strength composition. Active controls pause automatic
+  skin masking for that pass; saved skin settings remain unchanged. Legacy NR
+  retains final strength controls. Object capture remains opt-in and uses the
+  existing opaque-draw replay path.
+
 # 0.4.5
 
 - Reduce repeated NR recording work: use constant parameter names, reuse
