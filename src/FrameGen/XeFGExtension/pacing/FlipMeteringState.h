@@ -35,7 +35,9 @@ struct FlipMeteringState
         status = result;
         feedback = driverFeedback;
         if (!requestedOutputs && status != 0 && configured) return false;
-        if (status == 0) consecutiveFailures = 0;
+        // Off acknowledges cleanup, not support for enabling metering. Keep
+        // failed enables across passthrough/unknown-interval off calls.
+        if (status == 0 && requestedOutputs) consecutiveFailures = 0;
         else if (requestedOutputs && ++consecutiveFailures >= FailureLimit) refused = true;
         if (status != 0) {
             // A failed update does not acknowledge that the preceding driver

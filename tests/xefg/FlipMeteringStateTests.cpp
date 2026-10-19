@@ -42,6 +42,27 @@ int main()
     Require(refused.Record(0, 0, 0, 0) && !refused.configured,
         "software pacing fallback acknowledges driver off");
 
+    FlipMeteringState interrupted;
+    Require(interrupted.Probe(0, 0), "intermittent generation admits the off probe");
+    for (unsigned i = 0; i < FlipMeteringState::FailureLimit; ++i) {
+        Require(interrupted.CanEnable(), "enable is allowed before the refusal limit");
+        Require(interrupted.Record(4, 28000000, -7004, 0), "interrupted enable refusal");
+        Require(interrupted.Record(0, 0, 0, 0) && !interrupted.configured,
+            "passthrough acknowledges off without forgiving failed enables");
+    }
+    Require(interrupted.refused && !interrupted.CanEnable(),
+        "intermittent generation cannot bypass the enable refusal limit");
+    FlipMeteringState recovered;
+    Require(recovered.Probe(0, 0), "recovering driver admits the off probe");
+    for (unsigned i = 0; i < FlipMeteringState::FailureLimit - 1; ++i) {
+        Require(recovered.Record(4, 28000000, -7004, 0), "transient enable failure");
+        Require(recovered.Record(0, 0, 0, 0), "off after transient failure");
+    }
+    Require(recovered.Record(4, 28000000, 0, 0) && recovered.consecutiveFailures == 0,
+        "successful enable resets the failure streak");
+    Require(recovered.Record(4, 28000000, -7004, 0) && !recovered.refused,
+        "failure after successful enable starts a new streak");
+
     FlipMeteringState noIflip;
     Require(noIflip.Probe(0, 0), "capability admission is independent of later flip feedback");
     Require(noIflip.Record(4, 28000000, 0, FlipMeteringState::NoIndependentFlip)

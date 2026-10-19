@@ -12,9 +12,14 @@ accelerates eligible operations in that model. A clean tensor admission refusal
 can retain the ported HLSL model. This is distinct from refusing the optional
 bundle before loading it, which retains the renderer's ordinary XeFG runtime.
 Uncertain initialization or retirement retains resources and requires a restart.
-Driver metering first probes the off form before any enable attempt. A driver
-that refuses that capability probe keeps software pacing; Auto VSync follows
-the game after metering becomes unavailable. Once configuration attempts start,
+Driver metering probes the off form on the first presenter Present while
+metering is enabled, including passthrough before generation starts. Auto VSync
+follows the game until that probe succeeds, and when the driver refuses or the
+first-output layout is unverified. Failed enables accumulate across successful
+off calls; only a successful enable resets the refusal counter. Temporary
+no-independent-flip feedback keeps capability admitted so immediate presentation
+can recover; it does not establish active metering or physical cadence.
+Once configuration attempts start,
 retirement still requires an acknowledged off call. A failed off retains the
 queue, owner and model instead of allowing replacement.
 

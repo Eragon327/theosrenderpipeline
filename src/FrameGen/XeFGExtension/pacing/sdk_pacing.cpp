@@ -343,6 +343,23 @@ int CallSetFlipConfig(SetFlipConfigFunction function, IUnknown* queue, NvFlipCon
     __except (EXCEPTION_EXECUTE_HANDLER) { return -9999; }
 }
 
+// Under flipMutex, on the presenting thread, including passthrough Presents.
+// No generated batch or interval samples are needed to discover capability.
+void ProbeFlip(Owner& owner) noexcept
+{
+    const auto function = flipFunction.load(std::memory_order_acquire);
+    if (!function || !owner.flipQueue || owner.flip.probed) return;
+    auto& flip = owner.flip;
+    NvFlipConfigV2 probe{kFlipConfigVersion2, 0, 0, 1, -1.0f, 0.0f};
+    const int status = CallSetFlipConfig(function, owner.flipQueue.Get(), &probe);
+    ++flip.calls; ++flipCalls; if (status != 0) ++driverFailures;
+    flip.Probe(status, probe.flipConfigFeedbackMask);
+    try {
+        trp_pacing_bridge::WriteLog("flip_metering_probe", "\"generation\":"+std::to_string(owner.generation)+
+            ",\"status\":"+std::to_string(status)+",\"admitted\":"+(flip.admitted ? "true" : "false"));
+    } catch (...) {}
+}
+
 // sl.dlss_g presentFrame -> setFlipConfig: nFramesPerBatch = presented = outputs, timePerBatchMs,
 // minControlFrameTimeMs 0, VidPN source 0; outputs 0 is the off form (one presented frame per
 // batch, no metering). Under the owner's flipMutex, on the presenting thread.
@@ -351,16 +368,6 @@ void ConfigureFlip(Owner& owner, uint32_t outputs, int64_t batchNs, const char* 
     const auto function = flipFunction.load(std::memory_order_acquire);
     if (!function || !owner.flipQueue) return;
     auto& flip = owner.flip;
-    if (outputs && !flip.probed) {
-        NvFlipConfigV2 probe{kFlipConfigVersion2, 0, 0, 1, -1.0f, 0.0f};
-        const int status = CallSetFlipConfig(function, owner.flipQueue.Get(), &probe);
-        ++flip.calls; ++flipCalls; if (status != 0) ++driverFailures;
-        flip.Probe(status, probe.flipConfigFeedbackMask);
-        try {
-            trp_pacing_bridge::WriteLog("flip_metering_probe", "\"generation\":"+std::to_string(owner.generation)+
-                ",\"status\":"+std::to_string(status)+",\"admitted\":"+(flip.admitted ? "true" : "false"));
-        } catch (...) {}
-    }
     if (outputs && !flip.CanEnable()) return;
     NvFlipConfigV2 config{kFlipConfigVersion2, outputs, 0, outputs ? outputs : 1u,
         outputs && batchNs > 0 ? float(double(batchNs)/1e6) : -1.0f, 0.0f};
@@ -453,6 +460,8 @@ void FlipBeforePresent(Route& current, const Invocation& call)
             if (flip.configured) ConfigureFlip(owner, 0, 0, "pacing_disabled");
             return;
         }
+        if (flipEnabled.load(std::memory_order_acquire) && firstLayout.load(std::memory_order_acquire))
+            ProbeFlip(owner);
         if (!first)
         {
             if (flip.configured) ConfigureFlip(owner, 0, 0, "frame_generation_off");
@@ -973,7 +982,13 @@ TheosRenderPipeline::XeFGPacing::Stats Snapshot() noexcept
             s.flags|=Registered;
             if (owner->flipQueue) s.flags|=QueueReady;
             std::lock_guard flip(owner->flipMutex);
-            if (owner->flip.refused || owner->disabled.load() || owner->retiring.load()) s.flags|=Unavailable;
+            // Auto follows the caller until the off probe has admitted this
+            // owner. ProbeFlip runs even on sync-1 passthrough, so admission
+            // does not depend on Auto first selecting immediate presentation.
+            // NoIndependentFlip feedback remains recoverable: it describes
+            // the current presentation mode, not a capability refusal.
+            if (!owner->flip.CanEnable() || !firstLayout.load()
+                || owner->disabled.load() || owner->retiring.load()) s.flags|=Unavailable;
             s.feedback=owner->flip.feedback; s.driverStatus=owner->flip.status;
             if (owner->flip.metered) s.flags|=Metered;
         }

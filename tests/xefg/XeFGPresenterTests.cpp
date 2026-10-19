@@ -271,8 +271,14 @@ int wmain(int argc, wchar_t** argv)
                 if (round == 0 && ((stallMode == 1 || stallMode == 3) ? frame >= 9 && frame < 15 : stallMode == 2 && frame >= 2 && frame < 8))
                     Sleep(500);
                 const auto presentStart = std::chrono::steady_clock::now();
-                const auto pacingBeforePresent = presenter.PacingStats().flags;
+                const auto beforePacing = presenter.PacingStats();
+                const auto pacingBeforePresent = beforePacing.flags;
                 const auto presentation = ResolveVSync({vsyncMode,TheosRenderPipeline::XeFGPacing::CanMeter(pacingBeforePresent),true},1,0,true);
+                if (vsyncPolicy && frame == 0) {
+                    Require((pacingBeforePresent & TheosRenderPipeline::XeFGPacing::Unavailable)
+                        && presentation.sync == 1 && !(presentation.flags & DXGI_PRESENT_ALLOW_TEARING),
+                        "Auto follows caller before the first capability probe");
+                }
                 DXGI_PRESENT_PARAMETERS parameters{};
                 const auto result = vsyncPolicy ? (frame % 2 ? proxy1->Present1(presentation.sync,presentation.flags,&parameters) :
                     proxy->Present(presentation.sync,presentation.flags)) : proxy->Present(0, 0);
@@ -283,6 +289,15 @@ int wmain(int argc, wchar_t** argv)
                 Check(result, "Intel present");
                 Require(result == S_OK, "visible present");
                 const auto completedPresent=presenter.AfterPresent(result);
+                if (vsyncPolicy && frame == 0) {
+                    const auto state=presenter.PacingStats();
+                    Require(state.flipCalls == beforePacing.flipCalls + 1,
+                        "off-only capability probe runs on first passthrough Present");
+                    Require(bool(state.flags & TheosRenderPipeline::XeFGPacing::Unavailable) == expectedAllRefusal,
+                        "first passthrough publishes capability admission or refusal");
+                    std::printf("metering_first_present round=%u sync=%u flags=0x%X pacingFlags=%u calls=%llu\n",
+                        round,presentation.sync,presentation.flags,state.flags,state.flipCalls);
+                }
                 if (vsyncPolicy && vsyncMode == VSyncMode::On)
                     Require(!(presenter.PacingStats().flags & TheosRenderPipeline::XeFGPacing::Metered),"VSync On disables metering");
                 if (vsyncPolicy && (frame==31 || frame==32 || frame==63 || frame==64)) {
