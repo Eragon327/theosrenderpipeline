@@ -70,6 +70,25 @@ void Generation()
         auto draft = current; draft.sourceDLSSG.xefgFrameTime = false;
         Require(CountRendererSettingsChanges(draft, current) == 1, "XeFG frame time participates in Apply/Discard");
     }
+    {
+        using TheosRenderPipeline::XeFGDefaultSceneChangeThreshold;
+        CSimpleIniA ini;
+        Require(LoadPreferences(ini).xefgSceneChangeThreshold == XeFGDefaultSceneChangeThreshold,
+            "existing INIs without the key keep Intel's 0.7");
+        Preferences preferences; preferences.xefgSceneChangeThreshold = 0.35f;
+        StorePreferences(ini, preferences);
+        Require(LoadPreferences(ini).xefgSceneChangeThreshold == 0.35f, "a saved scene-change threshold round trips");
+        const std::pair<const char*, float> cases[]{{"3", 1.0f}, {"-1", 0.0f}, {"nan", XeFGDefaultSceneChangeThreshold},
+            {"0.333", 0.33f}, {"garbage", XeFGDefaultSceneChangeThreshold}};
+        for (const auto& [text, expected] : cases) {
+            ini.SetValue("FrameGeneration", "XeFGSceneChangeThreshold", text);
+            Require(LoadPreferences(ini).xefgSceneChangeThreshold == expected,
+                "scene-change thresholds clamp to 0-1 in hundredths; invalid text is Intel's default");
+        }
+        RendererSettingsDraft current; current.valid = true;
+        auto draft = current; draft.sourceDLSSG.xefgSceneChangeThreshold = 0.5f;
+        Require(CountRendererSettingsChanges(draft, current) == 1, "the scene-change threshold participates in Apply/Discard");
+    }
 }
 void MenuKey()
 {

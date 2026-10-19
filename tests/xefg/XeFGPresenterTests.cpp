@@ -186,6 +186,13 @@ int wmain(int argc, wchar_t** argv)
                 Require(presenter.Snapshot().onlyGenerated == onlyGenerated &&
                         presenter.Snapshot().tagGenerated == tagGenerated,
                     "debug view state");
+                // Round 0 changes Intel's scene-change sensitivity live; a new context
+                // has Intel's default until the threshold is sent again.
+                if (round == 1 && frame == 0)
+                    Require(presenter.Snapshot().sceneChangeThreshold < 0, "scene-change threshold resets with the context");
+                const float sceneChange = round == 0 && frame >= 50 ? 0.25f : TheosRenderPipeline::XeFGDefaultSceneChangeThreshold;
+                presenter.SetSceneChangeThreshold(sceneChange);
+                Require(presenter.Snapshot().sceneChangeThreshold == sceneChange, "Intel accepts the scene-change threshold");
                 ID3D12GraphicsCommandList* list{};
                 Check(interop.SignalD3D11(Work::SwapChain), "signal source");
                 Check(interop.Begin(Work::SwapChain, &list), "begin output");

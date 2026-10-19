@@ -762,6 +762,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				if (ui.Format != destination.Format || ui.Width != destination.Width || ui.Height != destination.Height) { intelUI = nullptr; }
 			}
 			if (!CheckXeFG(xefg_.SetDebugView(XeFGOnlyGenerated(), XeFGTagGenerated()))) { return fault_; }
+			xefg_.SetSceneChangeThreshold(XeFGSceneChangeThresholdConfiguration());
 			marks.Begin(D3D12Stage::kXeFGInputs);
 			if (!CheckXeFG(xefg_.BeforePresent(list, motion_.texture12.Get(), depth_.texture12.Get(), intelHudless, intelUI,
 				generationAllowed && prepared && compatible, UIRecompositionConfiguration(),

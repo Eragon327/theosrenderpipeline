@@ -348,6 +348,21 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 ImGui::Checkbox("Send frame time to XeFG##sourceDLSSG", &settingsDraft.sourceDLSSG.xefgFrameTime);
                 DrawSettingsHelp("Gives Intel's frame pacing the measured frame time. On AMD and NVIDIA cards Intel "
                                  "uses it to sanity-check pacing. Apply to compare live.");
+                auto& sceneChange = settingsDraft.sourceDLSSG.xefgSceneChangeThreshold;
+                ImGui::TextUnformatted("Scene change sensitivity");
+                if (sceneChange != TheosRenderPipeline::XeFGDefaultSceneChangeThreshold)
+                {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Default##xefgSceneChange"))
+                        sceneChange = TheosRenderPipeline::XeFGDefaultSceneChangeThreshold;
+                }
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::SliderFloat("##xefgSceneChange", &sceneChange, 0.0f, 1.0f, "%.2f");
+                sceneChange = TheosRenderPipeline::SanitizeXeFGSceneChange(sceneChange);
+                DrawSettingsHelp("How readily XeFG treats a sudden change, such as a camera cut or a fast turn, as a "
+                                 "new scene and shows the rendered frame instead of generating one. Higher avoids "
+                                 "smeared transitions but generates less in fast motion. Intel's default is 0.70. "
+                                 "Apply to compare live.");
             }
             ImGui::Separator();
             ImGui::BeginDisabled(editIntel);

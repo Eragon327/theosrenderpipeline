@@ -156,6 +156,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         source.ConfigureReflex(static_cast<sl::ReflexMode>(frameGen_.settings.sourceDLSSG.reflexMode));
         source.ConfigurePreset(frameGen_.settings.sourceDLSSG.preset);
         source.ConfigureXeFGFrameTime(frameGen_.settings.sourceDLSSG.xefgFrameTime);
+        source.ConfigureXeFGSceneChangeThreshold(frameGen_.settings.sourceDLSSG.xefgSceneChangeThreshold);
         source.ConfigureOutputFPSLimit(frameGen_.settings.sourceDLSSG.outputFPSLimit);
         source.ConfigureGeneration(frameGen_.settings.sourceDLSSG.generation);
         source.ConfigureXeFG(frameGen_.settings.sourceDLSSG.xefg);

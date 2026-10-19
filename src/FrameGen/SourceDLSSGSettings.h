@@ -30,6 +30,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Give Intel XeFG the measured application frame time; on non-Intel GPUs
 		// its software pacing uses this as a sanity check. Live toggle.
 		bool xefgFrameTime{ true };
+		// Intel XeFG scene-change sensitivity, 0-1. Live.
+		float xefgSceneChangeThreshold{ XeFGDefaultSceneChangeThreshold };
 		GenerationRequest generation{};
 		bool neuralEnabled{ false };
 		// Automatic, or an NR runtime DLL relative to Data/SKSE/Plugins unless
@@ -50,6 +52,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 		if (!ValidProvider(static_cast<int>(value.provider))) { value.provider = FrameGenerationProvider::NVIDIA; }
 		value.xefg = SanitizeXeFG(value.xefg);
+		value.xefgSceneChangeThreshold = SanitizeXeFGSceneChange(value.xefgSceneChangeThreshold);
 		// The multiplier is the only user choice: x3-x6 request the experimental unlock.
 		value.xefg.experimentalMFG = value.xefg.generatedFrames > 1;
 		if (value.reflexMode < 0 || value.reflexMode > 2) { value.reflexMode = 1; }
@@ -73,6 +76,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Preferences value;
 		value.provider = static_cast<FrameGenerationProvider>(ini.GetLongValue("FrameGeneration", "Provider", 0));
 		value.xefgFrameTime = ini.GetBoolValue("FrameGeneration", "XeFGFrameTime", true);
+		value.xefgSceneChangeThreshold = static_cast<float>(ini.GetDoubleValue("FrameGeneration", "XeFGSceneChangeThreshold",
+			XeFGDefaultSceneChangeThreshold));
 		value.xefg.generatedFrames = static_cast<std::uint32_t>(std::clamp(ini.GetLongValue("FrameGeneration", "XeFGMultiplier", 2), 2L, static_cast<long>(XeFGMaxGeneratedFrames+1))-1);
 		// Development INIs kept a multiplier behind a separate opt-in; off meant x2.
 		if (!ini.GetBoolValue("FrameGeneration", "XeFGExperimentalMFG", true)) { value.xefg.generatedFrames = 1; }
@@ -117,6 +122,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		constexpr auto section = "SourceDLSSG";
 		ini.SetLongValue("FrameGeneration", "Provider", static_cast<int>(value.provider));
 		ini.SetBoolValue("FrameGeneration", "XeFGFrameTime", value.xefgFrameTime);
+		ini.SetDoubleValue("FrameGeneration", "XeFGSceneChangeThreshold", value.xefgSceneChangeThreshold);
 		ini.Delete("FrameGeneration", "XeFGExperimentalMFG");
 		ini.SetLongValue("FrameGeneration", "XeFGMultiplier", value.xefg.generatedFrames+1);
 		ini.SetLongValue(section, "ReflexMode", value.reflexMode);

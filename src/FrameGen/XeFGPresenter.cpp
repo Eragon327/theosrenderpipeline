@@ -76,6 +76,8 @@ namespace TheosRenderPipeline
         RESOLVE(llModule_, xellAddMarkerData)
         RESOLVE(llModule_, xellDestroyContext)
 #undef RESOLVE
+        xefgSwapChainSetSceneChangeThreshold_ = reinterpret_cast<decltype(xefgSwapChainSetSceneChangeThreshold_)>(
+            GetProcAddress(fgModule_, "xefgSwapChainSetSceneChangeThreshold"));
         xefg_swapchain_version_t fgVersion{}; xell_version_t llVersion{};
         auto hr = FG(xefgSwapChainGetVersion_(&fgVersion), "version");
         if (FAILED(hr)) { return hr; }
@@ -188,6 +190,7 @@ namespace TheosRenderPipeline
         // A new context starts with Intel's debug features off and no frame history.
         debugOnlyGenerated_ = debugTagGenerated_ = false;
         snapshot_.onlyGenerated = snapshot_.tagGenerated = false;
+        sceneChangeThreshold_.reset(); snapshot_.sceneChangeThreshold = -1;
         lastFrameBegin_ = {}; frameIntervalMs_ = 0; snapshot_.frameTimeMs = 0;
         snapshot_.frameId = (std::max)(snapshot_.frameId, lastApplicationFrame);
         if (FAILED(hr = FG(xefgSwapChainSetNumInterpolatedFrames_(fg_, snapshot_.generatedFrames), "select multiplier")) ||
@@ -225,6 +228,30 @@ namespace TheosRenderPipeline
             debugTagGenerated_ = snapshot_.tagGenerated = tagGenerated;
         }
         return hr;
+    }
+    void XeFGPresenter::SetSceneChangeThreshold(float threshold)
+    {
+        if (!initialized_ || sceneChangeThreshold_ == threshold) { return; }
+        // Recorded before the call so a refused value is reported once, not every frame.
+        sceneChangeThreshold_ = threshold;
+        if (!xefgSwapChainSetSceneChangeThreshold_) {
+            if (log_) { log_("scene change threshold unavailable in this runtime; Intel's default retained"); }
+            return;
+        }
+        const auto result = xefgSwapChainSetSceneChangeThreshold_(fg_, threshold);
+        if (result < 0) {
+            if (log_) {
+                const auto text = "scene change threshold " + std::to_string(threshold) + " refused result=" + std::to_string(result);
+                log_(text.c_str());
+            }
+            return;
+        }
+        (void)FG(result, "scene change threshold");
+        snapshot_.sceneChangeThreshold = threshold;
+        if (log_) {
+            const auto text = "scene change threshold=" + std::to_string(threshold);
+            log_(text.c_str());
+        }
     }
     HRESULT XeFGPresenter::Prepare(const sl::Constants& c, bool frameTime)
     {

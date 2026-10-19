@@ -113,6 +113,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool UIRecompositionConfiguration() const { return UsesUIRecomposition(PresetConfiguration()); }
 		void ConfigureXeFGFrameTime(bool a_enabled) { xefgFrameTime_.store(a_enabled, std::memory_order_relaxed); }
 		bool XeFGFrameTimeConfiguration() const { return xefgFrameTime_.load(std::memory_order_relaxed); }
+		void ConfigureXeFGSceneChangeThreshold(float a_threshold)
+		{
+			xefgSceneChange_.store(SanitizeXeFGSceneChange(a_threshold), std::memory_order_relaxed);
+		}
+		float XeFGSceneChangeThresholdConfiguration() const { return xefgSceneChange_.load(std::memory_order_relaxed); }
 		// Lab diagnostics, not saved: present only generated frames (Intel and NVIDIA), or tag them (Intel).
 		void ConfigureXeFGDebugView(bool a_onlyGenerated, bool a_tagGenerated)
 		{
@@ -259,6 +264,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::atomic<DlssgPreset> preset_{ DlssgPreset::B };
 		std::atomic<bool> releaseForPreset_{};
 		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
+		std::atomic<float> xefgSceneChange_{ XeFGDefaultSceneChangeThreshold };
 		std::atomic<bool> nvidiaOverlapNextFrame_{};
 		bool nvidiaOverlapLogged_{}; // Present thread.
 		std::uint64_t frameGenerationTimingKey_{ ~0ull }; // Present thread; the configuration being timed.

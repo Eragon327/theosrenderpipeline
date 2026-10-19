@@ -8,6 +8,7 @@
 #include <xell/xell_d3d12.h>
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include "XeFGOptions.h"
 
@@ -23,6 +24,7 @@ namespace TheosRenderPipeline
         std::uint32_t frameLimitUs{};
         float frameTimeMs{}; // Last frameRenderTime sent; 0 lets Intel estimate.
         float sleepMs{}; // CPU time in the last XeLL sleep.
+        float sceneChangeThreshold{-1}; // Last value Intel accepted; -1 is Intel's default.
         std::uint32_t maxGeneratedFrames{1}, generatedFrames{1};
         bool experimentalMFG{}, unlockReady{};
     };
@@ -45,6 +47,10 @@ namespace TheosRenderPipeline
         HRESULT Prepare(const sl::Constants& camera, bool frameTime = false);
         // Intel debug features; applied when changed and again after recreation.
         HRESULT SetDebugView(bool onlyGenerated, bool tagGenerated);
+        // Scene-change sensitivity, 0-1; applied when changed and after recreation.
+        // A runtime without the call, or one refusing the value, keeps the value in
+        // effect (Intel's default unless set) and generation continues.
+        void SetSceneChangeThreshold(float threshold);
         // ui is optional: a premultiplied UI-only layer matching the HUD-less
         // format and size. AUTO composition blends it when tagged and otherwise
         // extracts the UI from the back buffer.
@@ -92,6 +98,7 @@ namespace TheosRenderPipeline
         TRP_FG_FUNCTION(xefgSwapChainGetLastPresentStatus)
         TRP_FG_FUNCTION(xefgSwapChainSetUiCompositionState)
         TRP_FG_FUNCTION(xefgSwapChainDestroy)
+        TRP_FG_FUNCTION(xefgSwapChainSetSceneChangeThreshold) // Optional.
         TRP_LL_FUNCTION(xellGetVersion)
         TRP_LL_FUNCTION(xellD3D12CreateContext)
         TRP_LL_FUNCTION(xellSetSleepMode)
@@ -112,5 +119,6 @@ namespace TheosRenderPipeline
         std::chrono::steady_clock::time_point lastFrameBegin_{};
         float frameIntervalMs_{};
         bool debugOnlyGenerated_{}, debugTagGenerated_{};
+        std::optional<float> sceneChangeThreshold_; // Last value sent to this context.
     };
 }
