@@ -387,7 +387,9 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     const bool cs = view.communityShaders;
     const bool producerColor = cs && draft.neuralBeforeUpscaling;
     const bool twoPasses = draft.neuralPasses == 2;
-    const float label = LabelWidth({"One pass while weapons are drawn", "Input colour is linear HDR", "NR input resolution"});
+    const float label = LabelWidth({"Scene normalization"});
+    const auto grid = NeuralRowsGrid();
+    const GridScope gridScope(grid);
     const auto width = draft.neuralBeforeUpscaling ? view.renderWidth : view.outputWidth;
     const auto height = draft.neuralBeforeUpscaling ? view.renderHeight : view.outputHeight;
     const char* placements[]{"Before upscaling", "After upscaling"};
@@ -482,7 +484,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     auto& tuning = pass2 ? shown.tuning : draft.neuralTuning;
     float& scale = pass2 ? shown.inputScale : reconstruction.inputScale;
     int& network = pass2 ? shown.preset : reconstruction.preset;
-    const float passLabel = LabelWidth({"Peripheral compression", "Local structure", "UI correction"});
+    const float passLabel = label;
     if (BeginSettingRows("passLook", passLabel))
     {
         SettingRow("Style", key("Style").c_str(), false, unavailable,

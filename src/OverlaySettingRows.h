@@ -54,6 +54,22 @@ namespace Rows
 {
 // Widths in 1x units; callers multiply by the zoom.
 inline constexpr float MaxControl = 520, MinControl = 140, StateColumn = 70;
+// One control column shared by every row table drawn while it is active, so
+// controls start and end at the same x inside and outside the pass panel.
+struct Grid
+{
+    float controlX{}, controlWidth{};
+};
+inline const Grid*& ActiveGrid()
+{
+    static const Grid* grid{};
+    return grid;
+}
+// Screen x of a table column's content, for a table starting at tableX.
+inline float ColumnStart(float tableX, float labelWidth)
+{
+    return tableX + labelWidth + ImGui::GetStyle().CellPadding.x * 3;
+}
 inline void Label(const char* label, bool changed, bool restarts)
 {
     ImGui::AlignTextToFramePadding();
@@ -72,8 +88,15 @@ inline bool BeginSettingRows(const char* id, float labelWidth)
 {
     const float available = ImGui::GetContentRegionAvail().x;
     const float state = ActivePresetDecor() ? Px(Rows::StateColumn) : 0;
-    const float control = std::clamp(available - labelWidth - state - ImGui::GetStyle().CellPadding.x * 6,
+    float control = std::clamp(available - labelWidth - state - ImGui::GetStyle().CellPadding.x * 6,
         Px(Rows::MinControl), Px(Rows::MaxControl));
+    if (const auto* grid = Rows::ActiveGrid())
+    {
+        // The label column takes up whatever lies before the shared control column.
+        const float tableX = ImGui::GetCursorScreenPos().x;
+        labelWidth = (std::max)(Px(20.0f), labelWidth + grid->controlX - Rows::ColumnStart(tableX, labelWidth));
+        control = grid->controlWidth;
+    }
     if (!ImGui::BeginTable(id, ActivePresetDecor() ? 3 : 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return false; }
     ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
     ImGui::TableSetupColumn("control", ImGuiTableColumnFlags_WidthFixed, control);
@@ -133,5 +156,33 @@ bool SettingRow(const char* label, const char* key, bool restarts, bool disabled
 {
     return SettingRowFor(label, {key}, restarts, disabled, std::forward<Control>(control));
 }
+
+// The Neural Rendering settings' shared column, from the current cursor: room for
+// the longest label outside the pass panel, or inside it after the panel's
+// padding, and always room for a Reset column on the right.
+inline Rows::Grid NeuralRowsGrid()
+{
+    const auto& style = ImGui::GetStyle();
+    const float origin = ImGui::GetCursorScreenPos().x;
+    const float available = ImGui::GetContentRegionAvail().x;
+    const float inset = style.WindowPadding.x;
+    const float outside = LabelWidth({"Object-specific NR", "Scene normalization", "Maximum scene gain",
+                                      "Maximum luma ratio", "Neural Rendering", "Reconstruction"});
+    const float inside = LabelWidth({"Peripheral compression", "Local structure", "UI correction", "Skin structure"});
+    Rows::Grid grid;
+    grid.controlX = Rows::ColumnStart(origin, (std::max)(outside, inset + inside));
+    const float right = origin + available - inset - Px(Rows::StateColumn) - style.CellPadding.x * 3;
+    grid.controlWidth = std::clamp(right - grid.controlX, Px(Rows::MinControl), Px(Rows::MaxControl));
+    return grid;
+}
+// Makes grid the active column for its lifetime.
+struct GridScope
+{
+    const Rows::Grid* previous;
+    explicit GridScope(const Rows::Grid& grid) : previous(Rows::ActiveGrid()) { Rows::ActiveGrid() = &grid; }
+    ~GridScope() { Rows::ActiveGrid() = previous; }
+    GridScope(const GridScope&) = delete;
+    GridScope& operator=(const GridScope&) = delete;
+};
 
 }

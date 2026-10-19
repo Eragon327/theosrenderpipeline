@@ -339,7 +339,9 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
         Tooltip("Adds a copy with every setting stored, so it looks the same with anyone's Base. Share its file.");
     }
     Note("Changed settings are amber. Everything else follows Base, including later Base edits.");
-    if (BeginSettingRows("presetName", LabelWidth({"One pass while weapons are drawn", "Input colour is linear HDR"}))) {
+    const auto grid = NeuralRowsGrid();
+    const GridScope gridScope(grid);
+    if (BeginSettingRows("presetName", LabelWidth({"Scene normalization"}))) {
         SettingRow("Name", nullptr, false, false, [&] {
             char name[81]{}; std::snprintf(name, sizeof(name), "%s", preset.name.c_str());
             // The name is the preset's file name, so characters files cannot use are not typed.
