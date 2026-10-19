@@ -22,7 +22,7 @@ int main()
         StorePreferences(saved,values);
         Require(LoadPreferences(saved).neuralObjectMasks == values.neuralObjectMasks, "all four object mask rules round trip");
         for(unsigned pass=0;pass<2;++pass)for(unsigned group=0;group<4;++group){
-            values.neuralObjectMasks.passes[pass].groups[group]={group%2==0,float(pass+group)/5,float(group)/4,float(pass+group)/6};
+            values.neuralObjectMasks.passes[pass].groups[group]={group%2==0,float(pass+group)/5,float(group)/4,float(pass+group)/8};
         }
         StorePreferences(saved,values);
         Require(LoadPreferences(saved).neuralObjectMasks==values.neuralObjectMasks,"both passes' group controls round trip independently");
