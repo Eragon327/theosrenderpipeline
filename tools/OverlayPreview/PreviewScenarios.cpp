@@ -1,4 +1,5 @@
 #include "OverlayPreview.h"
+#include "FrameGen/NeuralRuntimeFiles.h"
 
 #include <cmath>
 
@@ -74,7 +75,9 @@ PreviewScenario Healthy()
     view.textureProviderStatus = "TextureDownscaler not installed";
     view.memorySnapshot = {true, 16 * kGiB, 9 * kGiB + kGiB / 2, 15 * kGiB + kGiB / 4};
 
-    view.neuralRuntimes = {"Data\\SKSE\\Plugins\\TheosRenderPipeline\\NVIDIA\\nvngx_dlssnr.dll"};
+    view.neuralRuntimes = {std::string(SourceDLSSG::kAutomaticNeuralRuntime),
+        std::string(SourceDLSSG::kDefaultNeuralRuntime), std::string(SourceDLSSG::kLatestNeuralRuntime),
+        std::string(SourceDLSSG::kRTX40NeuralRuntime)};
 
     view.sourceReady = true;
     view.generationActive = true;
@@ -99,6 +102,8 @@ PreviewScenario Healthy()
     applied.enabled = true;
     applied.beforeUpscaling = true;
     applied.passes = 2;
+    applied.automaticRuntime = true;
+    applied.runtimePath = std::filesystem::u8path(SourceDLSSG::kLatestNeuralRuntime);
     auto& neural = view.neuralState;
     neural.active = true;
     neural.effectivePasses = 2;
@@ -124,6 +129,20 @@ PreviewScenario Healthy()
     SetTiming(timings, Stage::kHUDLessCopy, 0.11f);
     SetTiming(timings, Stage::kNativeUIComposition, 0.18f);
     SetTiming(timings, Stage::kPresentationCopy, 0.07f);
+    using Stage12 = PerformanceTuning::D3D12Stage;
+    const auto set12 = [&](Stage12 stage, float ms) {
+        timings.d3d12Ms[static_cast<std::size_t>(stage)] = ms;
+        timings.d3d12Available[static_cast<std::size_t>(stage)] = true;
+    };
+    set12(Stage12::kNeuralPrepare, 0.31f);
+    set12(Stage12::kNeuralFinish, 0.44f);
+    set12(Stage12::kOutput, 0.06f);
+    set12(Stage12::kOutputList, 0.12f);
+    set12(Stage12::kFrameGenTagList, 0.09f);
+    set12(Stage12::kFrameGenerationHold, 2.84f);
+    timings.frameGenerationHold = {2.81f, 3.37f, 4.02f, 1024};
+    timings.holdExact = 1011;
+    timings.holdBounded = 13;
     timings.gameFrameCadence = {16.9f, 19.4f, 24.8f, 1024};
     timings.d3d11Frame = {11.6f, 13.2f, 15.9f, 1024};
     timings.sourcePresentCpu = {0.42f, 0.91f, 1.63f, 1024};
