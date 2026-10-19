@@ -52,15 +52,8 @@ inline ImU32 ChangedTint() { return ImGui::GetColorU32(ImVec4(kAmber.x, kAmber.y
 
 namespace Rows
 {
-// Narrow windows show only Reset; its tooltip gives Base's value.
-inline bool compactState{};
 // Widths in 1x units; callers multiply by the zoom.
-inline constexpr float MaxControl = 520, MinControl = 140, WideState = 260, NarrowState = 90;
-inline float StateWidth(float available, float fixed)
-{
-    compactState = available < fixed + Px(WideState);
-    return ActivePresetDecor() ? Px(compactState ? NarrowState : WideState) : 0;
-}
+inline constexpr float MaxControl = 520, MinControl = 140, StateColumn = 70;
 inline void Label(const char* label, bool changed, bool restarts)
 {
     ImGui::AlignTextToFramePadding();
@@ -73,11 +66,12 @@ inline void Label(const char* label, bool changed, bool restarts)
 }
 }
 
-// Label left, control right. Presets add a state column: "Base", or Base's value and Reset.
+// Label left, control right. With a decor (a preset, or Pass 2 compared with
+// Pass 1) a narrow state column holds Reset on rows that differ.
 inline bool BeginSettingRows(const char* id, float labelWidth)
 {
     const float available = ImGui::GetContentRegionAvail().x;
-    const float state = Rows::StateWidth(available, labelWidth + Px(Rows::MaxControl));
+    const float state = ActivePresetDecor() ? Px(Rows::StateColumn) : 0;
     const float control = std::clamp(available - labelWidth - state - ImGui::GetStyle().CellPadding.x * 6,
         Px(Rows::MinControl), Px(Rows::MaxControl));
     if (!ImGui::BeginTable(id, ActivePresetDecor() ? 3 : 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return false; }
@@ -92,57 +86,52 @@ inline bool AnyChanged(std::initializer_list<const char*> keys)
     const auto* decor = ActivePresetDecor();
     return decor && std::ranges::any_of(keys, [&](const char* key) { return key && decor->Changed(key); });
 }
-// The state cell for one row: Base, or what changed with a Reset.
+// The state cell for one row: empty, or Reset when it differs. The tooltip gives
+// the value Reset restores.
 inline void StateCell(std::initializer_list<const char*> keys)
 {
     auto* decor = ActivePresetDecor();
     if (!decor) { return; }
     ImGui::TableNextColumn();
-    ImGui::AlignTextToFramePadding();
     std::string base;
     for (const auto* key : keys) {
         if (key && decor->Changed(key)) { base += std::format("{}{}", base.empty() ? "" : ", ", decor->BaseValue(key)); }
     }
-    if (base.empty()) { ImGui::TextDisabled("%s", decor->Reference()); return; }
+    if (base.empty()) { return; }
     // Rows disable only their label and control, so Reset stays usable.
-    if (!Rows::compactState) { ImGui::TextDisabled("was %s in %s", base.c_str(), decor->Reference()); ImGui::SameLine(); }
+    ImGui::AlignTextToFramePadding();
     ImGui::PushID(*keys.begin());
     if (ImGui::SmallButton("Reset")) {
         for (const auto* key : keys) { if (key && decor->Changed(key)) { decor->Reset(key); } }
     }
     ImGui::PopID();
-    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Use %s's value (%s).", decor->Reference(), base.c_str()); }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Was %s in %s. Reset returns to it.", base.c_str(), decor->Reference()); }
 }
+// One row for the settings in keys; Reset restores all of them that differ.
 // disabled greys the label and control that cannot apply now; the state cell stays usable.
-// description, when given, is a short muted line under the label.
 template <class Control>
-bool DescribedSettingRow(const char* label, const char* description, const char* key, bool restarts, bool disabled,
+bool SettingRowFor(const char* label, std::initializer_list<const char*> keys, bool restarts, bool disabled,
     Control&& control)
 {
-    const bool changed = AnyChanged({key});
+    const bool changed = AnyChanged(keys);
     ImGui::TableNextRow();
     if (changed) { ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ChangedTint()); }
     ImGui::TableNextColumn();
     ImGui::BeginDisabled(disabled);
     Rows::Label(label, changed, restarts);
-    if (description && *description) {
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("%s", description);
-        ImGui::PopTextWrapPos();
-    }
     ImGui::TableNextColumn();
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::PushID(label);
     const bool result = control();
     ImGui::PopID();
     ImGui::EndDisabled();
-    StateCell({key});
+    StateCell(keys);
     return result;
 }
 template <class Control>
 bool SettingRow(const char* label, const char* key, bool restarts, bool disabled, Control&& control)
 {
-    return DescribedSettingRow(label, nullptr, key, restarts, disabled, std::forward<Control>(control));
+    return SettingRowFor(label, {key}, restarts, disabled, std::forward<Control>(control));
 }
 
 }
