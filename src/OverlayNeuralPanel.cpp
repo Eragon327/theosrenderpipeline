@@ -316,10 +316,10 @@ struct PassDecor final : PresetDecor
             const auto value = static_cast<double>(reference);
             switch (kind)
             {
-            case Kind::Style: text = std::format("Style {}", static_cast<int>(value)); break;
+            case Kind::Style: text = NeuralStyleName(static_cast<int>(value)); break;
             case Kind::Percent: text = std::format("{:.1f}%", value * 100); break;
             case Kind::Toggle: text = value != 0 ? "On" : "Off"; break;
-            case Kind::Network: text = value != 0 ? "Previous model (310.8)" : "Default (newest)"; break;
+            case Kind::Network: text = NeuralNetworkName(value != 0 ? 1 : 0); break;
             default: text = std::format("{:.3f}", value); break;
             }
         });
@@ -556,11 +556,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     const GridScope gridScope(grid);
     const auto width = draft.neuralBeforeUpscaling ? view.renderWidth : view.outputWidth;
     const auto height = draft.neuralBeforeUpscaling ? view.renderHeight : view.outputHeight;
-    const char* placements[]{"Before upscaling", "After upscaling"};
-    const char* styles[]{"Style 0", "Style 1", "Style 2", "Style 3", "Style 4", "Style 5", "Style 6", "Style 7"};
-    const char* networks[]{"Default (newest)", "Previous model (310.8)"};
-    const char* methods[]{"Auto | Reconstruct reduced input", "Residual | Add NR changes",
-                          "Ratio | Transfer lighting and colour"};
+
 
     if (BeginSettingRows("nrTop", label))
     {
@@ -586,7 +582,9 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         });
         SettingRow("Placement", "BeforeUpscaling", true, unavailable, [&] {
             int placement = draft.neuralBeforeUpscaling ? 0 : 1;
-            const bool changed = ImGui::Combo("##v", &placement, placements, IM_ARRAYSIZE(placements));
+            const bool changed = Segmented("placement", placement, {
+                {"Before upscaling", true, "NR runs on the render-resolution scene, before DLSS or XeSS."},
+                {"After upscaling", true, "NR runs on the output-resolution image, after upscaling."}});
             if (changed) { draft.neuralBeforeUpscaling = placement == 0; }
             DrawSettingsHelp("Both passes use the selected side of upscaling. UI is composed afterwards.");
             return changed;
@@ -654,8 +652,32 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     const float passLabel = label;
     if (BeginSettingRows("passLook", passLabel))
     {
-        SettingRow("Style", key("Style").c_str(), false, unavailable,
-                   [&] { return ImGui::Combo("##v", &tuning.style, styles, IM_ARRAYSIZE(styles)); });
+        SettingRow("Style", key("Style").c_str(), false, unavailable, [&] {
+            // Named styles as in OptiScaler; Custom takes any number the runtime accepts.
+            const bool legacy = LegacyNeuralRuntime(view);
+            const float box = Px(48.0f);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - box - ImGui::GetStyle().ItemSpacing.x);
+            int index = std::clamp(tuning.style, 0, 3);
+            bool changed = Segmented("style", index, {
+                {"Default", true, "Style 0."},
+                {"Natural", true, "Style 1."},
+                {"Cinematic", true, "Style 2."},
+                {"Custom", !legacy, legacy ? "310.8 accepts Default, Natural and Cinematic only."
+                                           : "Choose another style number, 3 to 7. Their looks are not documented."}});
+            if (changed) { tuning.style = index == 3 ? (std::max)(tuning.style, 3) : index; }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(tuning.style < 3);
+            int custom = tuning.style < 3 ? 3 : tuning.style;
+            ImGui::SetNextItemWidth(box);
+            if (ImGui::InputInt("##customStyle", &custom, 0, 0, ImGuiInputTextFlags_AutoSelectAll))
+            {
+                tuning.style = std::clamp(custom, 3, 7);
+                changed = true;
+            }
+            ImGui::EndDisabled();
+            DrawSettingsHelp(tuning.style < 3 ? "Choose Custom to enter a style number." : "Style number, 3 to 7.");
+            return changed;
+        });
         SettingRow("Intensity", key("Intensity").c_str(), false, unavailable,
                    [&] { return ImGui::SliderFloat("##v", &tuning.intensity, 0, 2); });
         SettingRow("Local tone", key("LocalTone").c_str(), false, unavailable,
@@ -698,9 +720,12 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             return changed;
         });
         SettingRow("Network", key("Network").c_str(), true, unavailable, [&] {
-            const bool changed = ImGui::Combo("##v", &network, networks, IM_ARRAYSIZE(networks));
-            DrawSettingsHelp("Default runs the runtime's newest network. Previous model runs the 310.8 network, which "
-                             "310.9.16 also includes. Separate from the DLSS model preset.");
+            int index = network != 0 ? 1 : 0;
+            const bool changed = Segmented("network", index, {
+                {"Newest", true, "The runtime's newest network."},
+                {"310.8", true, "The 310.8 network, which 310.9.16 also includes."}});
+            if (changed) { network = index; }
+            DrawSettingsHelp("NR network, separate from the DLSS model preset.");
             return changed;
         });
         SettingRowFor("Peripheral compression", {"PeripheralCompression", "CombinedPreparation"}, true, unavailable, [&] {
@@ -789,8 +814,11 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     if (BeginSettingRows("reconstruction", label))
     {
         SettingRow("Reconstruction", "ReconstructionMethod", true, unavailable || producerColor, [&] {
-            int method = static_cast<int>(reconstruction.method);
-            const bool changed = ImGui::Combo("##v", &method, methods, IM_ARRAYSIZE(methods));
+            int method = std::clamp(static_cast<int>(reconstruction.method), 0, 2);
+            const bool changed = Segmented("method", method, {
+                {"Auto", true, "Reconstructs reduced input."},
+                {"Residual", true, "Adds NR's changes; clamps colour to 0..1."},
+                {"Ratio", true, "Transfers lighting and colour; use for linear HDR input."}});
             if (changed) { reconstruction.method = static_cast<NR::ResolveMethod>(method); }
             DrawSettingsHelp(producerColor ? "CS restores scene colour automatically before DLSS."
                                            : "Residual clamps colour to 0..1. Use Ratio for linear HDR input.");

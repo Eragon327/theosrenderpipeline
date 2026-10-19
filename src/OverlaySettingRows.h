@@ -163,6 +163,19 @@ inline bool UndoButton(const char* id)
     draw->PathStroke(colour, 0, stroke);
     return clicked;
 }
+// NR styles by name, as OptiScaler labels 0 to 2; others are custom numbers.
+inline std::string NeuralStyleName(int style)
+{
+    switch (style)
+    {
+    case 0: return "Default";
+    case 1: return "Natural";
+    case 2: return "Cinematic";
+    default: return std::format("Custom {}", style);
+    }
+}
+inline const char* NeuralNetworkName(int preset) { return preset != 0 ? "310.8" : "Newest"; }
+
 // One option of a segmented control. A disabled option shows greyed, with
 // reason as its tooltip.
 struct Segment

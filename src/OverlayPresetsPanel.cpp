@@ -105,8 +105,8 @@ std::string FieldValue(const Appearance::Field& field, const Appearance::Setup& 
     if (key == "Passes") { return value == 2 ? "two passes" : "one pass"; }
     if (key == "Pass2SameAsPass1") { return value != 0 ? "follows Pass 1" : "own settings"; }
     if (key == "ReconstructionMethod") { return value == 2 ? "Ratio" : value == 1 ? "Residual" : "Auto"; }
-    if (key.ends_with("Network")) { return value != 0 ? "Previous model (310.8)" : "Default (newest)"; }
-    if (key.ends_with("Style")) { return std::format("Style {}", static_cast<int>(value)); }
+    if (key.ends_with("Network")) { return NeuralNetworkName(value != 0 ? 1 : 0); }
+    if (key.ends_with("Style")) { return NeuralStyleName(static_cast<int>(value)); }
     if (key.ends_with("InputScale")) { return std::format("{:.1f}%", value * 100); }
     if (key == "ReturnDelay") { return std::format("{:.1f} s", value); }
     if (field.integral && field.low == 0 && field.high == 1) { return value != 0 ? "on" : "off"; }
