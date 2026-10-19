@@ -46,16 +46,19 @@ int main()
         malformed=NeuralRendering::SanitizeObjectMask(malformed);
         Require(malformed.passes[0].groups[0].strength==1 && malformed.passes[1].Strengths()==std::array<float,4>{0,1,1,1},
             "invalid strengths sanitize and disabled groups retain full NR");
-        values.neuralObjectMasks.preview=NeuralRendering::ObjectPreview::Classes;
-        values.neuralObjectMasks.previewGroup=3;
+        values.neuralObjectMasks.previewGroups=0x5;
+        values.neuralObjectMasks.previewClassesOnly=true;
         StorePreferences(saved,values);
-        Require(LoadPreferences(saved).neuralObjectMasks.preview==NeuralRendering::ObjectPreview::Off,"diagnostic preview never persists");
+        Require(!LoadPreferences(saved).neuralObjectMasks.previewGroups && !LoadPreferences(saved).neuralObjectMasks.previewClassesOnly,
+            "diagnostic preview never persists");
+        NeuralRendering::ObjectMaskSettings shown; shown.previewGroups=0x8;
+        Require(NeuralRendering::ObjectsInUse(shown, 1), "showing a group in the preview turns capture on without rules");
         NeuralOptions options; options.enabled=true; options.automaticRuntime=true;
         options.objectMasks=values.neuralObjectMasks;
         NeuralHistory history; Require(history.ResetFor(options,true,false),"first object policy resets");
         Require(!history.ResetFor(options,true,false),"unchanged object policy retains history");
-        options.objectMasks.preview=NeuralRendering::ObjectPreview::Overlay;
-        options.objectMasks.previewGroup=2;
+        options.objectMasks.previewGroups=0x6;
+        options.objectMasks.previewClassesOnly=true;
         Require(!history.ResetFor(options,true,false),"preview edits do not invalidate inference history");
         options.objectMasks.passes[1].groups[1].tone=.125f;
         Require(history.ResetFor(options,true,false),"per-pass object controls invalidate history");

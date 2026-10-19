@@ -491,7 +491,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			!NeuralRendering::UsesReconstructionContract(feature_.Build());
 		// The mask preview is drawn over the finished result at full strength;
 		// each pass has already applied its own object strength.
-		if (options.objectMasks.preview != NeuralRendering::ObjectPreview::Off && objectMask) {
+		if (options.objectMasks.previewGroups && objectMask) {
 			if (!objectResult_) {
 				auto desc = corrected_->GetDesc();
 				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -509,7 +509,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				barriers.Flush();
 			}
 			NeuralRendering::ObjectBlendRequest preview;
-			preview.preview = options.objectMasks.preview; preview.previewGroup = options.objectMasks.previewGroup;
+			preview.previewGroups = options.objectMasks.previewGroups; preview.classesOnly = options.objectMasks.previewClassesOnly;
 			const auto hr = objectBlend_.Record(device, list, slot, preview, hudless, corrected_.Get(), objectMask, depth,
 				objectResult_.Get(), objectMaskGuideOffset);
 			if (FAILED(hr)) { status_ = std::format("NR object-mask preview failed 0x{:08X}", static_cast<UINT>(hr)); return false; }

@@ -68,8 +68,9 @@ namespace TheosRenderPipeline::NeuralRendering
         device->CreateUnorderedAccessView(output,nullptr,&uav,handle);
         transition(output,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         ObjectBlendConstants constants{static_cast<UINT>(d.Width),d.Height,static_cast<UINT>(g.Width),g.Height,
-            SanitizeStrengths(request.strength),guideOffset,{},(std::min)(static_cast<UINT>(request.preview),2u),
-            (std::min)(request.previewGroup,4u),static_cast<UINT>(peripheral),0};
+            SanitizeStrengths(request.strength),guideOffset,{},
+            (request.previewGroups & 0xFu) ? (request.classesOnly ? 2u : 1u) : 0u,
+            request.previewGroups & 0xFu,static_cast<UINT>(peripheral),0};
         list->SetDescriptorHeaps(1,&heap); list->SetComputeRootSignature(root_.Get()); list->SetPipelineState(pipeline_.Get());
         list->SetComputeRoot32BitConstants(0,sizeof(constants)/4,&constants,0);
         list->SetComputeRootDescriptorTable(1,heap->GetGPUDescriptorHandleForHeapStart());

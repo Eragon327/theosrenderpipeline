@@ -34,7 +34,7 @@ static void ObjectMaskCases(GPU& gpu)
         // 0: no classification; 1: per-pass rules; 2: rules plus the classes preview.
         for(unsigned run:{0u,1u,2u}) {
             const bool masked=run!=0;
-            options.objectMasks.preview=run==2?ObjectPreview::Classes:ObjectPreview::Off;
+            options.objectMasks.previewGroups=run==2?0xFu:0u; options.objectMasks.previewClassesOnly=run==2;
             Fixture::creations=Fixture::evaluations=Fixture::resets=0;
             Fixture::objectControls=masked;Fixture::controlEvaluations=0;
             NeuralPass pass;

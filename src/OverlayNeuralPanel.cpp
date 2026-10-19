@@ -102,13 +102,17 @@ void DrawNeuralObjectSettings(TheosRenderPipeline::SourceDLSSG::Preferences& dra
     auto& masks = draft.neuralObjectMasks;
     ImGui::BeginDisabled(unavailable);
     ImGui::TextUnformatted("Object-specific NR (experimental)");
-    const char* previews[]{"Off","Color overlay","Classes only"};
-    int preview=static_cast<int>(masks.preview);
-    if(ImGui::Combo("Mask preview (session only)",&preview,previews,3)){masks.preview=static_cast<NR::ObjectPreview>(preview);}
-    const char* selections[]{"All groups","First-person","Player","Other humanoids","Creatures"};
-    int selection=static_cast<int>(masks.previewGroup);
-    ImGui::BeginDisabled(!preview);
-    if(ImGui::Combo("Preview group",&selection,selections,5)){masks.previewGroup=static_cast<unsigned>(selection);}
+    // Session-only mask preview: tick the groups to show over the finished image.
+    ImGui::TextUnformatted("Mask preview (session only)");
+    for (unsigned group=0;group<4;++group) {
+        bool shown=(masks.previewGroups>>group)&1;
+        if (group) { ImGui::SameLine(); }
+        if (ImGui::Checkbox((std::string("Show ")+NR::kObjectGroups[group]).c_str(),&shown)) {
+            masks.previewGroups=shown?(masks.previewGroups|(1u<<group)):(masks.previewGroups&~(1u<<group));
+        }
+    }
+    ImGui::BeginDisabled(!masks.previewGroups);
+    ImGui::Checkbox("Classes only",&masks.previewClassesOnly);
     ImGui::EndDisabled();
     ImGui::TextDisabled("Green: first-person | Blue: player | Orange: humanoids | Purple: creatures");
     ImGui::TextWrapped("Tick a group to override it in that pass. Strength 0 keeps this pass's input; 1 keeps its full "

@@ -9,7 +9,6 @@
 namespace TheosRenderPipeline::NeuralRendering
 {
     enum class ObjectGroup : unsigned { World, FirstPerson, Player, Humanoid, Creature };
-    enum class ObjectPreview : unsigned { Off, Overlay, Classes };
     struct ObjectGroupTuning
     {
         bool enabled{};
@@ -36,8 +35,10 @@ namespace TheosRenderPipeline::NeuralRendering
     struct ObjectMaskSettings
     {
         std::array<ObjectPassTuning,2> passes{};
-        ObjectPreview preview{};
-        unsigned previewGroup{}; // 0 shows all groups, 1..4 isolates a group.
+        // Session-only mask preview: bit g-1 shows group g; no bits is off.
+        // Classes only blacks out everything that is not shown.
+        unsigned previewGroups{};
+        bool previewClassesOnly{};
         bool operator==(const ObjectMaskSettings&) const = default;
     };
     inline ObjectMaskSettings SanitizeObjectMask(ObjectMaskSettings value)
@@ -47,8 +48,7 @@ namespace TheosRenderPipeline::NeuralRendering
             group.tone = std::isfinite(group.tone) ? std::clamp(group.tone,0.0f,1.0f) : 1.0f;
             group.structure = std::isfinite(group.structure) ? std::clamp(group.structure,0.0f,1.0f) : 1.0f;
         }
-        if (static_cast<unsigned>(value.preview)>2) { value.preview=ObjectPreview::Off; }
-        if (value.previewGroup>4) { value.previewGroup=0; }
+        value.previewGroups &= 0xFu;
         return value;
     }
     // The captured classification is one R32_FLOAT per pixel: the object's depth
@@ -67,7 +67,7 @@ namespace TheosRenderPipeline::NeuralRendering
     inline bool ObjectsInUse(const ObjectMaskSettings& settings, int passes)
     {
         const auto count = static_cast<std::size_t>(std::clamp(passes, 0, 2));
-        return settings.preview != ObjectPreview::Off ||
+        return settings.previewGroups != 0 ||
                std::any_of(settings.passes.begin(), settings.passes.begin() + count, [](const auto& pass) { return pass.Active(); });
     }
     inline constexpr const char* kObjectGroups[]{"First-person arms / weapons", "Player body / equipment",

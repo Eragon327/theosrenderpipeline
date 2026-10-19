@@ -7,8 +7,8 @@
   rules now live only in each pass; capture runs while a running pass overrides
   a group or the mask preview is on. The released `NRObjectMasks` and
   `NR*Strength` keys are no longer read or written.
-- Add a session-only NR object-mask preview with colored overlay, classes-only
-  view and individual group selection.
+- Add a session-only NR object-mask preview that shows any combination of
+  groups as a coloured overlay, or as classes only.
 - Add independent per-group tone/structure overrides inside each NR pass. Active
   controls pause automatic skin masking for that pass; saved skin settings remain
   unchanged. Legacy NR retains per-pass strength. Object capture remains opt-in
