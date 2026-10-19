@@ -9,7 +9,12 @@
 namespace TheosRenderPipeline::XeFGPacing
 {
     inline constexpr std::uint32_t Version = 1;
-    enum Flags : std::uint32_t { Installed=1, Registered=2, DriverAvailable=4, Requested=8, QueueReady=16, Metered=32, Unsafe=64 };
+    enum Flags : std::uint32_t { Installed=1, Registered=2, DriverAvailable=4, Requested=8, QueueReady=16, Metered=32, Unsafe=64, Unavailable=128 };
+    // Unavailable is an additive flag: existing version-1 helpers remain usable.
+    constexpr bool CanMeter(std::uint32_t flags) {
+        constexpr auto required = Installed | Registered | DriverAvailable | QueueReady;
+        return (flags & required) == required && !(flags & (Unsafe | Unavailable));
+    }
     struct Stats {
         std::uint32_t size{sizeof(Stats)}, flags{};
         std::uint64_t deadlines{}, extraPaces{}, flipCalls{}, meteredCalls{}, driverFailures{}, resets{};

@@ -88,6 +88,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 if (pacing.flags & TheosRenderPipeline::XeFGPacing::Installed)
                 {
                     DrawSettingsValue("Driver metering", std::format("{} | {} accepted batches",
+                        pacing.flags & TheosRenderPipeline::XeFGPacing::Unavailable ? "unavailable" :
                         pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? "active" : "idle", pacing.meteredCalls).c_str());
                     DrawSettingsHelp(view.xefgPacingStatus.c_str());
                 }
@@ -370,7 +371,8 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextDisabled("session only%s", meteringReady
-                    ? (pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? " | driver active" : " | driver idle") : "");
+                    ? (pacing.flags & TheosRenderPipeline::XeFGPacing::Unavailable ? " | driver unavailable"
+                       : pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? " | driver active" : " | driver idle") : "");
                 // Live and session-only: not part of the settings draft.
                 return false;
             });

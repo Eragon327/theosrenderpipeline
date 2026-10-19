@@ -2,6 +2,7 @@
 #include "sdk_pacing_dlssg.h"
 #include "MinHook.h"
 #include "PacingSupport.h"
+#include "FlipMeteringState.h"
 #include <intrin.h>
 #include <algorithm>
 #include <atomic>
@@ -41,7 +42,7 @@ struct Owner
     uint64_t generation{};
     uintptr_t implementation{}, chain{}, presenter{}, native{}, device{};
     std::atomic<unsigned> pacedLogs{}, skippedLogs{};
-    std::atomic<bool> disabled{}, retired{};
+    std::atomic<bool> disabled{}, retiring{}, retired{};
     std::mutex clockMutex;
     // DLSS-G CPU pacer interval for the SDK's own pacing (all counts).
     cadence::BatchIntervalEstimator batchInterval;
@@ -57,12 +58,8 @@ struct Owner
     // written by the presenting thread before a native Present and read by its deadlines (flipMutex).
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> flipQueue;
     std::mutex flipMutex;
-    struct Flip
+    struct Flip : detail::FlipMeteringState
     {
-        bool configured{}, metered{}, refused{};
-        uint32_t outputs{}, feedback{}, consecutiveFailures{};
-        int64_t spacing{}, batchNs{};
-        int status{};
         uint64_t calls{}, limited{};
         // seam.1: output 0's Present call of the batch (its frame's low 32 bits), the base of the
         // batch's metered deadlines. The SDK stamps its batch start only after waiting for output 0's
@@ -97,8 +94,7 @@ std::atomic<uint64_t> deadlines{}, extraPaces{}, flipCalls{}, meteredCalls{}, dr
 std::atomic<bool> unsafe{};
 // A batch is configured once the estimate holds this many batch deltas (DLSS-G averages six).
 constexpr uint32_t kFlipMinimumSamples = 3;
-// The driver refusing this many configurations in a row turns the owner's flip metering off.
-constexpr uint32_t kFlipFailureLimit = 8;
+// Repeated driver refusals select software pacing after checked driver disable.
 // hitch.1: the batch time the driver gets grows at most 1/kFlipGrowthDivisor per batch over the one in
 // effect (same output count): every flip of the batch is held to it, so one high estimate must not
 // slow a whole batch down at once. Shorter times apply at once.
@@ -117,7 +113,6 @@ struct NvFlipConfigV2
 };
 static_assert(sizeof(NvFlipConfigV2) == 24);
 constexpr UINT kFlipConfigVersion2 = UINT(sizeof(NvFlipConfigV2)) | (2u << 16);
-constexpr UINT kFlipFeedbackNoIflip = 1u; // NVAPI_FLIP_CONFIG_FEEDBACK_NO_IFLIP
 constexpr UINT kMaximumFramesPerFlipBatch = 8; // NVAPI_MAX_FRAMES_PER_FLIP_BATCH
 
 bool Read(uintptr_t address, void* output, size_t bytes) noexcept
@@ -339,9 +334,30 @@ int CallSetFlipConfig(SetFlipConfigFunction function, IUnknown* queue, NvFlipCon
     char fault[16]{};GetEnvironmentVariableA("TRP_XEFG_PACING_FAULT",fault,sizeof(fault));
     if (fault[0]=='1' && config->nFramesPerBatch) return -7001;
     if (fault[0]=='3' && !config->nFramesPerBatch) return -7003;
+    if ((fault[0]=='4' || fault[0]=='5') && config->nFramesPerBatch) return -7004;
+    if (fault[0]=='5' && !config->nFramesPerBatch) return -7003;
+    if (fault[0]=='6') return -7006; // Capability absent: even off is unsupported.
+    if (fault[0]=='8' && !config->nFramesPerBatch) return -7003;
 #endif
     __try { return function(queue, 0, config); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return -9999; }
+}
+
+// Under flipMutex, on the presenting thread, including passthrough Presents.
+// No generated batch or interval samples are needed to discover capability.
+void ProbeFlip(Owner& owner) noexcept
+{
+    const auto function = flipFunction.load(std::memory_order_acquire);
+    if (!function || !owner.flipQueue || owner.flip.probed) return;
+    auto& flip = owner.flip;
+    NvFlipConfigV2 probe{kFlipConfigVersion2, 0, 0, 1, -1.0f, 0.0f};
+    const int status = CallSetFlipConfig(function, owner.flipQueue.Get(), &probe);
+    ++flip.calls; ++flipCalls; if (status != 0) ++driverFailures;
+    flip.Probe(status, probe.flipConfigFeedbackMask);
+    try {
+        trp_pacing_bridge::WriteLog("flip_metering_probe", "\"generation\":"+std::to_string(owner.generation)+
+            ",\"status\":"+std::to_string(status)+",\"admitted\":"+(flip.admitted ? "true" : "false"));
+    } catch (...) {}
 }
 
 // sl.dlss_g presentFrame -> setFlipConfig: nFramesPerBatch = presented = outputs, timePerBatchMs,
@@ -352,27 +368,20 @@ void ConfigureFlip(Owner& owner, uint32_t outputs, int64_t batchNs, const char* 
     const auto function = flipFunction.load(std::memory_order_acquire);
     if (!function || !owner.flipQueue) return;
     auto& flip = owner.flip;
+    if (outputs && !flip.CanEnable()) return;
     NvFlipConfigV2 config{kFlipConfigVersion2, outputs, 0, outputs ? outputs : 1u,
         outputs && batchNs > 0 ? float(double(batchNs)/1e6) : -1.0f, 0.0f};
     const int status = CallSetFlipConfig(function, owner.flipQueue.Get(), &config);
     ++flip.calls; ++flipCalls; if (status != 0) ++driverFailures;
     const bool statusChanged = status != flip.status, feedbackChanged = config.flipConfigFeedbackMask != flip.feedback;
-    flip.status = status; flip.feedback = config.flipConfigFeedbackMask;
-    if (!outputs && status != 0 && flip.configured) {
+    if (!flip.Record(outputs, batchNs, status, config.flipConfigFeedbackMask)) {
         // An unsuccessful off call does not prove the driver's previous state is
         // gone. Retain the configuration/queue and stop host replacement.
         unsafe.store(true,std::memory_order_release);
         owner.disabled.store(true,std::memory_order_release);
         return;
     }
-    if (status == 0) flip.consecutiveFailures = 0;
-    else if (outputs && ++flip.consecutiveFailures >= kFlipFailureLimit) flip.refused = true;
-    flip.configured = outputs && status == 0;
-    flip.metered = flip.configured && !(config.flipConfigFeedbackMask & kFlipFeedbackNoIflip);
     if (flip.metered) ++meteredCalls;
-    flip.outputs = flip.configured ? outputs : 0;
-    flip.batchNs = flip.configured ? batchNs : 0;
-    flip.spacing = flip.configured ? batchNs/int64_t(outputs) : 0;
     if (flip.calls <= 8 || !outputs || ((statusChanged || feedbackChanged)
         && owner.flipLogs.fetch_add(1, std::memory_order_relaxed) < 32))
         try
@@ -386,6 +395,14 @@ void ConfigureFlip(Owner& owner, uint32_t outputs, int64_t batchNs, const char* 
                 ",\"calls\":"+std::to_string(flip.calls)+(reason ? ",\"reason\":\""+std::string(reason)+"\"" : ""));
         }
         catch (...) {}
+}
+
+void DisableOwner(Owner& owner) noexcept
+{
+    std::lock_guard lock(owner.flipMutex);
+    owner.disabled.store(true, std::memory_order_release);
+    if (!owner.retired.load(std::memory_order_acquire) && !owner.retiring.load(std::memory_order_acquire)
+        && owner.flip.configured) ConfigureFlip(owner, 0, 0, "pacing_disabled");
 }
 
 // Wall-clock time of a log line, to line it up with other logs (OptiScaler's, the game's).
@@ -435,10 +452,16 @@ void FlipBeforePresent(Route& current, const Invocation& call)
     {
         auto& owner = *entry;
         if (owner.presenter != uintptr_t(call.presenter)) continue;
-        if (!owner.flipQueue || owner.retired.load(std::memory_order_acquire)
-            || owner.disabled.load(std::memory_order_acquire)) return;
+        if (!owner.flipQueue) return;
         std::lock_guard lock(owner.flipMutex);
+        if (owner.retired.load(std::memory_order_acquire) || owner.retiring.load(std::memory_order_acquire)) return;
         auto& flip = owner.flip;
+        if (owner.disabled.load(std::memory_order_acquire)) {
+            if (flip.configured) ConfigureFlip(owner, 0, 0, "pacing_disabled");
+            return;
+        }
+        if (flipEnabled.load(std::memory_order_acquire) && firstLayout.load(std::memory_order_acquire))
+            ProbeFlip(owner);
         if (!first)
         {
             if (flip.configured) ConfigureFlip(owner, 0, 0, "frame_generation_off");
@@ -501,7 +524,7 @@ HRESULT Dispatch(Route& current, const Invocation& call)
             if (owners) for (const auto& owner : *owners)
             {
                 if (owner->presenter != uintptr_t(call.presenter) || owner->disabled.load(std::memory_order_acquire)
-                    || owner->retired.load(std::memory_order_acquire)) continue;
+                    || owner->retiring.load(std::memory_order_acquire) || owner->retired.load(std::memory_order_acquire)) continue;
                 Extra extra{};
                 if (const auto* reason = Prepare(current, *owner, call, extra))
                 {
@@ -514,10 +537,16 @@ HRESULT Dispatch(Route& current, const Invocation& call)
                 QueryPerformanceCounter(&before);
                 bool paced{};
                 if (owner->retired.load(std::memory_order_acquire)) break;
-                try { paced = current.pace(call.presenter, extra.bundle, extra.firstFence, extra.summary, extra.index); ++extraPaces; }
+                try {
+#if defined(TRP_XEFG_EXTENSION_TESTING)
+                    char fault[16]{}; GetEnvironmentVariableA("TRP_XEFG_PACING_FAULT",fault,sizeof(fault));
+                    if (fault[0]=='7' || fault[0]=='8') throw std::runtime_error("injected SDK Pace exception");
+#endif
+                    paced = current.pace(call.presenter, extra.bundle, extra.firstFence, extra.summary, extra.index); ++extraPaces;
+                }
                 catch (...)
                 {
-                    owner->disabled.store(true, std::memory_order_release);
+                    DisableOwner(*owner);
                     trp_pacing_bridge::WriteLog("extra_pacing_disabled", "\"reason\":\"sdk_pacing_exception\"");
                     break;
                 }
@@ -908,14 +937,16 @@ bool Unregister(void* handle, uint64_t generation) noexcept
         for (const auto& owner : *prior) {
             if (owner->handle != handle || owner->generation != generation) { next->push_back(owner); continue; }
             std::lock_guard flip(owner->flipMutex);
+            owner->retiring.store(true, std::memory_order_release);
             if (owner->flip.configured) {
                 ConfigureFlip(*owner, 0, 0, "context_retired");
                 if (owner->flip.status != 0) { unsafe.store(true); return false; }
             }
+            owner->retired.store(true, std::memory_order_release);
         }
         for (const auto& owner : *prior)
             if (owner->handle == handle && owner->generation == generation) {
-                owner->retired.store(true, std::memory_order_release); Revoke(*owner);
+                Revoke(*owner);
             }
         current->owners.store(next, std::memory_order_release);
         return true;
@@ -951,6 +982,13 @@ TheosRenderPipeline::XeFGPacing::Stats Snapshot() noexcept
             s.flags|=Registered;
             if (owner->flipQueue) s.flags|=QueueReady;
             std::lock_guard flip(owner->flipMutex);
+            // Auto follows the caller until the off probe has admitted this
+            // owner. ProbeFlip runs even on sync-1 passthrough, so admission
+            // does not depend on Auto first selecting immediate presentation.
+            // NoIndependentFlip feedback remains recoverable: it describes
+            // the current presentation mode, not a capability refusal.
+            if (!owner->flip.CanEnable() || !firstLayout.load()
+                || owner->disabled.load() || owner->retiring.load()) s.flags|=Unavailable;
             s.feedback=owner->flip.feedback; s.driverStatus=owner->flip.status;
             if (owner->flip.metered) s.flags|=Metered;
         }
