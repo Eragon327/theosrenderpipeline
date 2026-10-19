@@ -36,7 +36,7 @@ Texture2D<float> Objects:register(t0);Texture2D<float> Depth:register(t1);RWText
 [numthreads(8,8,1)]void main(uint3 p:SV_DispatchThreadID){
     if(p.x>=Width||p.y>=Height)return;
     uint group=ClassifiedObject(p.xy+0.5,uint2(Width,Height),uint2(GuideWidth,GuideHeight),Offset,Peripheral);
-    // Vendor channel contract: intensity, tone, structure, coverage.
+    // Vendor RGB contract: intensity, tone, structure. Keep A at 1.
     float4 value=Defaults;
     if(group!=0&&(Enabled&(1u<<(group-1)))!=0)value=Rules[group-1];
     Result[p.xy]=value;
@@ -65,7 +65,8 @@ Texture2D<float> Objects:register(t0);Texture2D<float> Depth:register(t1);RWText
         if(output&&(output->GetDesc().Width!=width||output->GetDesc().Height!=height))return E_INVALIDARG; // retire NeuralPass before resizing
         if(!output){
             D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=width;desc.Height=height;
-            desc.DepthOrArraySize=desc.MipLevels=desc.SampleDesc.Count=1;desc.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+            desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;
+            desc.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
             D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
             if(FAILED(hr=device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&output))))return hr;
         }
