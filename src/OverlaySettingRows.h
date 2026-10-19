@@ -71,6 +71,22 @@ inline void TintRowFullWidth(ImU32 colour)
     draw->PopClipRect();
 }
 
+// What a row's ! mark says on hover. NR's text by default; other tabs set their own.
+inline const char*& RestartHelpText()
+{
+    static const char* text = RestartsNRHelp;
+    return text;
+}
+// Sets the ! text for its lifetime.
+struct RestartHelpScope
+{
+    const char* previous;
+    explicit RestartHelpScope(const char* text) : previous(RestartHelpText()) { RestartHelpText() = text; }
+    ~RestartHelpScope() { RestartHelpText() = previous; }
+    RestartHelpScope(const RestartHelpScope&) = delete;
+    RestartHelpScope& operator=(const RestartHelpScope&) = delete;
+};
+
 namespace Rows
 {
 // Widths in 1x units; callers multiply by the zoom.
@@ -100,7 +116,7 @@ inline void Label(const char* label, bool changed, bool restarts)
     if (restarts) {
         ImGui::SameLine(0, Px(5.0f));
         ImGui::TextColored(kOchre, "!");
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", RestartsNRHelp); }
+        DrawSettingsHelp(RestartHelpText());
     }
 }
 }
