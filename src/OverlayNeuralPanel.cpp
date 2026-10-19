@@ -510,11 +510,14 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             return changed;
         });
         // UI correction applies only after upscaling without Community Shaders.
-        if (!cs && !draft.neuralBeforeUpscaling)
-        {
-            SettingRow("UI correction", key("UICorrection").c_str(), false, unavailable,
-                       [&] { return ImGui::Checkbox("##v", &tuning.uiCorrection); });
-        }
+        const bool noUICorrection = cs || draft.neuralBeforeUpscaling;
+        SettingRow("UI correction", key("UICorrection").c_str(), false, unavailable || noUICorrection, [&] {
+            const bool changed = ImGui::Checkbox("##v", &tuning.uiCorrection);
+            DrawSettingsHelp(cs ? "Community Shaders draws the UI after NR, so there is nothing to correct."
+                             : draft.neuralBeforeUpscaling ? "Applies only when NR runs after upscaling."
+                                                           : "Corrects the UI NR sees before composition.");
+            return changed;
+        });
         ImGui::EndTable();
     }
     ImGui::Spacing();
@@ -540,17 +543,47 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                              "310.9.16 also includes. Separate from the DLSS model preset.");
             return changed;
         });
-        SettingRow("Peripheral compression", "PeripheralCompression", true, unavailable, [&] {
-            const bool changed = ImGui::Checkbox("##v", &reconstruction.peripheralCompression);
-            ImGui::SameLine();
-            ImGui::TextDisabled("both passes");
-            DrawSettingsHelp("Preserves sampling density across the central 80% of each axis and compresses the edges. "
-                             "Uses about 19% fewer model pixels at the same input resolution. Pass 1 compresses the "
-                             "image once and Pass 2 works on it, so it applies to both passes. Inspect edge quality "
-                             "when moving.");
+        SettingRowFor("Peripheral compression", {"PeripheralCompression", "CombinedPreparation"}, true, unavailable, [&] {
+            bool changed = ImGui::Checkbox("##peripheral", &reconstruction.peripheralCompression);
+            DrawSettingsHelp("Peripheral compression preserves sampling density across the central 80% of each axis and "
+                             "compresses the edges. Uses about 19% fewer model pixels at the same input resolution. Pass 1 "
+                             "compresses the image once and Pass 2 works on it, so it applies to both passes. Inspect "
+                             "edge quality when moving.");
+            ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
+            changed |= ImGui::Checkbox("Combined preparation", &reconstruction.fusedPreparation);
+            DrawSettingsHelp("Combines colour encoding with downsampling where needed, and depth/motion packing with "
+                             "peripheral compression. Some configurations have no passes to combine. Applies to both "
+                             "passes.");
             return changed;
         });
         ImGui::EndTable();
+    }
+    if (pass2)
+    {
+        // When to skip Pass 2. They only ever turn Pass 2 off, so they live in its tab.
+        ImGui::Spacing();
+        if (BeginSettingRows("passSkip", passLabel))
+        {
+            SettingRowFor("Skip during", {"OnePassInCombat", "OnePassWeaponsDrawn"}, false, unavailable, [&] {
+                const char* help = "Temporarily skips Pass 2 while the condition is active. Keeps your NR resolution, "
+                                   "tuning and saved two-pass setting. The image may change when switching.";
+                bool changed = ImGui::Checkbox("Combat", &draft.neuralCombat.inCombat);
+                DrawSettingsHelp(help);
+                ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
+                changed |= ImGui::Checkbox("Weapons drawn", &draft.neuralCombat.weaponsDrawn);
+                DrawSettingsHelp(help);
+                return changed;
+            });
+            SettingRow("Resume after", "ReturnDelay", false, unavailable || !draft.neuralCombat.Enabled(), [&] {
+                const bool changed = ImGui::SliderFloat("##v", &draft.neuralCombat.recoverySeconds, 0.0f, 30.0f, "%.1f s");
+                DrawSettingsHelp(draft.neuralCombat.Enabled()
+                                     ? "Waits this long after the conditions clear before running Pass 2 again. Pausing "
+                                       "the game pauses the delay."
+                                     : "Tick Combat or Weapons drawn first.");
+                return changed;
+            });
+            ImGui::EndTable();
+        }
     }
     EndPassPanel(panel);
     if (comparePasses) { ActivePresetDecor() = nullptr; }
@@ -560,57 +593,33 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         second.linked = false;
     }
     if (action == PassAction::FollowPass1) { second.linked = true; }
-    if (!decor) { DrawNeuralObjectSettings(view, draft, unavailable, label); }
+    if (!decor)
+    {
+        ImGui::Spacing();
+        DrawNeuralObjectSettings(view, draft, unavailable, label);
+    }
 
-    DrawSettingsHeading("Sharpening");
+    ImGui::Spacing();
     if (BeginSettingRows("sharpening", label))
     {
-        SettingRow("Sharpening", "SharpeningEnabled", false, cs, [&] {
-            const bool changed = ImGui::Checkbox("##v", &sharpening);
+        SettingRowFor("Sharpening", {"SharpeningEnabled", "Sharpness"}, false, cs, [&] {
+            bool changed = ImGui::Checkbox("##enabled", &sharpening);
+            DrawSettingsHelp(cs ? "Community Shaders controls sharpening." : "Applies with or without NR.");
             ImGui::SameLine();
-            ImGui::TextDisabled(cs ? "Community Shaders controls sharpening" : "with or without NR");
-            return changed;
-        });
-        SettingRow("Sharpening strength", "Sharpness", false, cs || !sharpening,
-                   [&] { return ImGui::SliderFloat("##v", &sharpness, 0, 1, "%.2f"); });
-        ImGui::EndTable();
-    }
-
-    DrawSettingsHeading("Performance");
-    if (BeginSettingRows("performance", label))
-    {
-        const char* twoPassHelp = "Temporarily skips Pass 2 when either selected condition is active. Keeps your NR "
-                                  "resolution, tuning and saved two-pass setting. The image may change when switching.";
-        SettingRow("One pass in combat", "OnePassInCombat", false, unavailable || !twoPasses, [&] {
-            const bool changed = ImGui::Checkbox("##v", &draft.neuralCombat.inCombat);
-            DrawSettingsHelp(twoPassHelp);
-            return changed;
-        });
-        SettingRow("One pass while weapons are drawn", "OnePassWeaponsDrawn", false, unavailable || !twoPasses, [&] {
-            const bool changed = ImGui::Checkbox("##v", &draft.neuralCombat.weaponsDrawn);
-            DrawSettingsHelp(twoPassHelp);
-            return changed;
-        });
-        SettingRow("Return delay", "ReturnDelay", false, unavailable || !twoPasses || !draft.neuralCombat.Enabled(), [&] {
-            const bool changed = ImGui::SliderFloat("##v", &draft.neuralCombat.recoverySeconds, 0.0f, 30.0f, "%.1f s");
-            DrawSettingsHelp("Waits this long after all selected conditions clear before restoring two passes. "
-                             "Pausing the game pauses the delay.");
-            return changed;
-        });
-        SettingRow("Combined preparation", "CombinedPreparation", true, unavailable, [&] {
-            const bool changed = ImGui::Checkbox("##v", &reconstruction.fusedPreparation);
-            DrawSettingsHelp("Combines colour encoding with downsampling where needed, and depth/motion packing with "
-                             "peripheral compression. Some configurations have no passes to combine. Applies to both "
-                             "passes.");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::BeginDisabled(!sharpening);
+            changed |= ImGui::SliderFloat("##strength", &sharpness, 0, 1, "%.2f");
+            ImGui::EndDisabled();
+            DrawSettingsHelp(cs ? "Community Shaders controls sharpening." : "Sharpening strength.");
             return changed;
         });
         ImGui::EndTable();
     }
 
-    DrawSettingsHeading("Reconstruction");
+    ImGui::Spacing();
     if (BeginSettingRows("reconstruction", label))
     {
-        SettingRow("Method", "ReconstructionMethod", true, unavailable || producerColor, [&] {
+        SettingRow("Reconstruction", "ReconstructionMethod", true, unavailable || producerColor, [&] {
             int method = static_cast<int>(reconstruction.method);
             const bool changed = ImGui::Combo("##v", &method, methods, IM_ARRAYSIZE(methods));
             if (changed) { reconstruction.method = static_cast<NR::ResolveMethod>(method); }
@@ -618,22 +627,37 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                                            : "Residual clamps colour to 0..1. Use Ratio for linear HDR input.");
             return changed;
         });
+        // Ratio's settings stay visible, greyed, until Ratio is selected.
         const bool ratioOff = unavailable || (!producerColor && reconstruction.method != NR::ResolveMethod::Ratio);
-        SettingRow(producerColor ? "Effect strength" : "Ratio effect strength", "EffectStrength", false, ratioOff,
-                   [&] { return ImGui::SliderFloat("##v", &reconstruction.transferStrength, 0, 2); });
-        SettingRow(producerColor ? "Colour strength" : "Ratio colour strength", "ColourStrength", false, ratioOff,
-                   [&] { return ImGui::SliderFloat("##v", &reconstruction.colourStrength, 0, 2); });
-        SettingRow(producerColor ? "Maximum scene gain" : "Maximum luma ratio", "MaximumRatio", false, ratioOff,
-                   [&] { return ImGui::SliderFloat("##v", &reconstruction.maxRatio, producerColor ? 1.0f : 0.01f, 16); });
-        SettingRow(producerColor ? "Scene normalization" : "HDR white point", "WhitePoint", true, ratioOff, [&] {
-            const bool changed = ImGui::InputFloat("##v", &reconstruction.whitePoint, 0, 0, "%.4f");
-            DrawSettingsHelp(producerColor ? "Scene normalization sets the brightness range NR sees."
-                                           : "White point for encoding linear HDR input before model evaluation.");
+        const char* ratioHelp = producerColor ? "" : " Used by Ratio reconstruction.";
+        SettingRowFor("Effect \xC2\xB7 colour", {"EffectStrength", "ColourStrength"}, false, ratioOff, [&] {
+            const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            ImGui::SetNextItemWidth(half);
+            bool changed = ImGui::SliderFloat("##effect", &reconstruction.transferStrength, 0, 2);
+            DrawSettingsHelp(std::format("{}{}", producerColor ? "Effect strength." : "Ratio effect strength.", ratioHelp).c_str());
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            changed |= ImGui::SliderFloat("##colour", &reconstruction.colourStrength, 0, 2);
+            DrawSettingsHelp(std::format("{}{}", producerColor ? "Colour strength." : "Ratio colour strength.", ratioHelp).c_str());
             return changed;
         });
-        SettingRow("Input colour is linear HDR", "InputHDR", true, ratioOff || producerColor, [&] {
-            const bool changed = ImGui::Checkbox("##v", &reconstruction.colorIsHDR);
-            DrawSettingsHelp("HDR input is used by Ratio reconstruction; it does not change the display HDR mode.");
+        SettingRow(producerColor ? "Maximum scene gain" : "Maximum luma ratio", "MaximumRatio", false, ratioOff,
+                   [&] { return ImGui::SliderFloat("##v", &reconstruction.maxRatio, producerColor ? 1.0f : 0.01f, 16); });
+        SettingRowFor(producerColor ? "Scene normalization" : "HDR input", {"InputHDR", "WhitePoint"}, true, ratioOff, [&] {
+            ImGui::BeginDisabled(producerColor);
+            bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
+            ImGui::EndDisabled();
+            DrawSettingsHelp(producerColor ? "Community Shaders supplies scene colour; the input is not switched here."
+                                           : "Input colour is linear HDR. Used by Ratio reconstruction; it does not change "
+                                             "the display HDR mode.");
+            ImGui::SameLine();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("white point");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            changed |= ImGui::InputFloat("##white", &reconstruction.whitePoint, 0, 0, "%.4f");
+            DrawSettingsHelp(producerColor ? "Scene normalization sets the brightness range NR sees."
+                                           : "White point for encoding linear HDR input before model evaluation.");
             return changed;
         });
         ImGui::EndTable();
