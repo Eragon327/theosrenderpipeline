@@ -55,7 +55,7 @@ namespace Rows
 // Narrow windows show only Reset; its tooltip gives Base's value.
 inline bool compactState{};
 // Widths in 1x units; callers multiply by the zoom.
-inline constexpr float MaxControl = 520, MinControl = 140, WideState = 260, NarrowState = 90, MaxPassCell = 360;
+inline constexpr float MaxControl = 520, MinControl = 140, WideState = 260, NarrowState = 90;
 inline float StateWidth(float available, float fixed)
 {
     compactState = available < fixed + Px(WideState);
@@ -103,19 +103,21 @@ inline void StateCell(std::initializer_list<const char*> keys)
     for (const auto* key : keys) {
         if (key && decor->Changed(key)) { base += std::format("{}{}", base.empty() ? "" : ", ", decor->BaseValue(key)); }
     }
-    if (base.empty()) { ImGui::TextDisabled("Base"); return; }
+    if (base.empty()) { ImGui::TextDisabled("%s", decor->Reference()); return; }
     // Rows disable only their label and control, so Reset stays usable.
-    if (!Rows::compactState) { ImGui::TextDisabled("was %s in Base", base.c_str()); ImGui::SameLine(); }
+    if (!Rows::compactState) { ImGui::TextDisabled("was %s in %s", base.c_str(), decor->Reference()); ImGui::SameLine(); }
     ImGui::PushID(*keys.begin());
     if (ImGui::SmallButton("Reset")) {
         for (const auto* key : keys) { if (key && decor->Changed(key)) { decor->Reset(key); } }
     }
     ImGui::PopID();
-    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Use Base's value (%s).", base.c_str()); }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Use %s's value (%s).", decor->Reference(), base.c_str()); }
 }
 // disabled greys the label and control that cannot apply now; the state cell stays usable.
+// description, when given, is a short muted line under the label.
 template <class Control>
-bool SettingRow(const char* label, const char* key, bool restarts, bool disabled, Control&& control)
+bool DescribedSettingRow(const char* label, const char* description, const char* key, bool restarts, bool disabled,
+    Control&& control)
 {
     const bool changed = AnyChanged({key});
     ImGui::TableNextRow();
@@ -123,6 +125,11 @@ bool SettingRow(const char* label, const char* key, bool restarts, bool disabled
     ImGui::TableNextColumn();
     ImGui::BeginDisabled(disabled);
     Rows::Label(label, changed, restarts);
+    if (description && *description) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", description);
+        ImGui::PopTextWrapPos();
+    }
     ImGui::TableNextColumn();
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::PushID(label);
@@ -132,46 +139,10 @@ bool SettingRow(const char* label, const char* key, bool restarts, bool disabled
     StateCell({key});
     return result;
 }
-
-// Per-pass settings side by side: label, Pass 1, Pass 2, then presets' state column.
-inline bool BeginPassTable(const char* id, float labelWidth)
-{
-    const float available = ImGui::GetContentRegionAvail().x;
-    const float state = Rows::StateWidth(available, labelWidth + 2 * Px(Rows::MaxPassCell));
-    const float cell = std::clamp((available - labelWidth - state - ImGui::GetStyle().CellPadding.x * 8) / 2,
-        Px(Rows::MinControl), Px(Rows::MaxPassCell));
-    if (!ImGui::BeginTable(id, ActivePresetDecor() ? 4 : 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return false; }
-    ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
-    ImGui::TableSetupColumn("pass1", ImGuiTableColumnFlags_WidthFixed, cell);
-    ImGui::TableSetupColumn("pass2", ImGuiTableColumnFlags_WidthFixed, cell);
-    if (ActivePresetDecor()) { ImGui::TableSetupColumn("state", ImGuiTableColumnFlags_WidthStretch); }
-    return true;
-}
-// One per-pass row. control(pass) draws that pass's widget. Pass 2 greys out while it is off.
 template <class Control>
-bool PassRow(const char* label, const char* setting, bool restarts, bool disabled, bool pass2Enabled, Control&& control)
+bool SettingRow(const char* label, const char* key, bool restarts, bool disabled, Control&& control)
 {
-    const auto key1 = std::string("Pass1") + setting, key2 = std::string("Pass2") + setting;
-    const bool changed1 = AnyChanged({key1.c_str()}), changed2 = AnyChanged({key2.c_str()});
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-    ImGui::BeginDisabled(disabled);
-    Rows::Label(label, changed1 || changed2, restarts);
-    bool result = false;
-    ImGui::PushID(label);
-    for (int pass = 0; pass < 2; ++pass) {
-        ImGui::TableNextColumn();
-        if (pass ? changed2 : changed1) { ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ChangedTint()); }
-        if (pass) { ImGui::BeginDisabled(!pass2Enabled); }
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::PushID(pass);
-        result |= control(pass);
-        ImGui::PopID();
-        if (pass) { ImGui::EndDisabled(); }
-    }
-    ImGui::PopID();
-    ImGui::EndDisabled();
-    StateCell({key1.c_str(), key2.c_str()});
-    return result;
+    return DescribedSettingRow(label, nullptr, key, restarts, disabled, std::forward<Control>(control));
 }
+
 }
