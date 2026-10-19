@@ -44,8 +44,11 @@
   anything it cannot classify keeps normal NR. It does not reduce NR's cost.
 
 Apart from direct output, packaged settings defaults are unchanged, as are the
-Standard/Universal runtime split, NR tuning, placements and passes. New game acceptance for this build is
-pending; earlier package results do not establish its gameplay or hardware scope.
+Standard/Universal runtime split, NR tuning, placements and passes. Tested in
+game on an RTX 4080 SUPER with LoreRim and ENB: NR with one and two passes, x4
+frame generation, HDR, live DLSS/XeSS switching, hidden UI, loading screens,
+ReGrade+, ReShade screenshots and object masks. RTX 20/30/50 and physical
+display cadence remain unverified.
 
 # 0.4.4
 
