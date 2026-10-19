@@ -52,6 +52,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const std::string& XeFGTensorStatus() const { return xefg_.TensorStatus(); }
 		void ConfigureXeFGTensor(bool requested) { if (!attempted_) { xefgTensorRequested_ = requested; } }
 		bool XeFGTensorRequested() const { return xefgTensorRequested_; }
+		const std::string& XeFGPacingStatus() const { return xefg_.PacingStatus(); }
+		void ConfigureXeFGFlipMetering(bool enabled) { xefgFlipMetering_.store(enabled, std::memory_order_relaxed); }
+		bool XeFGFlipMetering() const { return xefgFlipMetering_.load(std::memory_order_relaxed); }
 		void ConfigureXeFG(XeFGOptions options)
 		{
 			options = SanitizeXeFG(options);
@@ -267,7 +270,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::atomic<sl::ReflexMode> reflexMode_{ sl::ReflexMode::eLowLatency };
 		std::atomic<DlssgPreset> preset_{ DlssgPreset::B };
 		std::atomic<bool> releaseForPreset_{};
-		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
+		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{}, xefgFlipMetering_{true};
 		std::atomic<float> xefgSceneChange_{ XeFGDefaultSceneChangeThreshold };
 		std::atomic<bool> nvidiaOverlapNextFrame_{};
 		bool nvidiaOverlapLogged_{}; // Present thread.

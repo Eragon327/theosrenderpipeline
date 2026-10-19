@@ -35,7 +35,11 @@ int wmain(int argc, wchar_t** argv)
     Require(argc == 2 || argc == 3, "Intel runtime directory, optional NVIDIA runtime directory");
     const bool profile = GetEnvironmentVariableW(L"TRP_XEFG_PROFILE", nullptr, 0) != 0;
     const bool tensorRequested = GetEnvironmentVariableW(L"TRP_XEFG_TENSOR_TEST", nullptr, 0) != 0;
-    const unsigned width = profile ? 5120 : 640, height = profile ? 1440 : 360;
+    const bool fullscreen = GetEnvironmentVariableW(L"TRP_XEFG_METER_FULLSCREEN", nullptr, 0) != 0;
+    MONITORINFO monitor{sizeof(monitor)};
+    Require(GetMonitorInfoW(MonitorFromPoint(POINT{0,0}, MONITOR_DEFAULTTOPRIMARY), &monitor) != 0, "primary monitor");
+    const unsigned width = fullscreen ? monitor.rcMonitor.right-monitor.rcMonitor.left : profile ? 5120 : 640;
+    const unsigned height = fullscreen ? monitor.rcMonitor.bottom-monitor.rcMonitor.top : profile ? 1440 : 360;
     std::vector<double> presentTimes, retirementTimes, sleepTimes;
     ComPtr<ID3D12Debug> debug;
     Check(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)), "debug");
@@ -68,11 +72,13 @@ int wmain(int argc, wchar_t** argv)
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpszClassName = L"TRPXeFGPresenterTests";
     Require(RegisterClassW(&wc) != 0, "register window");
-    HWND window = CreateWindowW(wc.lpszClassName, L"TRP production XeFG presenter test", WS_OVERLAPPEDWINDOW,
+    HWND window = CreateWindowW(wc.lpszClassName, L"TRP production XeFG presenter test", fullscreen ? WS_POPUP : WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 700, 440, nullptr, nullptr, wc.hInstance, nullptr);
     Require(window != nullptr, "window");
-    ShowWindow(window, SW_SHOWNOACTIVATE);
-    SetWindowPos(window, HWND_TOPMOST, 20, 20, 700, 440, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    ShowWindow(window, fullscreen ? SW_SHOW : SW_SHOWNOACTIVATE);
+    SetWindowPos(window, HWND_TOPMOST, fullscreen ? monitor.rcMonitor.left : 20, fullscreen ? monitor.rcMonitor.top : 20,
+        fullscreen ? width : 700, fullscreen ? height : 440, fullscreen ? SWP_SHOWWINDOW : SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (fullscreen) SetForegroundWindow(window);
     DXGI_SWAP_CHAIN_DESC desc{};
     desc.BufferDesc.Width = width;
     desc.BufferDesc.Height = height;
@@ -90,6 +96,9 @@ int wmain(int argc, wchar_t** argv)
     TheosRenderPipeline::XeFGPresenter presenter;
     presenter.SetLogger([](const char* text) { std::printf("[Owner] %s\n", text); });
     Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1]), tensorRequested), "production admission");
+    const bool meteringOff = GetEnvironmentVariableW(L"TRP_XEFG_METERING_OFF",nullptr,0)!=0;
+    const bool meteringToggle = GetEnvironmentVariableW(L"TRP_XEFG_METERING_TOGGLE",nullptr,0)!=0;
+    presenter.SetFlipMetering(!meteringOff);
     Inputs input;
     input.Create(interop, d11.Get(), width, height, colorFormat);
     auto* stable = input.color.texture11.Get();
@@ -144,6 +153,10 @@ int wmain(int argc, wchar_t** argv)
             Check(proxy.As(&proxy3), "proxy3");
             const auto tensorBefore = presenter.TensorStats();
             for (unsigned frame = 0; frame < frameCount; ++frame) {
+                if (meteringToggle && (frame==32 || frame==64)) {
+                    presenter.SetFlipMetering(frame==64);
+                    std::printf("metering_test round=%u frame=%u enabled=%u\n",round,frame,frame==64);
+                }
                 MSG message{};
                 while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
                     TranslateMessage(&message);
@@ -277,6 +290,15 @@ int wmain(int argc, wchar_t** argv)
             Check(presenter.Disable(), "disable");
             const auto completed = presenter.Snapshot();
             const auto tensorAfter = presenter.TensorStats();
+            const auto paced = presenter.PacingStats();
+            std::printf("pacing_complete round=%u flags=%u deadlines=%llu extra=%llu calls=%llu metered=%llu failures=%llu feedback=%u status=%d\n",
+                round,paced.flags,paced.deadlines,paced.extraPaces,paced.flipCalls,paced.meteredCalls,paced.driverFailures,paced.feedback,paced.driverStatus);
+            if (GetEnvironmentVariableW(L"TRP_XEFG_PACING_TEST",nullptr,0)) {
+                Require((paced.flags & TheosRenderPipeline::XeFGPacing::Registered)!=0,"private pacing context registration");
+                Require(paced.deadlines>0&&paced.extraPaces>0,"actual SDK deadlines and intermediate output pacing");
+                Require((meteringOff ? paced.flipCalls==0 : paced.flipCalls>0)&&paced.driverFailures==0,"driver metering request and clean configuration results");
+                if (fullscreen&&!meteringOff) Require(paced.meteredCalls>0,"independent-flip driver metering actually accepted");
+            }
             std::printf("tensor_complete round=%u model=%u active=%u launches=%llu fallbacks=%llu cachedPSOs=%llu libraryBytes=%zu\n", round,
                 completed.tensorModel, completed.tensorActive, completed.tensorLaunches, completed.tensorFallbacks,
                 tensorAfter.cachedPSOs, pipelines.Library() ? pipelines.Library()->GetSerializedSize() : 0);
@@ -286,6 +308,7 @@ int wmain(int argc, wchar_t** argv)
             proxy3.Reset();
             proxy.Reset();
             Check(presenter.Destroy(), "SDK private retirement");
+            Require(!(presenter.PacingStats().flags & TheosRenderPipeline::XeFGPacing::Registered),"no retained pacing owner after successful SDK retirement");
         }
         Require(input.color.texture11.Get() == stable, "stable host resource");
         Check(presentingFactory->CreateSwapChain(queue.Get(), &desc, &native), "native restored on HWND");

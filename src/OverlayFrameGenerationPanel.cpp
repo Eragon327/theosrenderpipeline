@@ -259,7 +259,20 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 if (settingsDraft.sourceDLSSG.xefgTensorCores != sourceBackend.XeFGTensorRequested())
                     ImGui::TextColored(kOchre, "Save and restart to change the XeFG tensor backend.");
                 if (sourceBackend.XeFGTensorRequested())
+                {
                     ImGui::TextWrapped("%s", sourceBackend.XeFGTensorStatus().c_str());
+                    const auto& pacing = sourceBackend.XeFGState().pacing;
+                    if (pacing.flags & TheosRenderPipeline::XeFGPacing::Installed) {
+                        bool meter = sourceBackend.XeFGFlipMetering();
+                        if (ImGui::Checkbox("NVIDIA flip metering (session only)", &meter))
+                            sourceBackend.ConfigureXeFGFlipMetering(meter);
+                        DrawSettingsHelp("Compares driver timing with software timing. Changes live and is not saved. "
+                                         "The driver must accept metering for it to become active.");
+                        ImGui::TextWrapped("%s", sourceBackend.XeFGPacingStatus().c_str());
+                        ImGui::Text("Driver metering: %s; accepted batches: %llu",
+                            pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? "active" : "idle", pacing.meteredCalls);
+                    }
+                }
                 if (TheosRenderPipeline::XeFGUnlock::Available())
                     DrawSettingsHelp("x2 is Intel's official mode. x3-x6 patch Intel's runtime in memory and are experimental. "
                                      "The first Apply to x3-x6 recreates the Intel presenter; later multiplier changes apply live.");

@@ -218,6 +218,9 @@ namespace TheosRenderPipeline
         snapshot_.frameId = (std::max)(snapshot_.frameId, lastApplicationFrame);
         if (FAILED(hr = FG(xefgSwapChainSetNumInterpolatedFrames_(fg_, snapshot_.generatedFrames), "select multiplier")) ||
             FAILED(hr = FG(xefgSwapChainSetEnabled_(fg_, 0), "initial passthrough"))) { return hr; }
+        const auto paced = tensor_.RegisterPacing(fg_, device, log_);
+        if (log_ && tensor_.Selected()) log_(tensor_.PacingStatus().c_str());
+        if (FAILED(paced) && tensor_.Unsafe()) { status_ = tensor_.PacingStatus(); return paced; }
         status_ = "XeFG x"+std::to_string(snapshot_.generatedFrames+1)+" ready; waiting for world inputs";
         return BeginFrame();
     }
@@ -318,6 +321,7 @@ namespace TheosRenderPipeline
             const auto result = FG(xefgSwapChainSetNumInterpolatedFrames_(fg_, count), "live multiplier");
             if (FAILED(result)) return result;
             snapshot_.generatedFrames = count;
+            tensor_.ResetPacing(fg_);
         }
         auto hr = LL(xellAddMarkerData_(ll_, snapshot_.frameId, XELL_SIMULATION_END), "simulation end");
         if (FAILED(hr) || FAILED(hr = LL(xellAddMarkerData_(ll_, snapshot_.frameId, XELL_RENDERSUBMIT_START), "render start"))) { return hr; }
@@ -328,6 +332,7 @@ namespace TheosRenderPipeline
         if (sleep.minimumIntervalUs != snapshot_.frameLimitUs &&
             FAILED(hr = LL(xellSetSleepMode_(ll_, &sleep), "output cap"))) { return hr; }
         if (FAILED(hr = FG(xefgSwapChainSetEnabled_(fg_, generate), "generation options"))) { return hr; }
+        if (generate != snapshot_.enabled) tensor_.ResetPacing(fg_);
         snapshot_.frameLimitUs = sleep.minimumIntervalUs;
         if (generate) {
             if (!list) { return E_POINTER; }
@@ -380,6 +385,7 @@ namespace TheosRenderPipeline
         if (tensor_.Selected()) {
             const auto state = tensor_.Snapshot();
             snapshot_.tensorLaunches = state.launches; snapshot_.tensorFallbacks = state.fallbacks;
+            snapshot_.pacing = tensor_.PacingStats();
         }
         if (log_ && (snapshot_.presents <= 3 || snapshot_.presents % 600 == 0)) {
             const auto pacing = XeFGUnlock::Snapshot();
@@ -388,7 +394,10 @@ namespace TheosRenderPipeline
                 " intervalUs="+std::to_string(snapshot_.frameLimitUs)+" processPacingCounters: presents="+std::to_string(pacing.presents)+
                 " refused="+std::to_string(pacing.refused)+" wallWaits="+std::to_string(pacing.wallWaits)+
                 " tensor="+std::to_string(snapshot_.tensorActive)+" tensorLaunches="+std::to_string(snapshot_.tensorLaunches)+
-                " tensorFallbacks="+std::to_string(snapshot_.tensorFallbacks);
+                " tensorFallbacks="+std::to_string(snapshot_.tensorFallbacks)+
+                " pacingFlags="+std::to_string(snapshot_.pacing.flags)+" flipCalls="+std::to_string(snapshot_.pacing.flipCalls)+
+                " meteredCalls="+std::to_string(snapshot_.pacing.meteredCalls)+" driverFailures="+std::to_string(snapshot_.pacing.driverFailures)+
+                " pacedDeadlines="+std::to_string(snapshot_.pacing.deadlines);
             log_(text.c_str());
         }
         return S_OK;
@@ -397,7 +406,7 @@ namespace TheosRenderPipeline
     {
         if (!initialized_) { return S_OK; }
         auto hr = FG(xefgSwapChainSetEnabled_(fg_, 0), "disable before retirement");
-        if (SUCCEEDED(hr)) { snapshot_.enabled = false; }
+        if (SUCCEEDED(hr)) { snapshot_.enabled = false; tensor_.ResetPacing(fg_); }
         return hr;
     }
     HRESULT XeFGPresenter::Destroy()
@@ -405,7 +414,13 @@ namespace TheosRenderPipeline
         if (fg_) {
             const auto hr = FG(xefgSwapChainDestroy_(fg_), "destroy presenter and internal work");
             if (FAILED(hr)) { return hr; }
+            retiredPacingContext_ = fg_;
             fg_ = nullptr; initialized_ = false; frameBegun_ = presentPending_ = false;
+        }
+        if (retiredPacingContext_) {
+            const auto hr = tensor_.UnregisterPacing(retiredPacingContext_);
+            if (FAILED(hr)) { status_ = tensor_.PacingStatus(); return hr; }
+            retiredPacingContext_ = nullptr;
         }
         if (ll_) {
             const auto hr = LL(xellDestroyContext_(ll_), "destroy latency context");
@@ -415,6 +430,7 @@ namespace TheosRenderPipeline
         const auto retired = tensor_.Retire();
         if (FAILED(retired)) { status_ = tensor_.Status(); return retired; }
         snapshot_.tensorModel = snapshot_.tensorActive = false;
+        snapshot_.pacing = tensor_.PacingStats();
         snapshot_.prepared = snapshot_.enabled = false; needsReset_ = true;
         return S_OK;
     }

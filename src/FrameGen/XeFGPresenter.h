@@ -30,6 +30,7 @@ namespace TheosRenderPipeline
         bool experimentalMFG{}, unlockReady{};
         bool tensorRequested{}, tensorModel{}, tensorActive{};
         std::uint64_t tensorLaunches{}, tensorFallbacks{};
+        XeFGPacing::Stats pacing;
     };
 
     // One Intel-owned presenter and XeLL owner. DLLs remain process-resident.
@@ -68,12 +69,16 @@ namespace TheosRenderPipeline
         HRESULT Destroy();
         bool Initialized() const { return initialized_; }
         HMODULE RuntimeModule() const { return fgModule_; }
-        void ResetHistory() { needsReset_ = true; snapshot_.prepared = false; }
+        void ResetHistory() { needsReset_ = true; snapshot_.prepared = false; tensor_.ResetPacing(fg_); }
         const XeFGSnapshot& Snapshot() const { return snapshot_; }
         const std::string& Status() const { return status_; }
         const std::string& UnlockStatus() const { return unlockStatus_; }
         const std::string& TensorStatus() const { return tensor_.Status(); }
         XeFGTensor::Stats TensorStats() const { return tensor_.Snapshot(); }
+        XeFGPacing::Stats PacingStats() const { return tensor_.PacingStats(); }
+        const std::string& PacingStatus() const { return tensor_.PacingStatus(); }
+        bool FlipMeteringRequested() const { return tensor_.FlipMeteringRequested(); }
+        void SetFlipMetering(bool enabled) { tensor_.SetFlipMetering(enabled); }
         static bool SupportsFormat(DXGI_FORMAT format);
     private:
         HRESULT FG(xefg_swapchain_result_t result, const char* operation);
@@ -127,5 +132,6 @@ namespace TheosRenderPipeline
         std::optional<float> sceneChangeThreshold_; // Last value sent to this context.
         XeFGTensorRuntime tensor_;
         bool tensorChoiceMade_{};
+        void* retiredPacingContext_{}; // Identity only, after SDK Destroy succeeds.
     };
 }

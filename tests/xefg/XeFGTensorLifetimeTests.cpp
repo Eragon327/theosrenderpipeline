@@ -14,6 +14,31 @@ int wmain(int argc,wchar_t** argv){
     TheosRenderPipeline::XeFGTensorRuntime runtime;
     Require(runtime.Select(device.Get(),std::filesystem::absolute(argv[1]),true),"real loader selects mock extension after bundle admission");
     const auto first=runtime.Start(device.Get(),nullptr,nullptr);
+    const auto mode=std::wstring_view(argv[2]);
+    if(mode.starts_with(L"pacing-")){
+        Require(SUCCEEDED(first),"mock model initialization");
+        auto* context=reinterpret_cast<void*>(0x12340); // Mock receives identity only, never dereferences it.
+        const auto registered=runtime.RegisterPacing(context,device.Get(),nullptr);
+        if(mode==L"pacing-api-version" || mode==L"pacing-safe-register") {
+            Require(registered==S_FALSE&&!runtime.Unsafe(),"clean/absent pacing is compatible with existing tensor helper");
+        }else if(mode==L"pacing-unsafe-register") {
+            Require(FAILED(registered)&&runtime.Unsafe(),"failed publication with retained pacing owner is unsafe");
+            Require(FAILED(runtime.Retire())&&runtime.Snapshot().cachedPSOs==0,"retained pacing blocks tensor cleanup");
+        }else {
+            Require(SUCCEEDED(registered),"pacing registered");
+            runtime.SetFlipMetering(false);runtime.ResetPacing(context);
+            const auto retired=runtime.UnregisterPacing(context);
+            if(mode==L"pacing-retire-fail") {
+                Require(FAILED(retired)&&runtime.Unsafe(),"pacing retirement failure latches unsafe without helper Unsafe flag");
+                Require(FAILED(runtime.Start(device.Get(),nullptr,nullptr))&&FAILED(runtime.Retire()),"no replacement or cleanup after failed pacing retirement");
+                Require(runtime.Snapshot().matchedPSOs==1&&runtime.Snapshot().cachedPSOs==0,"no later extension callbacks");
+            }else {
+                Require(SUCCEEDED(retired)&&!runtime.Unsafe(),"pacing retires cleanly");
+                Require(SUCCEEDED(runtime.Retire())&&runtime.Snapshot().cachedPSOs==1,"tensor cleanup follows pacing retirement");
+            }
+        }
+        std::printf("PASS pacing lifetime mode=%ls unsafe=%u\n",argv[2],runtime.Unsafe());return 0;
+    }
     const bool safe=std::wstring_view(argv[2])==L"safe-start";
     const bool unsafeStart=std::wstring_view(argv[2])==L"unsafe-start";
     if(safe){

@@ -40,6 +40,7 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/XeFGTensorRuntime.cpp
     src/FrameGen/XeFGTensorRuntime.h
     src/FrameGen/XeFGTensorAPI.h
+    src/FrameGen/XeFGPacingAPI.h
     src/FrameGen/DlssgOverride.h
     src/FrameGen/DlssgLiteBlending.h
     src/FrameGen/DlssgPreset.h

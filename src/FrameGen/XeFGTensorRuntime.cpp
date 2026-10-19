@@ -70,7 +70,42 @@ namespace TheosRenderPipeline
             FreeLibrary(module); return refuse("Tensor extension pin refused");
         }
         module_ = module; api_ = api; status_ = "Tensor runtime selected; awaiting model initialization";
+        if (const auto getPacing = reinterpret_cast<XeFGPacing::GetAPI>(GetProcAddress(module, "TRPXeFGPacingGetAPI"))) {
+            XeFGPacing::API pacing{};
+            if (SUCCEEDED(getPacing(&pacing)) && pacing.size == sizeof(pacing) && pacing.version == XeFGPacing::Version &&
+                pacing.registerContext && pacing.unregisterContext && pacing.reset && pacing.setMetering && pacing.snapshot && pacing.setLogger)
+                pacing_ = pacing;
+        }
         return true;
+    }
+    HRESULT XeFGTensorRuntime::RegisterPacing(void* context, ID3D12Device* device, void (*logger)(const char*))
+    {
+        if (Unsafe()) return E_UNEXPECTED;
+        if (!pacing_.registerContext) return S_FALSE;
+        pacing_.setLogger(logger); pacing_.setMetering(meteringRequested_);
+        char reason[512]{};
+        const auto hr = pacing_.registerContext(context, device, reason, sizeof(reason));
+        reason[sizeof(reason)-1] = 0; pacingStatus_ = reason;
+        const auto flags = PacingStats().flags;
+        if ((flags & XeFGPacing::Unsafe) || (FAILED(hr) && (flags & XeFGPacing::Registered))) unsafe_ = true;
+        // A clean refusal keeps the SDK's own pacing; uncertainty blocks replacement.
+        return unsafe_ ? E_UNEXPECTED : hr;
+    }
+    HRESULT XeFGTensorRuntime::UnregisterPacing(void* context)
+    {
+        if (Unsafe()) return E_UNEXPECTED;
+        if (!pacing_.unregisterContext) return S_OK;
+        char reason[512]{};
+        const auto hr = pacing_.unregisterContext(context, reason, sizeof(reason));
+        reason[sizeof(reason)-1] = 0; pacingStatus_ = reason;
+        if (FAILED(hr)) unsafe_ = true;
+        return hr;
+    }
+    XeFGPacing::Stats XeFGTensorRuntime::PacingStats() const
+    {
+        XeFGPacing::Stats value{}; if (pacing_.snapshot) pacing_.snapshot(&value);
+        if (unsafe_) value.flags |= XeFGPacing::Unsafe;
+        return value;
     }
     HRESULT XeFGTensorRuntime::Start(ID3D12Device* device, HMODULE fg, HMODULE ll)
     {
