@@ -8,6 +8,17 @@ runtimes retain the license files accompanying their downloads.
 
 ## Source contributions
 
+- **MFG-Unlocker XeFG model/shader port and pacing** — Michael Robles, MIT.
+  The optional helper adapts the model/shader port at
+  `2b52823e3769c31cf52d3b368c6963cff8fc5344` and v1.6.0 pacing at
+  `ded3614aa2084adb1e04765ecf8f64d33557ed61`.
+  See its [source and asset provenance](src/FrameGen/XeFGExtension/README.md#source-and-asset-provenance),
+  [full license](src/FrameGen/XeFGExtension/portable/UPSTREAM-LICENSE.txt) and
+  [Intel program-data notice](src/FrameGen/XeFGExtension/portable/XEFG-PROGRAMS-NOTICE.txt).
+  Compiled GPU payloads and generated runtime profiles are separate dependency
+  inputs; they are not covered solely by the upstream C++ source license.
+  https://github.com/dashdogy/MFG-Unlocker
+
 - **ReShade public add-on API** — Patrick Mours, BSD-3-Clause. Unmodified
   API 14 headers from ReShade 6.3.3, commit 9e3869585db44fda639225243f10dac299e92824.
   The ReShade injector and presets are supplied by the user.

@@ -260,6 +260,12 @@ The Intel fixtures in `tests/xefg` are built and run explicitly against
 identified Intel and NVIDIA runtime directories. Their output counts do not
 establish physical display cadence.
 
+The optional Universal XeFG tensor helper has a separate, opt-in
+[source build](src/FrameGen/XeFGExtension/README.md). Its maintained C++ is in
+`src/FrameGen/XeFGExtension`; compiled GPU assets and generated runtime profiles
+are supplied separately and verified against a tracked manifest. The helper is
+not required to compile the normal renderer and does not deploy automatically.
+
 The optional ReShade lifecycle fixture compares automatic and exported D3D11
 runtimes, single effect execution, effects-off GUI completion, shared input and
 paired teardown. It needs a supplied x64 ReShade DLL and an accepted hardware
