@@ -60,8 +60,12 @@ inline void TintRowFullWidth(ImU32 colour)
     ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, colour);
     const auto& style = ImGui::GetStyle();
     const auto pos = ImGui::GetWindowPos();
-    const float left = pos.x + ImGui::GetWindowContentRegionMin().x - style.WindowPadding.x;
-    const float right = pos.x + ImGui::GetWindowContentRegionMax().x + style.WindowPadding.x;
+    // Padding only exists in padded windows such as the pass panel; elsewhere stay
+    // inside the window and clear of its scrollbar.
+    const float scrollbar = ImGui::GetScrollMaxY() > 0 ? style.ScrollbarSize : 0;
+    const float left = (std::max)(pos.x, pos.x + ImGui::GetWindowContentRegionMin().x - style.WindowPadding.x);
+    const float right = (std::min)(pos.x + ImGui::GetWindowWidth() - scrollbar,
+                                   pos.x + ImGui::GetWindowContentRegionMax().x + style.WindowPadding.x);
     const float top = ImGui::GetCursorScreenPos().y;
     const float bottom = top + ImGui::GetFrameHeight() + style.CellPadding.y * 2;
     auto* draw = ImGui::GetWindowDrawList();
