@@ -49,6 +49,27 @@ inline float LabelWidth(std::initializer_list<const char*> labels)
     return width + ImGui::GetStyle().ItemSpacing.x * 3;
 }
 inline ImU32 ChangedTint() { return ImGui::GetColorU32(ImVec4(kAmber.x, kAmber.y, kAmber.z, 0.13f)); }
+// The screen x range of the settings table being drawn, for full-width tints.
+inline float& TableLeft() { static float x{}; return x; }
+inline float& TableRight() { static float x{}; return x; }
+// Tints the current table row across the whole window, edge to edge. The table's
+// own row background covers its width, under the cells; strips extend it to the
+// window's edges on either side. Call right after TableNextRow.
+inline void TintRowFullWidth(ImU32 colour)
+{
+    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, colour);
+    const auto& style = ImGui::GetStyle();
+    const auto pos = ImGui::GetWindowPos();
+    const float left = pos.x + ImGui::GetWindowContentRegionMin().x - style.WindowPadding.x;
+    const float right = pos.x + ImGui::GetWindowContentRegionMax().x + style.WindowPadding.x;
+    const float top = ImGui::GetCursorScreenPos().y;
+    const float bottom = top + ImGui::GetFrameHeight() + style.CellPadding.y * 2;
+    auto* draw = ImGui::GetWindowDrawList();
+    draw->PushClipRect(ImVec2(left, top), ImVec2(right, bottom), false);
+    if (TableLeft() > left) { draw->AddRectFilled(ImVec2(left, top), ImVec2(TableLeft(), bottom), colour); }
+    if (TableRight() < right) { draw->AddRectFilled(ImVec2(TableRight(), top), ImVec2(right, bottom), colour); }
+    draw->PopClipRect();
+}
 
 namespace Rows
 {
@@ -99,6 +120,8 @@ inline bool BeginSettingRows(const char* id, float labelWidth)
         labelWidth = (std::max)(Px(20.0f), labelWidth + grid->controlX - Rows::ColumnStart(tableX, labelWidth));
         control = grid->controlWidth;
     }
+    TableLeft() = ImGui::GetCursorScreenPos().x;
+    TableRight() = TableLeft() + available;
     if (!ImGui::BeginTable(id, ActivePresetDecor() ? 3 : 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return false; }
     ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
     ImGui::TableSetupColumn("control", ImGuiTableColumnFlags_WidthFixed, control);
@@ -168,7 +191,7 @@ bool SettingRowFor(const char* label, std::initializer_list<const char*> keys, b
 {
     const bool changed = AnyChanged(keys);
     ImGui::TableNextRow();
-    if (changed) { ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ChangedTint()); }
+    if (changed) { TintRowFullWidth(ChangedTint()); }
     ImGui::TableNextColumn();
     ImGui::BeginDisabled(disabled);
     Rows::Label(label, changed, restarts);
