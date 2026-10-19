@@ -71,6 +71,7 @@ struct OverlayUI::FrameView
     TheosRenderPipeline::SourceDLSSG::NeuralSnapshot neuralState{};
     std::string neuralObjectStatus;
     bool neuralObjectCurrent{};
+    bool neuralObjectsAvailable{};
     TheosRenderPipeline::SourceDLSSG::HDROutputState hdr{};
     bool timingEnabled{}, timingQuarantined{};
     PerformanceTuning::TimingSnapshot timings{};

@@ -177,4 +177,5 @@ namespace TheosRenderPipeline::NeuralObjects
         return enabled.load(std::memory_order_relaxed) ? capture.Current(NvidiaHost::GetSingleton()->PresentCount()) : nullptr;
     }
     const char* Status() { return status.load(); }
+    bool Available() { return original != nullptr; }
 }

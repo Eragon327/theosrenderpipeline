@@ -80,6 +80,8 @@ PreviewScenario Healthy()
         std::string(SourceDLSSG::kRTX40NeuralRuntime)};
 
     view.sourceReady = true;
+    view.neuralObjectsAvailable = true;
+    view.neuralObjectStatus = "Experimental opaque-object capture ready";
     view.generationActive = true;
     view.effectiveMultiplier = 4;
     view.uiRecomposition = true;
@@ -265,6 +267,20 @@ PreviewScenario HostUnavailable()
     return scenario;
 }
 
+// Pass 2 keeps NPCs as Pass 1 left them and softens the player's tone.
+PreviewScenario Objects()
+{
+    auto scenario = Healthy();
+    scenario.name = "objects";
+    scenario.summary = "Per-pass object rules: Pass 2 skips NPCs and softens the player";
+    auto& masks = scenario.applied.sourceDLSSG.neuralObjectMasks;
+    masks.passes[1].groups[2] = {true, 1.0f, 1.0f, 0.0f};
+    masks.passes[1].groups[1] = {true, 0.6f, 1.0f, 0.8f};
+    scenario.draft = scenario.applied;
+    scenario.view.neuralObjectCurrent = true;
+    return scenario;
+}
+
 // A non-NVIDIA GPU: XeSS upscaling and XeFG x2, with NR unavailable.
 PreviewScenario Intel()
 {
@@ -320,5 +336,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Intel(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Intel(), Lab()};
 }

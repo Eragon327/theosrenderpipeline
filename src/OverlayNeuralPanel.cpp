@@ -75,58 +75,149 @@ const char* NeuralUnavailableReason(const OverlayUI::FrameView& view, int upscal
     return nullptr;
 }
 
-void DrawNeuralObjectSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::SourceDLSSG::Preferences& draft,
-                              bool unavailable, float label)
+// Whether the NR runtime in use predates the reconstruction contract, which
+// object tone and structure need. Unknown until NR has applied a runtime.
+bool LegacyNeuralRuntime(const OverlayUI::FrameView& view)
 {
-    // Object rules belong to each pass; there is no switch or limit for the chain.
+    const auto& applied = view.neuralApplied;
+    if (!applied.enabled || applied.runtimePath.empty()) { return false; }
+    const auto name = TheosRenderPipeline::SourceDLSSG::FoldRuntimePath(applied.runtimePath.filename().string());
+    return name == "nvngx_dlssnr.dll" || name.starts_with("nvngx_dlssnr_int8");
+}
+
+// One pass's object rules: the mask preview, then a row per group with its
+// override checkbox and Strength, Tone and Structure. Aligned with the shared
+// control column. Presets cannot change object rules, so they show greyed.
+void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::NeuralRendering::ObjectMaskSettings& masks,
+                     unsigned pass, bool unavailable, bool preset)
+{
     namespace NR = TheosRenderPipeline::NeuralRendering;
-    auto& masks = draft.neuralObjectMasks;
-    ImGui::BeginDisabled(unavailable);
-    ImGui::TextUnformatted("Object-specific NR (experimental)");
-    // Session-only mask preview: tick the groups to show over the finished image.
-    ImGui::TextUnformatted("Mask preview (session only)");
-    for (unsigned group=0;group<4;++group) {
-        bool shown=(masks.previewGroups>>group)&1;
-        if (group) { ImGui::SameLine(); }
-        if (ImGui::Checkbox((std::string("Show ")+NR::kObjectGroups[group]).c_str(),&shown)) {
-            masks.previewGroups=shown?(masks.previewGroups|(1u<<group)):(masks.previewGroups&~(1u<<group));
-        }
+    static constexpr const char* names[]{"First person", "Player", "NPCs", "Creatures"};
+    static const ImVec4 swatches[]{{0.37f, 0.72f, 0.65f, 1}, {0.44f, 0.62f, 0.88f, 1}, {0.85f, 0.65f, 0.28f, 1},
+                                   {0.70f, 0.54f, 0.85f, 1}};
+    const auto& style = ImGui::GetStyle();
+    const auto* grid = Rows::ActiveGrid();
+    const float tableX = ImGui::GetCursorScreenPos().x;
+    const float label = grid ? (std::max)(Px(40.0f), grid->controlX - Rows::ColumnStart(tableX, 0))
+                             : LabelWidth({"Peripheral compression"});
+    const float control = grid ? grid->controlWidth : Px(Rows::MaxControl);
+    const float check = ImGui::GetFrameHeight();
+    const float slider = (std::max)(Px(30.0f), (control - check - style.ItemSpacing.x * 3) / 3);
+    const bool legacy = LegacyNeuralRuntime(view);
+    const bool locked = unavailable || preset || !view.neuralObjectsAvailable;
+    const char* lockedReason = preset ? "Object rules are set in Base; presets do not change them."
+                             : !view.neuralObjectsAvailable ? view.neuralObjectStatus.c_str()
+                                                            : "Neural Rendering is unavailable.";
+    auto& rules = masks.passes[pass];
+    if (!ImGui::BeginTable("passObjects", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return; }
+    ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, label);
+    ImGui::TableSetupColumn("control", ImGuiTableColumnFlags_WidthFixed, control);
+
+    // Heading: the column names sit over the sliders below.
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Objects");
+    ImGui::SameLine();
+    ImGui::TextDisabled("experimental");
+    DrawSettingsHelp(locked ? lockedReason
+        : "Tick a group to override it in this pass. Strength blends this pass's result with its input: 0 keeps "
+          "the input, 1 the full result, so Pass 2 at 0 keeps Pass 1's work. Tone and structure replace this "
+          "pass's values for the group and pause its automatic skin mask. Rules are independent of the other pass "
+          "and of weather presets. Inference still runs at any strength.");
+    ImGui::TableNextColumn();
+    const float left = ImGui::GetCursorPosX() + check + style.ItemSpacing.x;
+    int column = 0;
+    for (const char* heading : {"Strength", "Tone", "Structure"})
+    {
+        const float x = left + column++ * (slider + style.ItemSpacing.x);
+        if (column > 1) { ImGui::SameLine(); }
+        ImGui::SetCursorPosX(x + (slider - ImGui::CalcTextSize(heading).x) * 0.5f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", heading);
     }
-    ImGui::BeginDisabled(!masks.previewGroups);
-    ImGui::Checkbox("Classes only",&masks.previewClassesOnly);
-    ImGui::EndDisabled();
-    ImGui::TextDisabled("Green: first-person | Blue: player | Orange: humanoids | Purple: creatures");
-    ImGui::TextWrapped("Tick a group to override it in that pass. Strength 0 keeps this pass's input; 1 keeps its full "
-        "result. Pass 2 at 0 keeps Pass 1's work. Tone and structure replace that pass's values and require a "
-        "reconstruction NR runtime; active controls pause its automatic skin mask. Object rules are independent of "
-        "Match Pass 1 and weather presets.");
-    if (ImGui::BeginTable("objectPasses", 2, ImGuiTableFlags_SizingStretchSame)) {
-        for(unsigned pass=0;pass<2;++pass) {
-            ImGui::TableNextColumn();
-            ImGui::PushID(static_cast<int>(pass));
-            ImGui::BeginDisabled(pass==1&&draft.neuralPasses!=2);
-            ImGui::TextColored(kAmber, "Pass %u",pass+1);
-            for(unsigned group=0;group<4;++group) {
-                ImGui::PushID(static_cast<int>(group));
-                auto& rule=masks.passes[pass].groups[group];
-                ImGui::Checkbox(NR::kObjectGroups[group],&rule.enabled);
-                ImGui::BeginDisabled(!rule.enabled);
-                ImGui::SliderFloat("Strength",&rule.strength,0,1,"%.2f");
-                ImGui::SliderFloat("Tone",&rule.tone,0,1,"%.2f");
-                ImGui::SliderFloat("Structure",&rule.structure,0,1,"%.2f");
-                ImGui::EndDisabled();ImGui::PopID();
-            }
-            ImGui::EndDisabled();ImGui::PopID();
+
+    ImGui::BeginDisabled(locked);
+    // The preview is a session-only diagnostic for the whole image.
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Px(14.0f));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Mask preview");
+    ImGui::TableNextColumn();
+    {
+        const char* modes[]{"Off", "Colour overlay", "Classes only"};
+        const char* groups[]{"All groups", "First person", "Player", "NPCs", "Creatures"};
+        const float half = (control - style.ItemSpacing.x) * 0.5f;
+        int mode = !masks.previewGroups ? 0 : masks.previewClassesOnly ? 2 : 1;
+        ImGui::SetNextItemWidth(half);
+        if (ImGui::Combo("##previewMode", &mode, modes, IM_ARRAYSIZE(modes)))
+        {
+            masks.previewGroups = mode == 0 ? 0u : masks.previewGroups ? masks.previewGroups : 0xFu;
+            masks.previewClassesOnly = mode == 2;
         }
-        ImGui::EndTable();
+        DrawSettingsHelp("Tints classified objects in their group colours over the finished image. Not saved.");
+        ImGui::SameLine();
+        int group = masks.previewGroups == 0x1u ? 1 : masks.previewGroups == 0x2u ? 2 : masks.previewGroups == 0x4u ? 3
+                    : masks.previewGroups == 0x8u ? 4 : 0;
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::BeginDisabled(!masks.previewGroups);
+        if (ImGui::Combo("##previewGroup", &group, groups, IM_ARRAYSIZE(groups))) { masks.previewGroups = group ? 1u << (group - 1) : 0xFu; }
+        ImGui::EndDisabled();
+        DrawSettingsHelp(!masks.previewGroups ? "Choose a preview first." : "Show every group, or one.");
     }
-    ImGui::TextWrapped("%s", view.neuralObjectStatus.c_str());
-    ImGui::TextDisabled(view.neuralObjectCurrent ?
-        "Current-frame classification available" : "No current-frame classification; normal NR");
-    DrawSettingsHelp("Experimental opaque-object capture for Skyrim 1.6.1170, captured only while a running pass overrides a "
-        "group or the preview is on. Transparent/alpha-tested or unclassified pixels keep normal NR. Strength adds blending "
-        "work and memory; both inference passes still run. UI is composed afterwards.");
+
+    for (unsigned i = 0; i < 4; ++i)
+    {
+        auto& rule = rules.groups[i];
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        const auto pos = ImGui::GetCursorScreenPos();
+        const float indent = Px(14.0f);
+        const float box = std::round(Px(8.0f));
+        const float top = pos.y + (ImGui::GetFrameHeight() - box) * 0.5f;
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x + indent, top), ImVec2(pos.x + indent + box, top + box),
+            ImGui::GetColorU32(swatches[i]), Px(2.0f));
+        ImGui::SetCursorScreenPos(ImVec2(pos.x + indent + box + style.ItemInnerSpacing.x, pos.y));
+        // An overriding group's name is amber, as a changed setting is.
+        if (rule.enabled) { ImGui::TextColored(kAmber, "%s", names[i]); } else { ImGui::TextUnformatted(names[i]); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", NR::kObjectGroups[i]); }
+        ImGui::TableNextColumn();
+        ImGui::Checkbox("##override", &rule.enabled);
+        DrawSettingsHelp(rule.enabled ? "Overriding this group in this pass." : "Override this group in this pass.");
+        ImGui::BeginDisabled(!rule.enabled);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(slider);
+        ImGui::SliderFloat("##strength", &rule.strength, 0, 1, "%.2f");
+        DrawSettingsHelp("Strength: 0 keeps this pass's input, 1 its full result.");
+        ImGui::BeginDisabled(legacy);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(slider);
+        ImGui::SliderFloat("##tone", &rule.tone, 0, 1, "%.2f");
+        DrawSettingsHelp(legacy ? "Tone needs the 310.9.16 runtime; Strength still applies." : "Local tone for this group in this pass.");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::SliderFloat("##structure", &rule.structure, 0, 1, "%.2f");
+        DrawSettingsHelp(legacy ? "Structure needs the 310.9.16 runtime; Strength still applies." : "Local structure for this group in this pass.");
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+        ImGui::PopID();
+    }
     ImGui::EndDisabled();
+    ImGui::EndTable();
+
+    // What capture is doing now, when it matters.
+    const bool inUse = NR::ObjectsInUse(masks, 2);
+    if (!view.neuralObjectsAvailable || inUse)
+    {
+        ImGui::Indent(Px(14.0f));
+        ImGui::TextDisabled("%s%s", view.neuralObjectStatus.c_str(),
+            !inUse || !view.neuralObjectsAvailable ? ""
+            : view.neuralObjectCurrent ? " | classifying this frame" : " | no classification this frame; normal NR");
+        ImGui::Unindent(Px(14.0f));
+    }
 }
 
 // The pass shown under the pass tabs. Base and presets share it.
@@ -561,6 +652,10 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         });
         ImGui::EndTable();
     }
+    ImGui::Spacing();
+    ImGui::PushID(pass2 ? 2 : 1);
+    DrawPassObjects(view, draft.neuralObjectMasks, pass2 ? 1u : 0u, unavailable, decor != nullptr);
+    ImGui::PopID();
     if (pass2)
     {
         // When to skip Pass 2. They only ever turn Pass 2 off, so they live in its tab.
@@ -596,11 +691,6 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         second.linked = false;
     }
     if (action == PassAction::FollowPass1) { second.linked = true; }
-    if (!decor)
-    {
-        ImGui::Spacing();
-        DrawNeuralObjectSettings(view, draft, unavailable, label);
-    }
 
     ImGui::Spacing();
     if (BeginSettingRows("sharpening", label))

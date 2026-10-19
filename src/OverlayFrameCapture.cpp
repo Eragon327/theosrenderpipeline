@@ -114,6 +114,7 @@ OverlayUI::FrameView OverlayUI::CaptureFrameView()
 #if !defined(TRP_NO_NEURAL_RENDERING)
     view.neuralObjectStatus = TheosRenderPipeline::NeuralObjects::Status();
     view.neuralObjectCurrent = TheosRenderPipeline::NeuralObjects::Current() != nullptr;
+    view.neuralObjectsAvailable = TheosRenderPipeline::NeuralObjects::Available();
 #endif
     view.hdr = backend.HDRState();
 
