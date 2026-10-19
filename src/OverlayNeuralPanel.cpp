@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <imgui_internal.h>
 #include <string_view>
 #include <PCH.h>
 
@@ -373,6 +374,9 @@ void EndPassPanel(const PassPanel& panel)
     FillRect(draw, (std::min)(max.x, panel.tab.tabRight - line), min.y, max.x, min.y + line, border);
 }
 
+bool DrawNeuralRuntimeCombo(const OverlayUI::FrameView& view, TheosRenderPipeline::SourceDLSSG::Preferences& draft,
+                            float width);
+
 // Base and presets share these controls. Presets add each row's state column.
 void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::SourceDLSSG::Preferences& draft,
                         bool& sharpening, float& sharpness, bool unavailable)
@@ -394,9 +398,26 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
 
     if (BeginSettingRows("nrTop", label))
     {
-        SettingRow("Neural Rendering", "NeuralRendering", false,
-                   !TheosRenderPipeline::CanEditNeuralEnabled(draft.neuralEnabled, !unavailable),
-                   [&] { return ImGui::Checkbox("##v", &draft.neuralEnabled); });
+        // The runtime is not a preset setting, so presets show only the switch.
+        const bool base = !ActivePresetDecor();
+        const bool lockSwitch = !TheosRenderPipeline::CanEditNeuralEnabled(draft.neuralEnabled, !unavailable);
+        SettingRow("Neural Rendering", "NeuralRendering", false, base ? false : lockSwitch, [&] {
+            ImGui::BeginDisabled(base && lockSwitch);
+            bool changed = ImGui::Checkbox("##v", &draft.neuralEnabled);
+            ImGui::EndDisabled();
+            if (base)
+            {
+                const auto& style = ImGui::GetStyle();
+                const float mark = ImGui::CalcTextSize("!").x + style.ItemSpacing.x;
+                ImGui::SameLine();
+                changed |= DrawNeuralRuntimeCombo(view, draft, ImGui::GetContentRegionAvail().x - mark);
+                ImGui::SameLine();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextColored(kOchre, "!");
+                if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Changing the runtime restarts NR briefly."); }
+            }
+            return changed;
+        });
         SettingRow("Placement", "BeforeUpscaling", true, unavailable, [&] {
             int placement = draft.neuralBeforeUpscaling ? 0 : 1;
             const bool changed = ImGui::Combo("##v", &placement, placements, IM_ARRAYSIZE(placements));
@@ -619,35 +640,63 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     }
 }
 
-// Which nvngx_dlssnr*.dll NR loads. Editable even while NR is unavailable, so a
-// missing runtime can be swapped for an installed one. Apply switches it.
-void DrawNeuralRuntime(const OverlayUI::FrameView& view, TheosRenderPipeline::SourceDLSSG::Preferences& draft)
+// Which nvngx_dlssnr*.dll NR loads, after the Neural Rendering checkbox. It stays
+// editable while NR is unavailable, so a missing runtime can be swapped for an
+// installed one; Apply switches it. While Automatic runs, the closed dropdown
+// also names the runtime it chose.
+bool DrawNeuralRuntimeCombo(const OverlayUI::FrameView& view, TheosRenderPipeline::SourceDLSSG::Preferences& draft,
+                            float width)
 {
-    const auto& runtimes = view.neuralRuntimes;
     using TheosRenderPipeline::SourceDLSSG::NeuralRuntimeLabel;
-    if (BeginSettingRows("nrRuntime", LabelWidth({"One pass while weapons are drawn", "Input colour is linear HDR", "NR input resolution"})))
-    {
-        SettingRow("Runtime", "NeuralRenderingRuntimePath", true, false, [&] {
-            bool changed = false;
-            if (ImGui::BeginCombo("##v", NeuralRuntimeLabel(draft.neuralRuntime).c_str())) {
-                for (const auto& runtime : runtimes) {
-                    ImGui::PushID(runtime.c_str());
-                    const bool selected = runtime == draft.neuralRuntime;
-                    if (ImGui::Selectable(NeuralRuntimeLabel(runtime).c_str(), selected) && !selected) { draft.neuralRuntime = runtime; changed = true; }
-                    if (selected) { ImGui::SetItemDefaultFocus(); }
-                    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("File: %s", runtime.c_str()); }
-                    ImGui::PopID();
-                }
-                ImGui::EndCombo();
-            }
-            DrawSettingsHelp("Automatic chooses the runtime for your GPU. Universal unlocks NVIDIA 310.9.16 on RTX 20/30/40; RTX 50 uses it natively. The kernel pack uses FP16 fallback on RTX 20/30 and FP8 on RTX 40. Legacy INT8 is an RTX 20/30 alternative. Hover an entry for its filename.");
-            return changed;
-        });
-        ImGui::EndTable();
-    }
     const auto& applied = view.neuralApplied;
-    if (applied.automaticRuntime && applied.enabled && TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(draft.neuralRuntime))
-        ImGui::TextDisabled("Automatic is using %s", NeuralRuntimeLabel(applied.runtimePath.string()).c_str());
+    const bool automatic = TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(draft.neuralRuntime);
+    const auto chosen = automatic && applied.automaticRuntime && applied.enabled
+                            ? NeuralRuntimeLabel(applied.runtimePath.string())
+                            : std::string();
+    bool changed = false;
+    ImGui::SetNextItemWidth(width);
+    if (ImGui::BeginCombo("##runtime", nullptr, ImGuiComboFlags_CustomPreview))
+    {
+        for (const auto& runtime : view.neuralRuntimes)
+        {
+            ImGui::PushID(runtime.c_str());
+            const bool selected = runtime == draft.neuralRuntime;
+            if (ImGui::Selectable(NeuralRuntimeLabel(runtime).c_str(), selected) && !selected)
+            {
+                draft.neuralRuntime = runtime;
+                changed = true;
+            }
+            if (selected) { ImGui::SetItemDefaultFocus(); }
+            if (ImGui::IsItemHovered()) { ImGui::SetTooltip("File: %s", runtime.c_str()); }
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    const auto help = std::format("{}NR runtime. Automatic chooses the runtime for your GPU. Universal unlocks NVIDIA "
+        "310.9.16 on RTX 20/30/40; RTX 50 uses it natively. The kernel pack uses FP16 fallback on RTX 20/30 and FP8 on "
+        "RTX 40. Legacy INT8 is an RTX 20/30 alternative. Hover an entry for its filename.",
+        chosen.empty() ? std::string() : std::format("Automatic is using {}.\n\n", chosen));
+    DrawSettingsHelp(help.c_str());
+    if (ImGui::BeginComboPreview())
+    {
+        // One line, clipped with an ellipsis before the arrow.
+        const auto label = NeuralRuntimeLabel(draft.neuralRuntime);
+        const auto detail = chosen.empty() ? std::string() : "  |  " + chosen;
+        const auto start = ImGui::GetCursorScreenPos();
+        const float right = ImGui::GetItemRectMax().x - ImGui::GetFrameHeight() - ImGui::GetStyle().FramePadding.x;
+        const float labelWidth = ImGui::CalcTextSize(label.c_str()).x;
+        const ImVec2 end(right, start.y + ImGui::GetTextLineHeight());
+        ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), start, end, right, right, label.c_str(), nullptr, nullptr);
+        if (!detail.empty() && start.x + labelWidth < right)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), ImVec2(start.x + labelWidth, start.y), end, right, right,
+                                      detail.c_str(), nullptr, nullptr);
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndComboPreview();
+    }
+    return changed;
 }
 
 void DrawSourceNeuralControls(const OverlayUI::FrameView& view, TheosRenderPipeline::SourceDLSSG::Preferences& draft,
@@ -672,7 +721,6 @@ void DrawSourceNeuralControls(const OverlayUI::FrameView& view, TheosRenderPipel
         ImGui::TextWrapped("%s", state.fallback.c_str());
         ImGui::PopStyleColor();
     }
-    DrawNeuralRuntime(view, draft);
     DrawNeuralSettings(view, draft, sharpening, sharpness, unavailable);
 }
 } // namespace
