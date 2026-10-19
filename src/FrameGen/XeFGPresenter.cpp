@@ -386,6 +386,10 @@ namespace TheosRenderPipeline
             const auto state = tensor_.Snapshot();
             snapshot_.tensorLaunches = state.launches; snapshot_.tensorFallbacks = state.fallbacks;
             snapshot_.pacing = tensor_.PacingStats();
+            if (snapshot_.pacing.flags & XeFGPacing::Unsafe) {
+                status_ = "XeFG driver metering state uncertain; provider stopped; restart required";
+                return E_UNEXPECTED;
+            }
         }
         if (log_ && (snapshot_.presents <= 3 || snapshot_.presents % 600 == 0)) {
             const auto pacing = XeFGUnlock::Snapshot();

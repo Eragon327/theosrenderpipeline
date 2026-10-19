@@ -98,6 +98,8 @@ int wmain(int argc, wchar_t** argv)
     Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1]), tensorRequested), "production admission");
     const bool meteringOff = GetEnvironmentVariableW(L"TRP_XEFG_METERING_OFF",nullptr,0)!=0;
     const bool meteringToggle = GetEnvironmentVariableW(L"TRP_XEFG_METERING_TOGGLE",nullptr,0)!=0;
+    const bool expectedDriverRefusal = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_REFUSAL",nullptr,0)!=0;
+    const bool expectedUnsafeMetering = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_UNSAFE",nullptr,0)!=0;
     presenter.SetFlipMetering(!meteringOff);
     Inputs input;
     input.Create(interop, d11.Get(), width, height, colorFormat);
@@ -246,7 +248,19 @@ int wmain(int argc, wchar_t** argv)
                         std::chrono::duration<double, std::milli>(presentEnd - presentStart).count());
                 Check(result, "Intel present");
                 Require(result == S_OK, "visible present");
-                Check(presenter.AfterPresent(result), "production completion");
+                const auto completedPresent=presenter.AfterPresent(result);
+                if (expectedUnsafeMetering && FAILED(completedPresent)) {
+                    const auto failed=presenter.PacingStats();
+                    Require((failed.flags&TheosRenderPipeline::XeFGPacing::Unsafe)&&failed.driverFailures>0,"failed driver off call retains uncertain state");
+                    Check(interop.Drain(),"host retirement after injected metering fault");
+                    proxy3.Reset();proxy.Reset();
+                    Require(FAILED(presenter.Destroy()),"uncertain driver configuration prevents successful provider retirement");
+                    Require(presenter.PacingStats().flags&TheosRenderPipeline::XeFGPacing::Registered,"unsafe pacing owner is retained");
+                    Require(presenter.TensorStats().flags&TheosRenderPipeline::XeFGTensor::ModelReady,"model resources retained after metering retirement fault");
+                    std::puts("PASS injected driver-off failure: owner/model retained, replacement blocked; restart required");
+                    return 0;
+                }
+                Check(completedPresent, "production completion");
                 const auto retirementStart = std::chrono::steady_clock::now();
                 Check(gpuInputWait ? interop.WaitD3D11(Work::SwapChain) : interop.Drain(),
                     gpuInputWait ? "ONLY_NOW input reuse GPU wait" : "retire ONLY_NOW copies");
@@ -296,8 +310,9 @@ int wmain(int argc, wchar_t** argv)
             if (GetEnvironmentVariableW(L"TRP_XEFG_PACING_TEST",nullptr,0)) {
                 Require((paced.flags & TheosRenderPipeline::XeFGPacing::Registered)!=0,"private pacing context registration");
                 Require(paced.deadlines>0&&paced.extraPaces>0,"actual SDK deadlines and intermediate output pacing");
-                Require((meteringOff ? paced.flipCalls==0 : paced.flipCalls>0)&&paced.driverFailures==0,"driver metering request and clean configuration results");
-                if (fullscreen&&!meteringOff) Require(paced.meteredCalls>0,"independent-flip driver metering actually accepted");
+                Require(meteringOff ? paced.flipCalls==0 : paced.flipCalls>0,"driver metering requests observed");
+                Require(expectedDriverRefusal ? paced.driverFailures>0&&paced.meteredCalls==0 : paced.driverFailures==0,"driver refusal uses software pacing; normal configuration stays clean");
+                if (fullscreen&&!meteringOff&&!expectedDriverRefusal) Require(paced.meteredCalls>0,"independent-flip driver metering actually accepted");
             }
             std::printf("tensor_complete round=%u model=%u active=%u launches=%llu fallbacks=%llu cachedPSOs=%llu libraryBytes=%zu\n", round,
                 completed.tensorModel, completed.tensorActive, completed.tensorLaunches, completed.tensorFallbacks,
@@ -323,6 +338,7 @@ int wmain(int argc, wchar_t** argv)
         Check(interop.Drain(), "restored native queue retirement");
         native.Reset();
     }
+    Require(!expectedUnsafeMetering, "injected driver-off failure must be observed");
     Require(nativeOnly || generated > 100, "sustained generation both depth conventions");
     Require(presenter.Snapshot().uiTexturePresents == uiTagged && (nativeOnly || uiTagged > 0), "UI layer tag count");
     std::printf("frame time sent=%u skipped=%u\n", frameTimeSent, frameTimeSkipped);

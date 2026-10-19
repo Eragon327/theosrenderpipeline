@@ -22,7 +22,7 @@ namespace TheosRenderPipeline
         const std::string& PacingStatus() const { return pacingStatus_; }
         bool Selected() const { return module_ != nullptr; }
         bool ModelReady() const { return (Snapshot().flags & XeFGTensor::ModelReady) != 0; }
-        bool Unsafe() const { return (Snapshot().flags & XeFGTensor::Unsafe) != 0; }
+        bool Unsafe() const { return (Snapshot().flags & XeFGTensor::Unsafe) != 0 || (PacingStats().flags & XeFGPacing::Unsafe) != 0; }
         XeFGTensor::Stats Snapshot() const;
         const std::filesystem::path& Directory() const { return directory_; }
         const std::string& Status() const { return status_; }
