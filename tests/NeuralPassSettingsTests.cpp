@@ -14,6 +14,21 @@ int main()
 	using namespace TheosRenderPipeline;
 	using namespace SourceDLSSG;
 	CSimpleIniA ini;
+    {
+        CSimpleIniA saved;
+        Preferences values;
+        Require(!values.neuralObjectMasks.enabled, "object masks default off");
+        values.neuralObjectMasks = {true,{0,0.25f,0.5f,1}};
+        StorePreferences(saved,values);
+        Require(LoadPreferences(saved).neuralObjectMasks == values.neuralObjectMasks, "all four object mask rules round trip");
+        NeuralOptions options; options.enabled=true; options.automaticRuntime=true;
+        options.objectMasks=values.neuralObjectMasks;
+        NeuralHistory history; Require(history.ResetFor(options,true,false),"first object policy resets");
+        Require(!history.ResetFor(options,true,false),"unchanged object policy retains history");
+        options.objectMasks.strength[2]=0.75f;
+        Require(history.ResetFor(options,true,false),"object policy edit resets NR history");
+    }
+
 	auto empty = LoadPreferences(ini);
 	Require(!empty.xefg.experimentalMFG && empty.xefg.generatedFrames == 1, "old INIs retain official XeFG x2");
 	Require(empty.neuralRuntime == kAutomaticNeuralRuntime, "NR defaults to Automatic");

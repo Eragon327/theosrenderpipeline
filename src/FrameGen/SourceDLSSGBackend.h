@@ -1,4 +1,5 @@
 #pragma once
+#include "SourceRetirementPolicy.h"
 
 #include "SourceDLSSGInterop.h"
 #include "SourceDLSSGDeviceLoss.h"
@@ -66,6 +67,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// A live switch to NVIDIA would be refused: NR initialized NGX before
 		// Streamline in this session. Saving NVIDIA and restarting resolves it.
 		bool NvidiaSwitchBlocked() const;
+		bool NvidiaServicesReady() const { return Ready() && nvidiaInitialized_; }
 		// CPU time of one host Present split into its phases: input/output
 		// recording, the presenter's own Present, and retirement/replacement.
 		void ObservePresentTiming(double prepareMs, double presentMs, double finishMs);
@@ -95,6 +97,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			bool eligible, ID3D11Texture2D* color, ID3D11Texture2D* motion, ID3D11Texture2D* depth,
 			FrameExtent guideExtent, FrameExtent colorExtent, bool& reset);
 		NeuralOptions NeuralConfiguration() const;
+		int NeuralComputeCapability() const;
 		NeuralSnapshot NeuralState() const;
 		bool ConfigureReflex(sl::ReflexMode a_mode)
 		{
@@ -121,6 +124,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// input copies instead of draining every host lane on the CPU.
 		void ConfigureXeFGGpuInputWait(bool a_enabled) { xefgGpuInputWait_.store(a_enabled, std::memory_order_relaxed); }
 		bool XeFGGpuInputWait() const { return xefgGpuInputWait_.load(std::memory_order_relaxed); }
+		// Lab A/B, not saved: NVIDIA's next frame waits for frame generation's
+		// inputs only where TRP first writes a shared texture, not at its start.
+		void ConfigureNvidiaOverlapNextFrame(bool a_enabled) { nvidiaOverlapNextFrame_.store(a_enabled, std::memory_order_relaxed); }
+		bool NvidiaOverlapNextFrame() const { return nvidiaOverlapNextFrame_.load(std::memory_order_relaxed); }
 		bool XeFGTagGenerated() const { return xefgTagGenerated_.load(std::memory_order_relaxed); }
 		bool ConfigureOutputFPSLimit(int a_fps)
 		{
@@ -164,7 +171,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			std::scoped_lock lock(generationMutex_); return generationRequest_;
 		}
 		bool Ready() const { return ready_ && SUCCEEDED(fault_); }
-		bool Quiesce();
+		bool Quiesce(RetirementPurpose purpose = RetirementPurpose::Resize);
 		const SessionSnapshot& Snapshot() const { return session_.Snapshot(); }
 		PresentationFeedbackSnapshot PresentationFeedback() const;
 		RuntimeDiagnosticsSnapshot RuntimeDiagnosticState() const { return runtimeDiagnostics_.Snapshot(); }
@@ -187,6 +194,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		HRESULT PollOutputCapture(TheosRenderPipeline::SourceOutputCapture::Result& result) { return outputCapture_.Poll(result); }
 #endif
 		bool ResumeAfterResize();
+		bool ResumeAfterUpscalerReplacement();
 	private:
 		friend class SwapChain; // Transport failures use the same first-error latch.
 		Backend() = default;
@@ -200,8 +208,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool Check(HRESULT a_result, const char* a_operation, const char* a_source = "SourceDLSSG");
 		bool CheckSession(bool a_result);
 		bool CheckXeFG(HRESULT result);
+		// An optional guide's allocation failure returns false without a fault.
 		bool EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair,
-			DXGI_FORMAT a_format = DXGI_FORMAT_UNKNOWN, FrameExtent a_extent = {});
+			DXGI_FORMAT a_format = DXGI_FORMAT_UNKNOWN, FrameExtent a_extent = {}, bool a_optional = false);
 		bool CopyDepth(ID3D11Texture2D* a_depth);
 		void ReleaseGuides();
 		bool RecreateNeuralIfNeeded(const NeuralOptions& options);
@@ -250,6 +259,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::atomic<DlssgPreset> preset_{ DlssgPreset::B };
 		std::atomic<bool> releaseForPreset_{};
 		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
+		std::atomic<bool> nvidiaOverlapNextFrame_{};
+		bool nvidiaOverlapLogged_{}; // Present thread.
+		std::uint64_t frameGenerationTimingKey_{ ~0ull }; // Present thread; the configuration being timed.
 		// Per-window CPU samples for the input-reuse A/B; logged and cleared every 600 presents.
 		std::vector<float> xefgReuseMs_, xefgSleepMs_;
 		bool xefgReuseWindowGpu_{};
@@ -283,7 +295,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<ID3D12Device> upgradedDevice12_;
 		Microsoft::WRL::ComPtr<ID3D12CommandQueue> queue_;
 		Microsoft::WRL::ComPtr<IDXGISwapChain> retainedNative_;
-		SharedTexture motion_, depth_, ui_, hudless_, earlyNeuralColor_;
+		SharedTexture motion_, depth_, ui_, hudless_, earlyNeuralColor_, objectMask_;
+        bool objectMaskCurrent_{};
+        bool objectMaskRefused_{}; // Its shared texture could not be created; normal NR for the session.
+        bool CopyObjectMask(FrameExtent extent);
 #if !defined(TRP_NO_NEURAL_RENDERING)
 		std::unique_ptr<NeuralPass> neuralPass_;
 		NeuralRuntimeAvailability neuralAvailability_; // Protected by neuralMutex_.

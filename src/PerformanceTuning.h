@@ -17,8 +17,8 @@ public:
 	{
 		bool enableGPUTimings{ true };
 		bool enableFrameTrace{ false };
-		bool directRCASOutput{ false };
-		bool directDLSSOutput{ false };
+		bool directRCASOutput{ true };
+		bool directDLSSOutput{ true };
 	};
 
 	enum class Optimization : std::uint8_t

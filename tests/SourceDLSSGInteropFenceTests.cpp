@@ -56,6 +56,36 @@ int main(int argc, char** argv)
 
     Interop interop;
     Check(interop.Initialize(device11.Get(), device12.Get(), queue.Get()), "initialize production interop");
+    // Every guide format the backend shares between D3D11 and D3D12, with the
+    // bind flags EnsureGuide uses. A format D3D11 cannot open shared fails here,
+    // not on the game's first frame with the feature on.
+    // (The NR object mask is R32_FLOAT for this reason: D3D11 here refuses to
+    // open R32G32 and R32G32B32A32 textures shared from D3D12.)
+    auto guide = [](DXGI_FORMAT format) {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = 3413; desc.Height = 960; desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+        desc.Format = format; desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+        return desc;
+    };
+    for (const auto format : { DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R10G10B10A2_UNORM }) {
+        SharedTexture shared;
+        const auto hr = interop.CreateSharedTexture(guide(format), shared);
+        std::printf("shared guide format=%d result=0x%08lX\n", static_cast<int>(format), static_cast<unsigned long>(hr));
+        Require(SUCCEEDED(hr) && shared.texture11 && shared.texture12, "every shared guide format opens on both APIs");
+    }
+    // An optional texture that cannot be shared reports its failure but leaves
+    // the interop usable; a required one would latch the first fault.
+    {
+        SharedTexture refused;
+        const auto hr = interop.CreateSharedTexture(guide(DXGI_FORMAT_R32G32B32A32_FLOAT), refused, true);
+        std::printf("optional unshareable guide result=0x%08lX\n", static_cast<unsigned long>(hr));
+        Require(FAILED(hr) && !refused.texture11 && !refused.texture12, "unshareable optional guide is refused");
+        Require(interop.Ready() && SUCCEEDED(interop.Fault()), "an optional allocation failure does not fault the interop");
+        SharedTexture after;
+        Check(interop.CreateSharedTexture(guide(DXGI_FORMAT_R32_FLOAT), after), "interop still allocates after an optional failure");
+    }
     Check(interop.WaitForInputReaders(nullptr, 0), "no-fence presenting queue bridge");
     const auto beforeInvalid = interop.LastValue(Work::FrameGeneration);
     Require(interop.WaitForInputReaders(nullptr, 1) == E_UNEXPECTED, "missing nonzero fence rejected");
@@ -197,6 +227,48 @@ int main(int argc, char** argv)
             sameWait(frozen.LastFailure().wait, firstFailure.wait),
             "successful later retirement preserves the original frozen-fence evidence");
     }
-    std::puts("PASS: same-device input fences, foreign-device rejection, pending GPU wait, retirement, extended waits and diagnostics");
+    // Lab overlap: with the D3D11 bridge wait deferred, the next frame's D3D11
+    // work runs while frame generation still holds this frame's inputs; the
+    // first shared write waits for them, and the next bridge for the previous one.
+    {
+        Interop overlap;
+        Check(overlap.Initialize(device11.Get(), device12.Get(), queue.Get()), "initialize overlap interop");
+        auto d3d11Completes = [&](DWORD ms) {
+            D3D11_QUERY_DESC desc{ D3D11_QUERY_EVENT, 0 };
+            ComPtr<ID3D11Query> query;
+            Check(device11->CreateQuery(&desc, &query), "create D3D11 event query");
+            context11->End(query.Get());
+            context11->Flush();
+            const auto end = GetTickCount64() + ms;
+            do {
+                BOOL done = FALSE;
+                if (context11->GetData(query.Get(), &done, sizeof(done), 0) == S_OK && done) { return true; }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } while (GetTickCount64() < end);
+            return false;
+        };
+        Check(overlap.WaitForInputReaders(input.Get(), 13, false, true), "defer the bridge for held inputs");
+        Require(d3d11Completes(2000), "deferred: the next frame's D3D11 work runs while inputs are held");
+        Check(overlap.BeforeSharedWrites(), "queue the deferred wait before a shared write");
+        Require(!d3d11Completes(50), "a shared write waits for held inputs");
+        Check(input->Signal(13), "release held inputs");
+        Require(d3d11Completes(2000), "the shared write proceeds after release");
+        Check(overlap.BeforeSharedWrites(), "a second shared write queues nothing new");
+
+        // A frame with no shared write: the next bridge orders D3D11 after the previous one.
+        Check(overlap.WaitForInputReaders(input.Get(), 14, false, true), "defer a frame without shared writes");
+        Check(overlap.WaitForInputReaders(input.Get(), 15, false, true), "defer the following frame");
+        Require(!d3d11Completes(50), "the next frame still waits for the previous frame's inputs");
+        Check(input->Signal(14), "release the previous frame's inputs");
+        Require(d3d11Completes(2000), "the next frame runs once the previous inputs are released");
+
+        // Turning the Lab option off restores the wait at the start of the frame.
+        Check(overlap.WaitForInputReaders(input.Get(), 16), "bridge without deferral");
+        Require(!d3d11Completes(50), "without deferral the next frame waits for held inputs");
+        Check(input->Signal(16), "release the remaining inputs");
+        Require(d3d11Completes(2000), "the next frame runs after release");
+        Check(overlap.Drain(), "retire the overlap interop");
+    }
+    std::puts("PASS: same-device input fences, foreign-device rejection, pending GPU wait, retirement, extended waits and diagnostics; deferred bridge overlap");
     return 0;
 }

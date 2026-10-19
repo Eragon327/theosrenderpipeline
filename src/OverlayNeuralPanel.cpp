@@ -15,6 +15,7 @@ using namespace TheosRenderPipeline::Overlay;
 
 #include "CommunityShaderIntegration.h"
 #include "NeuralRenderingMode.h"
+#include "NeuralObjectHooks.h"
 #include "RenderPipeline.h"
 
 namespace
@@ -94,12 +95,33 @@ const char* NeuralUnavailableReason(int upscaleType, bool nrRuntimePresent)
 }
 
 // Base and presets share these controls. Presets add each row's state column.
+void DrawNeuralObjectSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bool unavailable)
+{
+    namespace NR = TheosRenderPipeline::NeuralRendering;
+    auto& masks = draft.neuralObjectMasks;
+    ImGui::BeginDisabled(unavailable);
+    ImGui::Checkbox("Object-specific NR (experimental)", &masks.enabled);
+    if (masks.enabled) {
+        for (unsigned i=0; i<4; ++i) {
+            ImGui::SliderFloat(NR::kObjectGroups[i], &masks.strength[i], 0.0f, 1.0f, "%.2f");
+        }
+        ImGui::TextWrapped("%s", TheosRenderPipeline::NeuralObjects::Status());
+        ImGui::TextDisabled(TheosRenderPipeline::NeuralObjects::Current() ?
+            "Current-frame classification available" : "No current-frame classification; normal NR");
+        DrawSettingsHelp("0 preserves the original object; 1 applies the full NR result. Applies after both passes, before UI composition. "
+            "Experimental opaque-object capture for Skyrim 1.6.1170; transparent/alpha-tested or unclassified pixels keep normal NR. "
+            "This does not reduce inference cost.");
+    }
+    ImGui::EndDisabled();
+}
+
 void DrawNeuralSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bool& sharpening, float& sharpness,
                         bool unavailable)
 {
     namespace NR = TheosRenderPipeline::NeuralRendering;
     auto& reconstruction = draft.neuralReconstruction;
     auto& second = draft.neuralSecondPass;
+
     const bool cs = TheosRenderPipeline::CommunityShaders::Active();
     const bool producerColor = cs && draft.neuralBeforeUpscaling;
     const bool twoPasses = draft.neuralPasses == 2;
@@ -378,6 +400,7 @@ void DrawSourceNeuralControls(TheosRenderPipeline::SourceDLSSG::Preferences& dra
         ImGui::PopStyleColor();
     }
     DrawNeuralRuntime(draft);
+    DrawNeuralObjectSettings(draft, unavailable);
     DrawNeuralSettings(draft, sharpening, sharpness, unavailable);
 }
 } // namespace

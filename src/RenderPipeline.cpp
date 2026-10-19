@@ -48,8 +48,8 @@ void RenderPipeline::LoadINI()
 	PerformanceTuning::Settings performanceSettings{};
 	performanceSettings.enableGPUTimings = ini.GetBoolValue("Performance", "EnableGPUTimings", true);
 	performanceSettings.enableFrameTrace = ini.GetBoolValue("Performance", "EnableFrameTrace", false);
-	performanceSettings.directRCASOutput = ini.GetBoolValue("Performance", "DirectRCASOutput", false);
-	performanceSettings.directDLSSOutput = ini.GetBoolValue("Performance", "DirectDLSSOutput", false);
+	performanceSettings.directRCASOutput = ini.GetBoolValue("Performance", "DirectRCASOutput", true);
+	performanceSettings.directDLSSOutput = ini.GetBoolValue("Performance", "DirectDLSSOutput", true);
 	PerformanceTuning::GetSingleton()->ApplySettings(performanceSettings);
 	const bool unsupportedDynamicResolution = ini.GetBoolValue("DynamicResolution", "Enabled", false) ||
 		ini.GetBoolValue("DynamicResolution", "Oscillate", false);

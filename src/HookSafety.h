@@ -90,6 +90,41 @@ namespace TheosRenderPipeline::HookSafety
         }
         return nullptr;
     }
+    // The export table entry (an image offset) that GetProcAddress resolves for
+    // name. Forwarded exports have no code in this image and are rejected.
+    inline DWORD* ExportSlot(std::uintptr_t base, const char* name)
+    {
+        IMAGE_DOS_HEADER dos{};
+        IMAGE_NT_HEADERS64 nt{};
+        if (!Read(base, &dos, sizeof(dos)) || dos.e_magic != IMAGE_DOS_SIGNATURE || dos.e_lfanew <= 0 ||
+            !Read(base + dos.e_lfanew, &nt, sizeof(nt)) || nt.Signature != IMAGE_NT_SIGNATURE ||
+            nt.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) { return nullptr; }
+        const auto size = nt.OptionalHeader.SizeOfImage;
+        const auto inside = [size](std::uintptr_t rva, std::size_t bytes) { return rva < size && bytes <= size - rva; };
+        const auto directory = nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+        IMAGE_EXPORT_DIRECTORY exports{};
+        if (!directory.VirtualAddress || !inside(directory.VirtualAddress, sizeof(exports)) ||
+            !Read(base + directory.VirtualAddress, &exports, sizeof(exports))) { return nullptr; }
+        const auto length = std::strlen(name);
+        std::array<char, 256> symbol{};
+        if (length >= symbol.size()) { return nullptr; }
+        for (DWORD i = 0; i < exports.NumberOfNames; ++i) {
+            DWORD text{}; WORD ordinal{};
+            if (!inside(exports.AddressOfNames + i * sizeof(DWORD), sizeof(DWORD)) ||
+                !Read(base + exports.AddressOfNames + i * sizeof(DWORD), &text, sizeof(text)) ||
+                !inside(text, length + 1) || !Read(base + text, symbol.data(), length + 1) ||
+                std::memcmp(symbol.data(), name, length + 1) != 0) { continue; }
+            if (!inside(exports.AddressOfNameOrdinals + i * sizeof(WORD), sizeof(WORD)) ||
+                !Read(base + exports.AddressOfNameOrdinals + i * sizeof(WORD), &ordinal, sizeof(ordinal)) ||
+                ordinal >= exports.NumberOfFunctions) { return nullptr; }
+            const auto slot = exports.AddressOfFunctions + ordinal * sizeof(DWORD);
+            DWORD target{};
+            if (!inside(slot, sizeof(DWORD)) || !Read(base + slot, &target, sizeof(target)) || !inside(target, 1) ||
+                (target >= directory.VirtualAddress && target - directory.VirtualAddress < directory.Size)) { return nullptr; }
+            return reinterpret_cast<DWORD*>(base + slot);
+        }
+        return nullptr;
+    }
     inline bool DirectCall(std::uintptr_t site, std::uintptr_t expectedTarget,
         std::uintptr_t imageBase, std::size_t imageSize)
     {

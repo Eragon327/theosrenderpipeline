@@ -107,6 +107,12 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 sourceBackend.ConfigureXeFGDebugView(onlyGenerated, sourceBackend.XeFGTagGenerated());
             DrawSettingsHelp("NVIDIA debug view, not saved. Hides every rendered frame, so an artifact still visible here "
                              "comes from frame generation; one that disappears comes from rendering, the upscaler or NR.");
+            bool overlap = sourceBackend.NvidiaOverlapNextFrame();
+            if (ImGui::Checkbox("Overlap the next frame with generation (Lab)", &overlap))
+                sourceBackend.ConfigureNvidiaOverlapNextFrame(overlap);
+            DrawSettingsHelp("A/B, not saved. Off: the game's next frame waits on the GPU until frame generation has read this "
+                             "frame's inputs. On: it waits only where TRP first writes them, so the world can render meanwhile. "
+                             "Compare FPS and the frame generation time.");
         }
         if (showDeveloperControls)
         {

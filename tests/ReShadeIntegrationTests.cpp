@@ -64,7 +64,20 @@ int main(int argc, char** argv)
 {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
     const bool requireReShade = argc == 2 && std::string_view(argv[1]) == "--require-reshade";
-    Require(argc == 1 || requireReShade, "supported arguments");
+    // Run beside ReShade plus a supplied incompatible add-on (ReGrade+), which
+    // would crash inside explicit runtime creation.
+    const bool requireBlocked = argc == 2 && std::string_view(argv[1]) == "--require-blocked-addon";
+    // The same add-on with the bridge prepared first, as at plugin load: the
+    // whole production path must then run with ReGrade+ registered.
+    const bool requireBridged = argc == 2 && std::string_view(argv[1]) == "--require-bridged-addon";
+    Require(argc == 1 || requireReShade || requireBlocked || requireBridged, "supported arguments");
+    // The blocked case stands for a bridge that was never installed.
+    if (!requireBlocked) {
+        const std::string_view bridge = ReShadeIntegration::Get().PrepareAddonBridge();
+        std::printf("bridge=%.*s\n", static_cast<int>(bridge.size()), bridge.data());
+        Require(argc == 1 ? bridge == "ReShade not loaded" : bridge != "ReShade not loaded", "bridge sees whether ReShade is loaded");
+        Require(!requireBridged || bridge == "ReGrade+ bridge watching add-on registration", "bridge installed before add-ons load");
+    }
     WNDCLASSW wc{}; wc.hInstance = GetModuleHandleW(nullptr); wc.lpfnWndProc = DefWindowProcW; wc.lpszClassName = L"TRPReShadeFixture";
     RegisterClassW(&wc);
     HWND window = CreateWindowW(wc.lpszClassName, L"TRP offline ReShade fixture", WS_POPUP, 0, 0, outputWidth, outputHeight, nullptr, nullptr, wc.hInstance, nullptr);
@@ -84,7 +97,7 @@ int main(int argc, char** argv)
     ComPtr<ID3D12Device> device12; Check(effects.CreateSourceDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_0, &device12), "D3D12 device");
     Require(device12.Get() != nullptr, "successful creation returns a device");
     D3D12_COMMAND_QUEUE_DESC queueDesc{}; ComPtr<ID3D12CommandQueue> queue; Check(device12->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue)), "queue");
-    if (!requireReShade) {
+    if (argc == 1) {
         Require(effects.Status() == "ReShade not loaded", "absence fixture must not load an injector");
         ComPtr<ID3D12Fence> ready; Check(device12->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&ready)), "absent runtime fence");
         ComPtr<ID3D12Device> fenceDevice; Check(ready->GetDevice(IID_PPV_ARGS(&fenceDevice)), "absent fence device");
@@ -106,6 +119,30 @@ int main(int argc, char** argv)
     Require(reg != nullptr, "actual ReShade exports");
     reg(reshade::addon_event::init_effect_runtime, reinterpret_cast<void*>(&Init));
     reg(reshade::addon_event::reshade_begin_effects, reinterpret_cast<void*>(&Draw));
+    if (requireBlocked) {
+        const auto blocked = effects.Status();
+        std::printf("status=%s\n", blocked.c_str());
+        Require(blocked.find("MARTYSMODS ReGrade+@") != std::string::npos, "incompatible add-on reported at device creation");
+        for (unsigned frame = 0; frame < 30; ++frame) {
+            color.Paint(context.Get(), scene); ui.Paint(context.Get(), scene);
+            Require(effects.Render(color.texture.Get(), depth.texture.Get(), {outputWidth, outputHeight}, {renderWidth, renderHeight}, false) == S_FALSE, "blocked stage is inert");
+            Require(effects.FinishUI(ui.texture.Get()) == S_FALSE, "blocked GUI is inert");
+            effects.PresentCompleted();
+        }
+        Require(!owned && !automaticRuntimes, "no ReShade runtime was created");
+        Require(Pixel(device.Get(), context.Get(), color.texture.Get())[0] == 64 && !draws, "blocked stage leaves pixels unchanged");
+        Require(effects.Status() == blocked && !effects.Snapshot().failures, "block is stable and is not a failure");
+        effects.ResetAfterRetirement(); effects.Configure(device.Get(), context.Get(), {outputWidth, outputHeight});
+        Require(effects.FinishUI(ui.texture.Get()) == S_FALSE && !owned, "retirement does not retry runtime creation");
+        effects.ResetAfterRetirement(); DestroyWindow(window);
+        std::puts("PASS: incompatible add-on withholds runtime creation and leaves effects inert");
+        return 0;
+    }
+    if (requireBridged) {
+        std::printf("status=%s\n", effects.Status().c_str());
+        Require(!effects.Blocked() && effects.Status().find("ReGrade+ device events bridged") != std::string::npos,
+            "bridged add-on reported at device creation");
+    }
 
     // The production device factory keeps this D3D12 output chain free of
     // automatic effect/input runtimes. It presents four times per source frame.
@@ -261,6 +298,15 @@ int main(int argc, char** argv)
     Require(!effects.OverlayOpen(), "retirement releases capture");
     effects.Configure(device.Get(), context.Get(), {outputWidth, outputHeight});
     Check(effects.FinishUI(ui.texture.Get()), "runtime recreated after retirement");
+    if (requireBridged) {
+        Require(effects.Status().find("ReGrade+ device events bridged") != std::string::npos, "recreated runtime is bridged");
+        // Each recreation pairs a new device wrapper's init with its destroy.
+        for (unsigned cycle = 0; cycle < 5; ++cycle) {
+            effects.PresentCompleted(); owned->get_command_queue()->wait_idle(); effects.ResetAfterRetirement();
+            effects.Configure(device.Get(), context.Get(), {outputWidth, outputHeight});
+            Check(effects.FinishUI(ui.texture.Get()), "bridged runtime recreation cycle");
+        }
+    }
     owned->get_command_queue()->wait_idle(); effects.ResetAfterRetirement();
     std::puts("PASS: actual ReShade placement, depth, source/output ownership, overlay and runtime lifecycle");
     // The output chain owns asynchronous D3D12 work; wait before releasing it.

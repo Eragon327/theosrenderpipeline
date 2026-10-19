@@ -4,6 +4,7 @@
 #include "UpscalerHooks.h"
 #include "UpscalerDeviceHooks.h"
 #include "UpscalerSamplerHooks.h"
+#include "NeuralObjectHooks.h"
 
 #include <PCH.h>
 #include "HookInstallation.h"
@@ -742,6 +743,7 @@ void WINAPI hk_ID3D11DeviceContext_DrawIndexed(
 			(This->*ptrDrawIndexed)(IndexCount, StartIndexLocation, BaseVertexLocation);
 		};
 		DrawNativeInventoryPreview(This, original);
+        if (TheosRenderPipeline::NeuralObjects::Active()) { TheosRenderPipeline::NeuralObjects::RecordDraw(This, original); }
 	}
 }
 
@@ -760,6 +762,7 @@ void WINAPI hk_ID3D11DeviceContext_Draw(
 			(This->*ptrDraw)(VertexCount, StartVertexLocation);
 		};
 		DrawNativeInventoryPreview(This, original);
+        if (TheosRenderPipeline::NeuralObjects::Active()) { TheosRenderPipeline::NeuralObjects::RecordDraw(This, original); }
 	}
 }
 
@@ -1077,6 +1080,7 @@ struct UpscalerHooks
 			stl::write_thunk_call<BSGraphics_Renderer_Init_InitD3D>(REL::RelocationID(75595, 77226).address() + offsets.initD3D);
 			TheosRenderPipeline::InstallUpscalerDeviceHooks(reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr)));
 			TheosRenderPipeline::LoadingArtwork::Install();
+
 			return;
 		}
 		{
@@ -1146,6 +1150,7 @@ struct UpscalerHooks
 		stl::detour_thunk<MenuManagerDrawInterfaceStart>(REL::RelocationID(79947, 82084));
 		stl::detour_thunk<Inventory3DManagerRender>(REL::RelocationID(50882, 51755));
 		TheosRenderPipeline::LoadingArtwork::Install();
+
 
 			logger::info("[NvidiaHost] source NVIDIA runtime selected");
 

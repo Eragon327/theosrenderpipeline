@@ -28,6 +28,10 @@ selection, failure diagnosis and tests. See [credits](THIRD-PARTY.md).
 - Scoped module/resolver interception, transactional writes and a synchronous
   stop at the first real GPU-module failure.
 - Driver/OS rejection, SR isolation and repeated-creation regression fixtures.
+- A failed NGX FG creation latches the compatibility owner as failed on both
+  SM75 and SM86. Later requests do not call the vendor again. The original
+  result is logged once; the host must stop/restart without releasing possibly
+  in-flight vendor state. Successful feature recreation and SR remain supported.
 
 The supported provider is **DLSS-G 310.9.1**, SHA-256
 `FF6E90EB78B827927DFF5B4ECC6B1C870C2E9BCA29ED9F48C7D348CC9E170B82`.

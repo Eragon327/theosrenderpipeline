@@ -6,6 +6,7 @@
 #include "NeuralRuntimeKernels.h"
 #include "SourceDLSSGSettings.h"
 #include "../PluginPaths.h"
+#include "../NeuralObjectHooks.h"
 #include <algorithm>
 #include <chrono>
 #include <format>
@@ -16,18 +17,20 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 		const bool requested = a_options.enabled;
 		a_options = SanitizeNeuralOptions(std::move(a_options));
-		if (requested && !a_options.enabled) {
-			logger::warn("[SourceDLSSG NR] optional runtime not found at {}; NR disabled, standard DLSS continues",
-				a_options.runtimePath.string());
-		}
 		std::scoped_lock lock(neuralMutex_);
 		// The note stays only while the selected runtime is the one being replaced.
 		const auto* note = SelectNeuralRuntime(a_options);
 		neuralSnapshot_.fallback = note ? *note : std::string{};
+		if (requested && !a_options.enabled) {
+			logger::warn("[SourceDLSSG NR] optional runtime not found at {}; NR disabled, standard DLSS continues",
+				a_options.runtimePath.string());
+		}
+
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
-		neuralOptions_ = std::move(a_options);
+		NeuralObjects::Configure(a_options.enabled && a_options.objectMasks.enabled);
+        neuralOptions_ = std::move(a_options);
 	}
 	const std::string* Backend::SelectNeuralRuntime(NeuralOptions& options)
 	{
@@ -39,12 +42,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		};
 		const std::string* note{};
 		if (!options.automaticRuntime && !(note = refused(options.runtimePath))) { return nullptr; }
-		// Until the device exists the GPU is unknown and 310.8 stands in; nothing
+		// Until the device exists any present candidate can stand in; nothing
 		// creates a feature before CreateSwapChain chooses again.
 		if (neuralComputeCapability_ < 0 && device12_) {
 			neuralComputeCapability_ = NeuralRendering::ComputeCapability(device12_->GetAdapterLuid());
 		}
-		for (const auto candidate : AutomaticNeuralRuntimes((std::max)(neuralComputeCapability_, 0), NeuralRendering::RuntimeKernelsSupported())) {
+		for (const auto candidate : AutomaticNeuralRuntimes(neuralComputeCapability_, NeuralRendering::RuntimeKernelsSupported())) {
 			const auto path = PluginPaths::Directory() / std::filesystem::u8path(candidate);
 			if (const auto* why = refused(path)) { note = note ? note : why; continue; }
 			std::error_code error;
@@ -115,6 +118,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (reason && reason != neuralReportedUnavailable_) { logger::warn("[SourceDLSSG NR] {}", reason); }
 		neuralReportedUnavailable_ = reason;
 		return reason;
+	}
+	int Backend::NeuralComputeCapability() const
+	{
+		std::scoped_lock lock(neuralMutex_); return neuralComputeCapability_;
 	}
 	NeuralOptions Backend::NeuralConfiguration() const
 	{
@@ -197,7 +204,7 @@ namespace TheosRenderPipeline::SourceDLSSG
             !EnsureGuide(depth, depth_, DXGI_FORMAT_R32_FLOAT, renderExtent) ||
             !EnsureGuide(color, earlyNeuralColor_, DXGI_FORMAT_UNKNOWN, colorExtent) ||
             !RecreateNeuralIfNeeded(frameNeuralOptions_)) { return false; }
-        if (!CopyDepth(depth) || !Check(interop_.CopyInputRegion(motion, motion_, renderExtent), "early NR motion copy") ||
+        if (!CopyObjectMask(renderExtent) || !CopyDepth(depth) || !Check(interop_.CopyInputRegion(motion, motion_, renderExtent), "early NR motion copy") ||
             !Check(interop_.CopyInputRegion(color, earlyNeuralColor_, colorExtent), "early NR world copy") ||
             !Check(interop_.SignalD3D11(Work::Upscaling), "early NR inputs ready")) { return false; }
         ID3D12GraphicsCommandList* list = nullptr;
@@ -207,7 +214,9 @@ namespace TheosRenderPipeline::SourceDLSSG
             frameNeuralReset_, camera->depthInverted == sl::eTrue,
             camera->mvecScale.x * motion_.desc.Width, camera->mvecScale.y * motion_.desc.Height,
             motion_.texture12.Get(), depth_.texture12.Get(), nullptr, earlyNeuralColor_.texture12.Get(), nullptr,
-            neuralTimestampFrequency_, interop_.Marks(Work::Upscaling))) {
+            neuralTimestampFrequency_, interop_.Marks(Work::Upscaling), objectMaskCurrent_ ? objectMask_.texture12.Get() : nullptr,
+            frameNeuralOptions_.beforeUpscaling ? std::array<float,2>{} :
+                std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y})) {
             if (!RefuseNeuralCreation(frameNeuralOptions_.runtimePath)) { return FailNeuralRecording(); }
             // Nothing was recorded: retire the empty list and run DLSS on the original
             // colour this frame. The next frame uses the next runtime.

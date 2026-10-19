@@ -5,6 +5,7 @@
 #include "SourceDLSSGNeuralState.h"
 #include "SourceDLSSGNeuralResolve.h"
 #include "SourceDLSSGNeuralTelemetry.h"
+#include "NeuralObjectBlend.h"
 #include <array>
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -21,7 +22,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			float motionScaleX, float motionScaleY,
 			ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 			ID3D12Resource* hudless, ID3D12Resource* composed,
-			std::uint64_t timestampFrequency = 0, const D3D12StageMarks& marks = {});
+			std::uint64_t timestampFrequency = 0, const D3D12StageMarks& marks = {}, ID3D12Resource* objectMask = nullptr,
+            std::array<float,2> objectMaskGuideOffset = {});
 		ID3D12Resource* Composed() const { return composed_.Get(); }
 		ID3D12Resource* Corrected() const { return corrected_.Get(); }
 		NeuralTelemetrySnapshot Telemetry() const { return telemetry_.Snapshot(); }
@@ -55,9 +57,28 @@ namespace TheosRenderPipeline::SourceDLSSG
 			const NeuralOptions& options, const NeuralRendering::FeatureSession::EvaluationInput& first,
 			const ResolveConstants& constants, ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 			NeuralRendering::FeatureSession::EvaluationInput& second);
+		// With directResult, the final pass-2 result is returned in COMMON for the
+		// resolve to read; otherwise it is copied back to first.output in UAV state.
 		bool FinishSecond(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
 			const NeuralRendering::FeatureSession::EvaluationInput& first,
-			const NeuralRendering::FeatureSession::EvaluationInput& second, const ResolveConstants& originalConstants);
+			const NeuralRendering::FeatureSession::EvaluationInput& second, const ResolveConstants& originalConstants,
+			ID3D12Resource** directResult);
+		// Every field shown by the success status. The text is formatted only when one changes.
+		struct StatusKey
+		{
+			UINT workWidth{}, workHeight{}, sourceWidth{}, sourceHeight{};
+			int passes{};
+			bool worldOnly{}, beforeUpscaling{}, producerColor{}, peripheral{}, fusionRequested{}, fusedColor{};
+			NeuralRendering::ResolveMethod method{};
+			UINT secondWidth{}, secondHeight{};
+			int secondPreset{};
+			bool secondLinked{};
+			float secondIntensity{};
+			NeuralRendering::PassOverride passOverride{};
+			int requestedPasses{};
+			bool operator==(const StatusKey&) const = default;
+		};
+		void PublishStatus(const StatusKey& key);
 		void InitializeTelemetry(ID3D12Device* device, std::uint64_t timestampFrequency);
 		void HarvestTelemetry(std::size_t slot);
 		struct PendingTiming
@@ -76,6 +97,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<ID3D12Resource> encoded_, workColor_, workOutput_, residual_;
 		Microsoft::WRL::ComPtr<ID3D12Resource> packedMotion_, packedDepth_, packedUI_;
 		NeuralResolveKernels resolve_;
+        NeuralRendering::ObjectBlend objectBlend_;
+        Microsoft::WRL::ComPtr<ID3D12Resource> objectResult_;
 		bool fusedColor_{};
 		NeuralRendering::Reconstruction reconstruction_;
 		std::filesystem::path runtimePath_;
@@ -95,5 +118,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool telemetryAttempted_{};
 		NeuralTelemetryTracker telemetry_;
 		std::string status_;
+		StatusKey statusKey_{};
+		std::string successStatus_;
 	};
 }

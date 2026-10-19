@@ -134,7 +134,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return S_OK;
 	}
 
-	HRESULT Interop::CreateSharedTexture(const D3D11_TEXTURE2D_DESC& a_desc, SharedTexture& a_output)
+	HRESULT Interop::CreateSharedTexture(const D3D11_TEXTURE2D_DESC& a_desc, SharedTexture& a_output, bool a_optional)
 	{
 		Observe("CreateSharedTexture");
 		if (!Ready()) { return FAILED(fault_) ? fault_ : E_UNEXPECTED; }
@@ -160,13 +160,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		SharedTexture result;
 		auto hr = device12_->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_SHARED,
 			&desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&result.texture12));
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { return a_optional ? hr : Check(hr); }
 		HANDLE handle = nullptr;
 		hr = device12_->CreateSharedHandle(result.texture12.Get(), nullptr, GENERIC_ALL, nullptr, &handle);
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { return a_optional ? hr : Check(hr); }
 		hr = device11_->OpenSharedResource1(handle, IID_PPV_ARGS(&result.texture11));
 		::CloseHandle(handle);
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { return a_optional ? hr : Check(hr); }
 		result.texture11->GetDesc(&result.desc);
 		a_output = std::move(result);
 		return S_OK;
@@ -174,6 +174,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 
 	HRESULT Interop::CopyInput(ID3D11Texture2D* a_input, const SharedTexture& a_destination)
 	{
+		if (const auto wait = BeforeSharedWrites(); FAILED(wait)) { return wait; }
 		Observe("CopyInput");
 		if (!Ready()) { return FAILED(fault_) ? fault_ : E_UNEXPECTED; }
 		if (!a_input || !a_destination.texture11 || a_input == a_destination.texture11.Get()) { return E_INVALIDARG; }
@@ -193,6 +194,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 
 	HRESULT Interop::CopyInputRegion(ID3D11Texture2D* a_input, const SharedTexture& a_destination, FrameExtent a_extent)
 	{
+		if (const auto wait = BeforeSharedWrites(); FAILED(wait)) { return wait; }
 		Observe("CopyInputRegion");
 		if (!Ready()) { return FAILED(fault_) ? fault_ : E_UNEXPECTED; }
 		if (a_destination.desc.Width != a_extent.width || a_destination.desc.Height != a_extent.height) { return E_INVALIDARG; }
@@ -201,6 +203,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 
 	HRESULT Interop::SignalD3D11(Work a_work)
 	{
+		// Everything D3D11 wrote before this handoff follows the deferred wait.
+		if (const auto wait = BeforeSharedWrites(); FAILED(wait)) { return wait; }
 		Observe("D3D11 Wait before Signal", a_work);
 		auto* work = Get(a_work);
 		if (!Ready() || !work || work->recording) { return E_UNEXPECTED; }
@@ -231,7 +235,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return work->value ? Check(context11_->Wait(work->fence11.Get(), work->value)) : S_OK;
 	}
 
-	HRESULT Interop::WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value, bool a_timeHold)
+	HRESULT Interop::WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value, bool a_timeHold, bool a_deferD3D11)
 	{
 		Observe("input reader validation", Work::FrameGeneration);
 		inputWait_ = {};
@@ -271,10 +275,31 @@ namespace TheosRenderPipeline::SourceDLSSG
 		observation_.fenceValue = work->value + 1;
 		hr = queue_->Signal(work->fence12.Get(), ++work->value);
 		if (FAILED(hr)) { return Check(hr); }
+		const auto previous = std::exchange(bridgedInputWait_, work->value);
+		deferredInputWait_ = 0;
+		if (a_deferD3D11) {
+			// The previous bridge still orders everything older, including the
+			// other presentation buffer the next frame may draw into.
+			inputWait_.stage = observation_.stage = "D3D11 previous bridge Wait";
+			if (previous && FAILED(hr = context11_->Wait(work->fence11.Get(), previous))) { return Check(hr); }
+			deferredInputWait_ = work->value;
+			inputWait_.stage = "complete; D3D11 wait deferred";
+			return S_OK;
+		}
 		inputWait_.stage = "D3D11 bridge Wait";
 		hr = WaitD3D11(Work::FrameGeneration);
 		if (SUCCEEDED(hr)) { inputWait_.stage = "complete"; }
 		return hr;
+	}
+
+	HRESULT Interop::BeforeSharedWrites()
+	{
+		if (!deferredInputWait_) { return S_OK; }
+		Observe("deferred D3D11 bridge Wait", Work::FrameGeneration);
+		if (!Ready()) { return FAILED(fault_) ? fault_ : E_UNEXPECTED; }
+		const auto value = std::exchange(deferredInputWait_, 0);
+		observation_.fenceValue = value;
+		return Check(context11_->Wait(Get(Work::FrameGeneration)->fence11.Get(), value));
 	}
 
 	HRESULT Interop::WaitCPU(WorkContext& a_work, std::uint64_t a_value, AllocatorWaitTiming* a_timing)

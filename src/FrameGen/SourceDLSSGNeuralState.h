@@ -3,6 +3,8 @@
 #include "NeuralRenderingReconstruction.h"
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralCombatPolicy.h"
+#include "NeuralObjectMask.h"
+#include "NeuralRuntimeFiles.h"
 #include "SourceDLSSGNeuralTelemetry.h"
 #include <algorithm>
 #include <filesystem>
@@ -32,6 +34,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// The backend replaces runtimePath with the best bundled runtime for the GPU.
 		bool automaticRuntime{};
 		NeuralRendering::Tuning tuning{};
+        NeuralRendering::ObjectMaskSettings objectMasks{};
 		NeuralRendering::Reconstruction reconstruction{};
 		NeuralRendering::SecondPassSettings secondPass{};
 		// Per-frame appearance controller revision; zero preserves manual-edit resets.
@@ -45,23 +48,19 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool operator==(const NeuralOptions&) const = default;
 	};
 
-	inline bool NeuralRuntimePresent(const std::filesystem::path& path)
-	{
-		std::error_code error;
-		return !path.empty() && std::filesystem::is_regular_file(path, error) && !error;
-	}
-
 	inline NeuralOptions SanitizeNeuralOptions(NeuralOptions options)
 	{
 		options.tuning = NeuralRendering::SanitizeBuild14Tuning(options.tuning);
+        options.objectMasks = NeuralRendering::SanitizeObjectMask(options.objectMasks);
 		options.passes = std::clamp(options.passes, 1, 2);
 		options.combat = NeuralRendering::SanitizeCombatSettings(options.combat);
 		options.passOverride = NeuralRendering::PassOverride::None;
 		options.secondPass = NeuralRendering::SanitizeSecondPass(options.secondPass);
 		options.reconstruction = NeuralRendering::SanitizeReconstruction(options.reconstruction);
-		// Reject a missing optional runtime before any GPU work is recorded.
+		// Automatic is checked by GPU-aware candidate selection after sanitizing.
+		// Explicit paths still fail before any GPU work is recorded.
 		// Runtime identity and initialization checks still belong to the session.
-		options.enabled = options.enabled && NeuralRuntimePresent(options.runtimePath);
+		options.enabled = options.enabled && (options.automaticRuntime || NeuralRuntimePresent(options.runtimePath));
 		return options;
 	}
 

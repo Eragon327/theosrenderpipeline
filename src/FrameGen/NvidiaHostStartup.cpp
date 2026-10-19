@@ -78,6 +78,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     options.enabled = settings.sourceDLSSG.neuralEnabled && !options.runtimePath.empty() &&
         TheosRenderPipeline::SupportsNeuralRenderingMode(upscalerSettings->mUpscaleType, TheosRenderPipeline::CommunityShaders::Active());
     options.tuning = settings.sourceDLSSG.neuralTuning;
+    options.objectMasks = settings.sourceDLSSG.neuralObjectMasks;
     options.reconstruction = settings.sourceDLSSG.neuralReconstruction;
     options.secondPass = settings.sourceDLSSG.neuralSecondPass;
     options.beforeUpscaling = settings.sourceDLSSG.neuralBeforeUpscaling;

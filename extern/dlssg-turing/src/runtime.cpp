@@ -234,7 +234,20 @@ NVSDK_NGX_Result NVSDK_CONV CreateFeature(ID3D12GraphicsCommandList* commands, N
         Message("NGX frame-generation creation refused after an internal startup failure");
         return NVSDK_NGX_Result_FAIL_FeatureNotSupported;
     }
-    if (fg) Message(result == NVSDK_NGX_Result_Success ? "Ampere NGX frame-generation feature created" : "Ampere NGX frame-generation creation failed");
+    if (fg && (result != NVSDK_NGX_Result_Success || !handle || !*handle)) {
+        // Failed creation may have queued work or retained partial vendor state.
+        // Do not retry, release vendor objects, or republish compatibility data.
+        // The host observes failed ownership and stops through its existing
+        // failure boundary; all published resources keep process lifetime.
+        char detail[160]{};
+        std::snprintf(detail, sizeof(detail), "SM%u NGX frame-generation creation failed result=0x%08X handle=%s",
+            s.targetSm, static_cast<unsigned>(result), handle && *handle ? "non-null" : "null");
+        Message(detail);
+        Fail("RTX 20/30 frame-generation feature creation failed; restart required. Check the NVIDIA driver and the first NGX error in the log.");
+        if (handle) *handle = nullptr;
+        return result == NVSDK_NGX_Result_Success ? NVSDK_NGX_Result_FAIL_FeatureNotSupported : result;
+    }
+    if (fg) Message("Compatibility NGX frame-generation feature created");
     return result;
 }
 static_assert(std::is_same_v<decltype(&CreateFeature), Create>);

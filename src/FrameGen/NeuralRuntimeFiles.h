@@ -43,6 +43,8 @@ namespace TheosRenderPipeline::SourceDLSSG
     // editions retain legacy 310.8 as the final fallback and unknown-GPU route.
     inline std::vector<std::string_view> AutomaticNeuralRuntimes(int computeCapability, bool runtimeKernels = false)
     {
+        // Before device creation this is only file admission, never execution.
+        if (computeCapability < 0) { return { kDefaultNeuralRuntime, kLatestNeuralRuntime, kInt8NeuralRuntime }; }
         if (computeCapability >= 120) { return { kLatestNeuralRuntime, kDefaultNeuralRuntime }; }
         if (runtimeKernels) {
             if (computeCapability == 89) { return { kLatestNeuralRuntime, kDefaultNeuralRuntime }; }
@@ -63,11 +65,25 @@ namespace TheosRenderPipeline::SourceDLSSG
         return value;
     }
 
-    // The file a saved value names. Automatic starts on 310.8 until the
-    // backend knows the GPU, so availability checks always see a real file.
-    inline std::filesystem::path ResolveNeuralRuntimeSetting(std::string_view value, const std::filesystem::path& pluginDirectory)
+    inline bool NeuralRuntimePresent(const std::filesystem::path& path)
     {
-        return ResolveRuntimePath(std::filesystem::u8path(IsAutomaticNeuralRuntime(value) ? kDefaultNeuralRuntime : value), pluginDirectory);
+        std::error_code error;
+        return !path.empty() && std::filesystem::is_regular_file(path, error) && !error;
+    }
+
+    // Before the device exists, accept any bundled candidate as a placeholder.
+    // The backend selects again for the actual GPU before creating a feature.
+    inline std::filesystem::path ResolveNeuralRuntimeSetting(std::string_view value,
+        const std::filesystem::path& pluginDirectory, int computeCapability = -1, bool runtimeKernels = false)
+    {
+        if (!IsAutomaticNeuralRuntime(value)) {
+            return ResolveRuntimePath(std::filesystem::u8path(value), pluginDirectory);
+        }
+        for (const auto candidate : AutomaticNeuralRuntimes(computeCapability, runtimeKernels)) {
+            const auto path = ResolveRuntimePath(std::filesystem::u8path(candidate), pluginDirectory);
+            if (NeuralRuntimePresent(path)) { return path; }
+        }
+        return ResolveRuntimePath(std::filesystem::u8path(kDefaultNeuralRuntime), pluginDirectory);
     }
 
     // Friendly names for bundled and commonly installed runtime filenames.

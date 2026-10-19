@@ -27,8 +27,8 @@ struct RendererSettingsDraft
     bool lateOverlayBridge{true};
     bool enableGPUTimings{true};
     bool enableFrameTrace{false};
-    bool directRCASOutput{false};
-    bool directDLSSOutput{false};
+    bool directRCASOutput{true};
+    bool directDLSSOutput{true};
     TheosRenderPipeline::SourceDLSSG::Preferences sourceDLSSG;
     Appearance::Settings appearance;
     bool textureProviderConnected{false};
@@ -85,7 +85,8 @@ inline bool SameNeuralPreferences(const SourceDLSSG::Preferences& a, const Sourc
 {
     return a.neuralEnabled == b.neuralEnabled && a.neuralBeforeUpscaling == b.neuralBeforeUpscaling &&
         a.neuralPasses == b.neuralPasses && a.neuralCombat == b.neuralCombat && a.neuralTuning == b.neuralTuning &&
-        a.neuralReconstruction == b.neuralReconstruction && a.neuralSecondPass == b.neuralSecondPass;
+        a.neuralReconstruction == b.neuralReconstruction && a.neuralSecondPass == b.neuralSecondPass &&
+        a.neuralObjectMasks == b.neuralObjectMasks;
 }
 
 inline const char* NeuralSettingsUnavailable(int mode, RendererSettingsCapabilities capabilities)

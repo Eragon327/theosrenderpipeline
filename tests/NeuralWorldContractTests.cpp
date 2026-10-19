@@ -1,3 +1,4 @@
+#include "FrameGen/NeuralFrameEligibility.h"
 #include "RendererSettings.h"
 #include "FrameGen/SourceDLSSGNeuralState.h"
 #include "FrameGen/SourceDLSSGNeuralAvailability.h"
@@ -34,6 +35,33 @@ int main()
     Require(history.ResetFor(external, true, false), "world re-entry resets history");
     external.beforeUpscaling = false; external.worldOnly = false;
     Require(history.ResetFor(external, true, false), "return to native composition resets history");
+
+    // Replay world frames, hidden interface/console, loading, and return.
+    // The same eligibility helpers are used by both native host and backend.
+    for (bool early : {false, true}) {
+        NeuralOptions options; options.enabled = true; options.beforeUpscaling = early;
+        NeuralHistory timeline;
+        unsigned evaluations = 0;
+        const auto frame = [&](bool menu, bool guides) {
+            const bool eligible = NeuralFrameEligible(true, options.WorldOnly(), true, menu, guides, guides);
+            const bool reset = timeline.ResetFor(options, eligible, false);
+            const bool evaluatedEarly = eligible && options.WorldOnly();
+            const bool prepared = eligible && NeuralPreparedEligible(options.WorldOnly(), evaluatedEarly, guides, guides);
+            if (prepared) ++evaluations;
+            return reset;
+        };
+        Require(frame(false, true), "initial world resets history");
+        Require(frame(false, false) == !early, "hiding interface preserves early NR history and suspends late NR");
+        Require(!frame(false, false), "repeated hidden-interface frames are stable");
+        Require(frame(false, true) == !early, "late NR restarts when its guides return");
+        Require(frame(true, false), "loading interrupts NR history in either placement");
+        Require(!frame(true, false), "loading remains suspended");
+        Require(frame(false, true), "return from loading resets NR");
+        Require(evaluations == (early ? 5u : 3u), "only eligible complete frames evaluate");
+        Require(!NeuralFrameEligible(true, early, false, false, true, true), "unavailable UI state is not an active world");
+        Require(!NeuralPreparedEligible(true, false, true, true), "world-only cannot claim an unevaluated early pass");
+        Require(!NeuralFrameEligible(false, early, true, false, true, true), "dedicated native UI contract remains required");
+    }
 
     using namespace TheosRenderPipeline::NeuralRendering;
     Reconstruction original;

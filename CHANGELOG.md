@@ -1,5 +1,60 @@
+# 0.4.5
+
+- Reduce repeated NR recording work: use constant parameter names, reuse
+  resolve descriptor tables while their resources stay the same, batch resource
+  transitions and read the second pass's result directly when a resolve follows.
+  Model inference, controls and settings defaults are unchanged.
+- Keep NR before upscaling active on world frames without frame-generation UI
+  guides, including hidden-interface and Present fallback frames. Main menus
+  and loading screens still suspend NR; after-upscaling composition keeps its
+  UI requirements. Thanks to Eragon327 for the original fix (#104).
+- Check the NVIDIA driver before preparing RTX 20/30 frame-generation
+  compatibility. Drivers older than 570.65 stop with update instructions;
+  572.16 or newer is recommended. An unreadable version is logged and remains
+  admitted to the existing runtime checks.
+- Stop repeated vendor FG creation attempts after the first failed RTX 20/30
+  feature creation. Preserve its original error, retain potentially in-flight
+  resources, and require a restart. Successful feature recreation is unchanged.
+- Automatic NR can select an available compatible runtime when the legacy DLL
+  is missing. Startup, Apply and the NR enable control use the same file and
+  GPU policy. Explicit custom paths remain explicit.
+- Run MartysMods ReGrade+ with TRP's ReShade effects. ReGrade+ (ReShade 6.6 or
+  newer) prepares itself only in a device event that ReShade does not send to
+  TRP's ReShade runtime, so starting ReShade crashed the game. TRP now sends
+  ReGrade+ that event for its own runtime only. If it cannot, TRP turns its
+  ReShade effects off and names the `DisabledAddons` entry instead of crashing.
+- Correct the installation notes for RTX 30's default DLSS-G 310.9.16 route
+  and document runtime selection when upgrading.
+- Write DLSS and sharpening output directly into the output texture by
+  default, skipping a copy. Each route falls back to the copy for the session
+  if the texture does not qualify; `DirectRCASOutput`/`DirectDLSSOutput=false`
+  turn them off.
+- Restart the rolling timing window when the frame-generation provider,
+  preset, multiplier or dynamic mode changes, so each configuration's
+  percentiles and frame-generation time stand alone.
+- Lab A/B (developer controls): let the game's next frame render while NVIDIA
+  frame generation still reads the current frame's inputs. Off by default.
+- Switch between DLSS and XeSS with Apply at the current render size when the
+  SDK accepts it and NVIDIA's services are ready. Render scale and DLAA changes
+  still need a restart; a refused switch keeps the current mode and says so.
+- Experimental NR object masks, off by default: set how much NR applies to
+  first-person arms and weapons, player equipment, other humanoids and
+  creatures, from 0 (original) to 1 (full NR). Opaque objects only on Skyrim
+  1.6.1170, alongside SSE Engine Fixes, which patches the same draw function;
+  anything it cannot classify keeps normal NR. It does not reduce NR's cost.
+
+Apart from direct output, packaged settings defaults are unchanged, as are the
+Standard/Universal runtime split, NR tuning, placements and passes. Tested in
+game on an RTX 4080 SUPER with LoreRim and ENB: NR with one and two passes, x4
+frame generation, HDR, live DLSS/XeSS switching, hidden UI, loading screens,
+ReGrade+, ReShade screenshots and object masks. RTX 20/30/50 and physical
+display cadence remain unverified.
+
 # 0.4.4
 
+- RTX 30 Universal now uses DLSS-G 310.9.16 by default, including Preset C.
+  `RTX30LegacyDLSSG=true` retains the older 310.9.1 route. RTX 20 continues
+  using 310.9.1.
 - Universal runs original NVIDIA Neural Rendering 310.9.16 on RTX 20/30/40
   using a verified kernel pack installed in memory. The original DLL stays
   unchanged on disk. RTX 50 continues using NVIDIA's original kernels.

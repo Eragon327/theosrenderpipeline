@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	TheosRenderPipeline
-	VERSION 0.4.4
+	VERSION 0.4.5
 	LANGUAGES C CXX
 )
 
@@ -365,6 +365,41 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_include_directories(TRPDLSSQualityTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${TRP_NGX_SDK_DIR}/include" "${TRP_STREAMLINE_INCLUDE_DIR}")
     add_test(NAME DLSSQuality COMMAND TRPDLSSQualityTests)
+    add_executable(TRPNeuralObjectCaptureTests tests/NeuralObjectCaptureTests.cpp src/FrameGen/NeuralObjectCapture.cpp)
+    target_compile_features(TRPNeuralObjectCaptureTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPNeuralObjectCaptureTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPNeuralObjectCaptureTests PRIVATE src)
+    target_link_libraries(TRPNeuralObjectCaptureTests PRIVATE d3d11 d3d12 dxgi d3dcompiler)
+    add_test(NAME NeuralObjectCapture COMMAND TRPNeuralObjectCaptureTests)
+
+    add_executable(TRPNeuralObjectBlendTests tests/NeuralObjectBlendTests.cpp src/FrameGen/NeuralObjectBlend.cpp)
+    target_compile_features(TRPNeuralObjectBlendTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPNeuralObjectBlendTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPNeuralObjectBlendTests PRIVATE src)
+    target_link_libraries(TRPNeuralObjectBlendTests PRIVATE d3d11 d3d12 dxgi d3dcompiler)
+    add_test(NAME NeuralObjectBlend COMMAND TRPNeuralObjectBlendTests)
+
+    add_executable(TRPSourceUpscalerTransitionTests tests/SourceUpscalerTransitionTests.cpp)
+    target_compile_features(TRPSourceUpscalerTransitionTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPSourceUpscalerTransitionTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPSourceUpscalerTransitionTests PRIVATE src "${TRP_NGX_SDK_DIR}/include")
+    add_test(NAME SourceUpscalerTransition COMMAND TRPSourceUpscalerTransitionTests)
+    add_executable(TRPSourceRetirementPolicyTests tests/SourceRetirementPolicyTests.cpp)
+    target_compile_features(TRPSourceRetirementPolicyTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPSourceRetirementPolicyTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPSourceRetirementPolicyTests PRIVATE src "${TRP_NGX_SDK_DIR}/include")
+    add_test(NAME SourceRetirementPolicy COMMAND TRPSourceRetirementPolicyTests)
+    add_executable(TRPDLSSFeatureReleaseTests tests/DLSSFeatureReleaseTests.cpp)
+    target_compile_features(TRPDLSSFeatureReleaseTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPDLSSFeatureReleaseTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPDLSSFeatureReleaseTests PRIVATE src "${TRP_NGX_SDK_DIR}/include")
+    add_test(NAME DLSSFeatureRelease COMMAND TRPDLSSFeatureReleaseTests)
+    add_executable(TRPUpscalerInputResolutionTests tests/UpscalerInputResolutionTests.cpp)
+    target_compile_features(TRPUpscalerInputResolutionTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPUpscalerInputResolutionTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPUpscalerInputResolutionTests PRIVATE src "${TRP_NGX_SDK_DIR}/include")
+    add_test(NAME UpscalerInputResolution COMMAND TRPUpscalerInputResolutionTests)
+
     # The XeFG x3-x6 unlock is Universal-only; each edition links its own variant.
     if(TRP_ENABLE_OPTIONAL_FEATURES)
         add_executable(TRPXeFGUnlockEditionTests tests/XeFGUnlockEditionTests.cpp src/FrameGen/XeFGUnlock.cpp)
@@ -477,6 +512,10 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_include_directories(TRPNeuralRatioColorTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(TRPNeuralRatioColorTests PRIVATE d3d11 d3dcompiler)
     add_test(NAME NeuralRatioColor COMMAND TRPNeuralRatioColorTests)
+    add_executable(TRPNeuralSubrectTests tests/NeuralSubrectTests.cpp)
+    target_compile_features(TRPNeuralSubrectTests PRIVATE cxx_std_23)
+    target_include_directories(TRPNeuralSubrectTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    add_test(NAME NeuralSubrect COMMAND TRPNeuralSubrectTests)
     add_subdirectory(tests/nr-peripheral)
     add_subdirectory(tests/nr-ada)
     add_executable(TRPCommunityShaderFrameTests tests/CommunityShaderFrameTests.cpp)

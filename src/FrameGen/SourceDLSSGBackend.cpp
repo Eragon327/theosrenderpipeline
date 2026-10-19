@@ -2,6 +2,7 @@
 #include "SourceDLSSGBackend.h"
 #include "XeFGLayerSelection.h"
 #include <PCH.h>
+#include "NeuralFrameEligibility.h"
 #include "CommunityShaderIntegration.h"
 #include "SourceDLSSGSwapChain.h"
 #include "SourceRuntimeModuleDiagnostic.h"
@@ -9,6 +10,7 @@
 #include "DlssgLiteBlending.h"
 #include "StreamlineRuntimeFolder.h"
 #include "../PluginPaths.h"
+#include "../NeuralObjectHooks.h"
 #include "../ScreenshotFile.h"
 #include "../RenderPipeline.h"
 #include "../PerformanceTuning.h"
@@ -294,7 +296,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 				std::filesystem::path(adapterDesc.Description).string(), adapterDesc.VendorId, adapterDesc.DeviceId,
 				static_cast<std::uint32_t>(adapterDesc.AdapterLuid.HighPart), adapterDesc.AdapterLuid.LowPart);
 		}
-		logger::info("[ReShade] {}", ReShadeIntegration::Get().Status());
+		if (ReShadeIntegration::Get().Blocked()) { logger::warn("[ReShade] {}", ReShadeIntegration::Get().Status()); }
+		else { logger::info("[ReShade] {}", ReShadeIntegration::Get().Status()); }
 		adapterVendor_ = adapterDesc.VendorId;
 		adapterDevice_ = adapterDesc.DeviceId;
 		if (FAILED(adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &adapterDriver_))) { adapterDriver_ = {}; }
@@ -383,8 +386,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 		api_.waitForInputReaders = [](void* context, void* fence, std::uint64_t value) {
 			auto& owner = *static_cast<Backend*>(context);
 			// Called after Present: the snapshot still holds that frame's mode.
+			const bool overlap = owner.NvidiaOverlapNextFrame();
+			if (overlap != owner.nvidiaOverlapLogged_) {
+				owner.nvidiaOverlapLogged_ = overlap;
+				logger::info("[SourceDLSSG] next-frame D3D11 wait for frame-generation inputs now {}",
+					overlap ? "deferred to the first shared write (Lab)" : "at the start of the frame");
+			}
 			const auto result = owner.interop_.WaitForInputReaders(static_cast<ID3D12Fence*>(fence), value,
-				owner.session_.Snapshot().GenerationActive());
+				owner.session_.Snapshot().GenerationActive(), overlap);
 			if (FAILED(result)) {
 				const auto& detail = owner.interop_.LastInputWait();
 				logger::error("[SourceDLSSG] input reuse fence stage={} fence={} value={} hostIdentity={} referenceFenceOwner={} inputFenceOwner={}",
@@ -415,10 +424,30 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 	void Backend::ReleaseGuides()
 	{
-		motion_ = {}; depth_ = {}; ui_ = {}; hudless_ = {}; earlyNeuralColor_ = {};
+		motion_ = {}; depth_ = {}; ui_ = {}; hudless_ = {}; earlyNeuralColor_ = {}; objectMask_ = {}; objectMaskCurrent_ = false;
 		uiSource_.Reset(); depthCopy_.ResetViews();
 	}
-	bool Backend::EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair, DXGI_FORMAT a_format, FrameExtent a_extent)
+    bool Backend::CopyObjectMask(FrameExtent extent)
+    {
+        objectMaskCurrent_ = false;
+#if !defined(TRP_NO_NEURAL_RENDERING)
+        if (!frameNeuralOptions_.enabled || !frameNeuralOptions_.objectMasks.enabled) { return true; }
+        auto* source = NeuralObjects::Current();
+        if (!source || objectMaskRefused_) { return true; }
+        // Masks are experimental: a mask texture that cannot be shared turns them
+        // off for the session and the frame continues with normal NR.
+        if (!EnsureGuide(source,objectMask_,DXGI_FORMAT_R32_FLOAT,extent,true)) {
+            if (FAILED(fault_)) { return false; }
+            objectMaskRefused_ = true;
+            logger::warn("[NR Objects] shared classification texture unavailable; object masks off for this session, normal NR continues");
+            return true;
+        }
+        if (!Check(interop_.CopyInputRegion(source,objectMask_,extent),"NR object-classification copy")) { return false; }
+        objectMaskCurrent_ = true;
+#endif
+        return true;
+    }
+	bool Backend::EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair, DXGI_FORMAT a_format, FrameExtent a_extent, bool a_optional)
 	{
 		if (!a_source) { return false; }
 		D3D11_TEXTURE2D_DESC desc{};
@@ -437,16 +466,19 @@ namespace TheosRenderPipeline::SourceDLSSG
 		desc.Usage = D3D11_USAGE_DEFAULT; desc.CPUAccessFlags = 0; desc.MiscFlags = 0;
 		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 		if (&a_pair == &depth_) { desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS; }
-		const auto allocation = interop_.CreateSharedTexture(desc, a_pair);
+		const auto allocation = interop_.CreateSharedTexture(desc, a_pair, a_optional);
 		if (FAILED(allocation)) {
-			logger::error("[SourceDLSSG] shared guide format={} size={}x{} bind=0x{:X} mip={} array={}",
-				static_cast<int>(desc.Format), desc.Width, desc.Height, desc.BindFlags, desc.MipLevels, desc.ArraySize);
+			logger::error("[SourceDLSSG] shared guide format={} size={}x{} bind=0x{:X} mip={} array={} result=0x{:08X}",
+				static_cast<int>(desc.Format), desc.Width, desc.Height, desc.BindFlags, desc.MipLevels, desc.ArraySize,
+				static_cast<std::uint32_t>(allocation));
+			if (a_optional) { a_pair = {}; return false; }
 		}
 		return Check(allocation, "shared guide allocation");
 	}
 	bool Backend::CopyDepth(ID3D11Texture2D* a_depth)
 	{
-		return Check(depthCopy_.Copy(context11_.Get(), a_depth, depth_.texture11.Get(),
+		return Check(interop_.BeforeSharedWrites(), "deferred input wait before depth copy") &&
+			Check(depthCopy_.Copy(context11_.Get(), a_depth, depth_.texture11.Get(),
 			{depth_.desc.Width, depth_.desc.Height}), "depth copy");
 	}
 	bool Backend::Prepare(const sl::Constants& a_constants, ID3D11Texture2D* a_motion, ID3D11Texture2D* a_depth,
@@ -468,8 +500,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		uiSource_ = a_ui;
 		frameConstants_ = a_constants;
 		cameraAvailable_ = true;
-		const bool eligible = a_neuralEligible && !TransitionBlocked() && a_hudless &&
-			(a_ui || (neuralEvaluatedEarly_ && frameNeuralOptions_.worldOnly));
+		// NR before upscaling consumes only the world frame. Its early evaluation
+		// may run where the interface is hidden (tm/console) or where this frame
+		// falls back to Present, so neither DLSS-G guide is required for it.
+		const bool worldOnly = frameNeuralOptions_.WorldOnly();
+		const bool eligible = a_neuralEligible && !TransitionBlocked() &&
+			NeuralPreparedEligible(worldOnly, neuralEvaluatedEarly_, a_hudless != nullptr, a_ui != nullptr);
 		// The game host freezes settings before DLSS. Standalone callers that
 		// only Prepare retain the late-stage contract and never run early NR here.
 		if (!neuralFrameBegun_) {
@@ -486,6 +522,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			neuralPass_->NeedsRecreation(frameNeuralOptions_, motion_.desc.Width, motion_.desc.Height)) { frameNeuralReset_ = true; }
 #endif
 		if (frameNeuralReset_) { frameConstants_.reset = sl::eTrue; }
+        if (!neuralEvaluatedEarly_ && !CopyObjectMask(a_renderExtent)) { return false; }
 		auto tag = [](const SharedTexture& pair) {
 			TaggedTexture t;
 			t.resource = sl::Resource(sl::ResourceType::eTex2d, pair.texture12.Get(), D3D12_RESOURCE_STATE_COMMON);
@@ -651,7 +688,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 				reset, frameConstants_.depthInverted == sl::eTrue,
 				frameConstants_.mvecScale.x * motion_.desc.Width, frameConstants_.mvecScale.y * motion_.desc.Height,
 				motion_.texture12.Get(), depth_.texture12.Get(), ui_.texture12.Get(), hudless_.texture12.Get(), a_source,
-				neuralTimestampFrequency_, interop_.Marks(Work::SwapChain))) {
+				neuralTimestampFrequency_, interop_.Marks(Work::SwapChain), objectMaskCurrent_ ? objectMask_.texture12.Get() : nullptr,
+                {frameConstants_.jitterOffset.x,frameConstants_.jitterOffset.y})) {
 				if (!RefuseNeuralCreation(options.runtimePath)) {
 					FailNeuralRecording();
 					return fault_; // Retain all objects and the unsubmitted list on unknown NGX failure.
@@ -856,6 +894,24 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 		}
 		const auto& state = session_.Snapshot();
+		{
+			// Frame generation's cost depends on these. A change restarts the
+			// rolling timing window so each configuration's percentiles stand alone.
+			const bool active = GenerationActive();
+			const bool dynamic = provider_ == FrameGenerationProvider::NVIDIA && state.options.mode == sl::DLSSGMode::eDynamic;
+			const auto key = static_cast<std::uint64_t>(provider_) | static_cast<std::uint64_t>(PresetConfiguration()) << 4 |
+				static_cast<std::uint64_t>(active ? EffectiveMultiplier() : 0) << 8 | std::uint64_t{dynamic} << 16 |
+				std::uint64_t{NvidiaOverlapNextFrame()} << 17;
+			if (key != frameGenerationTimingKey_) {
+				frameGenerationTimingKey_ = key;
+				if (auto* timing = PerformanceTuning::GetSingleton(); timing->TimingEnabled()) {
+					timing->ResetTimingWindow();
+					logger::info("[Performance] frame generation {} {} preset={} overlap={}; timing window restarted",
+						ProviderName(provider_), active ? std::format("x{}{}", EffectiveMultiplier(), dynamic ? " dynamic" : "") : "off",
+						PresetLabel(PresetConfiguration()), NvidiaOverlapNextFrame());
+				}
+			}
+		}
 		if (provider_ == FrameGenerationProvider::NVIDIA && (state.frameIndex <= 3 || state.frameIndex % 600 == 0)) {
 			const auto feedback = PresentationFeedback();
 			const auto reflex = session_.ReflexTelemetry();
@@ -934,7 +990,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			logger::info("[SourceDLSSG] transition gate opened; waiting for three real presents before generation resumes");
 		}
 	}
-	bool Backend::Quiesce()
+	bool Backend::Quiesce(RetirementPurpose purpose)
 	{
 		enabled_ = false;
 		ResetPresentationFeedback();
@@ -943,19 +999,29 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (provider_ == FrameGenerationProvider::XeFG) {
 			if (!CheckXeFG(xefg_.Disable())) { return false; }
 		} else if (session_.Snapshot().stage != SessionStage::Stopped && !CheckSession(session_.Stop())) { return false; }
-		if (!Check(interop_.SignalD3D11(Work::SwapChain), "last D3D11 work before resize") ||
-			!Check(interop_.Drain(), "retire before resize")) { return false; }
-		ReleaseGuides();
+		bool retainedNeural = false;
+#if !defined(TRP_NO_NEURAL_RENDERING)
+		retainedNeural = purpose == RetirementPurpose::UpscalerReplacement && neuralPass_;
+#endif
+		const auto retired = RetireSharedResources(purpose, [&] {
+			return Check(interop_.SignalD3D11(Work::SwapChain), "last D3D11 work before host retirement") &&
+				Check(interop_.Drain(), "retire shared host work");
+		}, [&] {
 #if !defined(TRP_NO_NEURAL_RENDERING)
 		if (neuralPass_) {
 			neuralPass_->RetireTelemetry();
 			std::scoped_lock lock(neuralMutex_);
 			neuralSnapshot_.telemetry = neuralPass_->Telemetry();
 		}
+#endif
+		}, [&] {
+		ReleaseGuides();
+#if !defined(TRP_NO_NEURAL_RENDERING)
 		neuralPass_.reset(); // The presenting queue and NVIDIA input readers are retired.
 #endif
 		hdrPass_.reset();
 		hdrOutputPass_.reset();
+		}, [&] {
 		hdrFrameTagged_ = false;
 		neuralHistory_.Invalidate();
 		neuralEligible_ = false;
@@ -963,9 +1029,16 @@ namespace TheosRenderPipeline::SourceDLSSG
 		{
 			std::scoped_lock lock(neuralMutex_);
 			neuralSnapshot_.active = false;
-			neuralSnapshot_.status = "NR retired for resize; next eligible frame recreates the feature";
+			neuralSnapshot_.status = purpose == RetirementPurpose::Resize ?
+				"NR retired for resize; next eligible frame recreates the feature" :
+				"NR retained for fixed-size upscaler replacement; next eligible frame resets history";
 		}
-		return true;
+		});
+		if (retired) {
+			logger::info("[SourceHostRetirement] purpose={} resourcesRetained={} neuralFeatureRetained={}",
+				purpose == RetirementPurpose::Resize ? "resize" : "upscaler", purpose != RetirementPurpose::Resize, retainedNeural);
+		}
+		return retired;
 	}
 	void Backend::PollDisplayHDR(bool a_force)
 	{
@@ -1154,6 +1227,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (nvidiaNeedsPresent_) { return Ready(); }
 		if (provider_ == FrameGenerationProvider::XeFG) { xefg_.ResetHistory(); return Ready(); }
 		return Ready() && CheckSession(session_.ResumeAfterResize());
+	}
+	bool Backend::ResumeAfterUpscalerReplacement()
+	{
+		if (!ResumeAfterResize()) { return false; }
+		// Stop submitted Off without a real Present. Keep it Off while the new
+		// algorithm republishes reset guides; only successful real Presents count.
+		// Reuse the existing transition gate rather than discard option changes.
+		if (!TransitionBlocked()) {
+			transitionWarmupPresents_.store(TransitionWarmupPresents, std::memory_order_release);
+		}
+		logger::info("[SourceUpscaler] resumed with generation gated for three real presents");
+		return true;
 	}
 
 	bool Backend::PreflightProviderSwitch()

@@ -1,3 +1,4 @@
+#include "../NeuralObjectHooks.h"
 #include "DLSSBackend.h"
 #include "RenderPipeline.h"
 #include "NativeInput.h"
@@ -122,7 +123,7 @@ HRESULT NvidiaHost::ReleaseSourceUpscaler()
 {
     // The SDK retains its owner on failed destruction. Preserve the host's
     // ownership flags and resources too, and report the original result.
-    if (xeSSActive_) {
+    { // Also retire a candidate context retained after a failed replacement.
         auto& sr = TheosRenderPipeline::SourceDLSSG::Backend::Get().XeSS();
         const auto result = sr.ReleaseAfterRetirement();
         if (FAILED(result)) {
@@ -130,11 +131,16 @@ HRESULT NvidiaHost::ReleaseSourceUpscaler()
             return FailLifecycle(result, "XeSS context destruction");
         }
     }
+    { // Release partial/inactive DLSS allocations as well as the active method.
+        const auto result = DLSSBackend::GetSingleton()->ReleaseFeature();
+        if (FAILED(result)) { return FailLifecycle(result, "DLSS feature destruction"); }
+    }
     TheosRenderPipeline::ReShadeIntegration::Get().ResetAfterRetirement();
     communityFrame_.ResetAfterRetirement();
     EndNativeUIPass();
     startupOverlay_.ResetAfterRetirement();
     previewDraw_.ResetAfterRetirement();
+    TheosRenderPipeline::NeuralObjects::ResetAfterRetirement();
     uiBlendCoverage_.Reset();
     TheosRenderPipeline::LoadingArtwork::ResetAfterRetirement();
     loadingScreenUpscaler_.ResetAfterRetirement();
@@ -149,10 +155,6 @@ HRESULT NvidiaHost::ReleaseSourceUpscaler()
     nativeUIAttachments_.ResetAfterRetirement();
     nativeUI_.ResetAfterRetirement();
     gameTargets_.ResetUpscalerAfterRetirement();
-    if (upscalerReady_ && splitSourceDLSSActive_)
-    {
-        DLSSBackend::GetSingleton()->ReleaseFeature();
-    }
     upscalerReady_ = false;
     splitSourceDLSSActive_ = xeSSActive_ = false;
     return S_OK;
