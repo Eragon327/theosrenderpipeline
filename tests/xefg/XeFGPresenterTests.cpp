@@ -3,6 +3,7 @@
 #include "FrameGen/PresentationVSync.h"
 #include "NvidiaPresenterFixture.h"
 #include "FrameGen/PipelineCache.h"
+#include "PluginPaths.h"
 #include <dbghelp.h>
 #include <chrono>
 #include <algorithm>
@@ -97,13 +98,22 @@ int wmain(int argc, wchar_t** argv)
     TheosRenderPipeline::XeFGPresenter presenter;
     presenter.SetLogger([](const char* text) { std::printf("[Owner] %s\n", text); });
     Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1]), tensorRequested), "production admission");
+    const std::string cacheName = presenter.PipelineCacheName();
+    const auto runtimeDirectory = TheosRenderPipeline::PluginPaths::ModulePath(presenter.RuntimeModule()).parent_path();
+    const bool optionalRuntime = TheosRenderPipeline::PluginPaths::EqualPath(runtimeDirectory,
+        std::filesystem::absolute(argv[1]) / L"XeFG-Tensor");
+    Require(cacheName == (optionalRuntime ? "xefg-tensor-v1" : "xefg"),
+        "cache scope follows actual selected runtime before Create populates the snapshot");
+    std::printf("pipeline_cache_scope name=%s modelBeforeCreate=%u\n",cacheName.c_str(),presenter.Snapshot().tensorModel);
     const bool meteringOff = GetEnvironmentVariableW(L"TRP_XEFG_METERING_OFF",nullptr,0)!=0;
     const bool meteringToggle = GetEnvironmentVariableW(L"TRP_XEFG_METERING_TOGGLE",nullptr,0)!=0;
     const bool vsyncPolicy = GetEnvironmentVariableW(L"TRP_XEFG_VSYNC_POLICY",nullptr,0)!=0;
     const bool expectedDriverRefusal = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_REFUSAL",nullptr,0)!=0;
+    const bool expectedAllRefusal = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_UNSUPPORTED",nullptr,0)!=0;
     wchar_t updateFailure[8]{};
     const bool expectedUpdateFailure = GetEnvironmentVariableW(L"TRP_XEFG_TEST_METER_UPDATE_FAILURE",updateFailure,8)!=0;
-    const bool unsafeUpdateFailure = expectedUpdateFailure && updateFailure[0] == L'5';
+    const bool pacingException = expectedUpdateFailure && (updateFailure[0] == L'7' || updateFailure[0] == L'8');
+    const bool unsafeUpdateFailure = expectedUpdateFailure && (updateFailure[0] == L'3' || updateFailure[0] == L'5' || updateFailure[0] == L'8');
     const bool expectedUnsafeMetering = unsafeUpdateFailure || GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_UNSAFE",nullptr,0)!=0;
     presenter.SetFlipMetering(!meteringOff);
     Inputs input;
@@ -162,14 +172,16 @@ int wmain(int argc, wchar_t** argv)
             ComPtr<IDXGISwapChain1> proxy1;
             Check(proxy.As(&proxy1), "proxy1");
             const auto tensorBefore = presenter.TensorStats();
+            Require(presenter.PipelineCacheName() == cacheName, "Create keeps the selected bundle's cache scope");
+            unsigned autoFollowRefusalFrames{};
             for (unsigned frame = 0; frame < frameCount; ++frame) {
                 if (expectedUpdateFailure && frame == 24) {
                     const auto state = presenter.PacingStats();
                     Require(state.flipCalls > 0 && state.driverStatus == 0,
                         "driver configuration succeeds before injected update refusal");
-                    SetEnvironmentVariableW(L"TRP_XEFG_PACING_FAULT",unsafeUpdateFailure ? L"5" : L"4");
+                    SetEnvironmentVariableW(L"TRP_XEFG_PACING_FAULT",updateFailure);
                     std::printf("metering_update_failure round=%u frame=%u mode=%ls priorCalls=%llu\n",round,frame,
-                        unsafeUpdateFailure ? L"update-and-off" : L"update-only",state.flipCalls);
+                        updateFailure,state.flipCalls);
                 }
                 const auto vsyncMode = frame >= 32 && frame < 64 ? VSyncMode::On : VSyncMode::Auto;
                 if (vsyncPolicy) presenter.SetFlipMetering(vsyncMode != VSyncMode::On);
@@ -259,7 +271,8 @@ int wmain(int argc, wchar_t** argv)
                 if (round == 0 && ((stallMode == 1 || stallMode == 3) ? frame >= 9 && frame < 15 : stallMode == 2 && frame >= 2 && frame < 8))
                     Sleep(500);
                 const auto presentStart = std::chrono::steady_clock::now();
-                const auto presentation = ResolveVSync({vsyncMode,true,true},1,0,true);
+                const auto pacingBeforePresent = presenter.PacingStats().flags;
+                const auto presentation = ResolveVSync({vsyncMode,TheosRenderPipeline::XeFGPacing::CanMeter(pacingBeforePresent),true},1,0,true);
                 DXGI_PRESENT_PARAMETERS parameters{};
                 const auto result = vsyncPolicy ? (frame % 2 ? proxy1->Present1(presentation.sync,presentation.flags,&parameters) :
                     proxy->Present(presentation.sync,presentation.flags)) : proxy->Present(0, 0);
@@ -289,10 +302,18 @@ int wmain(int argc, wchar_t** argv)
                     return 0;
                 }
                 Check(completedPresent, "production completion");
+                if (vsyncPolicy && vsyncMode == VSyncMode::Auto &&
+                    (pacingBeforePresent & TheosRenderPipeline::XeFGPacing::Unavailable)) {
+                    Require(presentation.sync == 1 && !(presentation.flags & DXGI_PRESENT_ALLOW_TEARING),
+                        "Auto follows caller sync without tearing once metering is unavailable");
+                    ++autoFollowRefusalFrames;
+                }
                 if (expectedUpdateFailure && frame == 48) {
                     const auto state = presenter.PacingStats();
-                    Require(state.driverFailures > 0 && state.driverStatus == 0,
+                    Require((pacingException || state.driverFailures > 0) && state.driverStatus == 0,
                         "failed updates followed by acknowledged driver off");
+                    Require(state.flags & TheosRenderPipeline::XeFGPacing::Unavailable,
+                        "disabled/refused pacing becomes unavailable to Auto");
                     Require(!(state.flags & (TheosRenderPipeline::XeFGPacing::Metered | TheosRenderPipeline::XeFGPacing::Unsafe)),
                         "software pacing after failed updates is cleanly unmetered");
                     std::printf("metering_update_recovered round=%u calls=%llu failures=%llu status=%d\n",
@@ -343,16 +364,26 @@ int wmain(int argc, wchar_t** argv)
             const auto completed = presenter.Snapshot();
             const auto tensorAfter = presenter.TensorStats();
             const auto paced = presenter.PacingStats();
+            if (vsyncPolicy && (expectedDriverRefusal || expectedAllRefusal)) {
+                Require(autoFollowRefusalFrames > 0, "actual metering refusal reaches Auto follow-caller policy");
+                std::printf("auto_refusal_follow round=%u frames=%u\n",round,autoFollowRefusalFrames);
+            }
             std::printf("pacing_complete round=%u flags=%u deadlines=%llu extra=%llu calls=%llu metered=%llu failures=%llu feedback=%u status=%d\n",
                 round,paced.flags,paced.deadlines,paced.extraPaces,paced.flipCalls,paced.meteredCalls,paced.driverFailures,paced.feedback,paced.driverStatus);
+            if (expectedAllRefusal) {
+                Require((paced.flags & TheosRenderPipeline::XeFGPacing::Unavailable) &&
+                    !(paced.flags & TheosRenderPipeline::XeFGPacing::Unsafe) && paced.flipCalls == round + 1,
+                    "unsupported driver receives exactly one off-only probe per owner, no enable attempts or unsafe state");
+            }
             if (GetEnvironmentVariableW(L"TRP_XEFG_PACING_TEST",nullptr,0)) {
                 Require((paced.flags & TheosRenderPipeline::XeFGPacing::Registered)!=0,"private pacing context registration");
                 Require(paced.deadlines>0&&paced.extraPaces>0,"actual SDK deadlines and intermediate output pacing");
                 Require(meteringOff ? paced.flipCalls==0 : paced.flipCalls>0,"driver metering requests observed");
-                Require(expectedUpdateFailure ? paced.driverFailures>0&&paced.driverStatus==0 :
+                Require(expectedAllRefusal ? paced.driverFailures>0&&paced.meteredCalls==0 :
+                    expectedUpdateFailure ? (pacingException || paced.driverFailures>0)&&paced.driverStatus==0 :
                     expectedDriverRefusal ? paced.driverFailures>0&&paced.meteredCalls==0 : paced.driverFailures==0,
                     "driver refusal uses software pacing; normal configuration stays clean");
-                if (fullscreen&&!meteringOff&&!expectedDriverRefusal) Require(paced.meteredCalls>0,"independent-flip driver metering actually accepted");
+                if (fullscreen&&!meteringOff&&!expectedDriverRefusal&&!expectedAllRefusal) Require(paced.meteredCalls>0,"independent-flip driver metering actually accepted");
             }
             std::printf("tensor_complete round=%u model=%u active=%u launches=%llu fallbacks=%llu cachedPSOs=%llu libraryBytes=%zu\n", round,
                 completed.tensorModel, completed.tensorActive, completed.tensorLaunches, completed.tensorFallbacks,
@@ -364,6 +395,7 @@ int wmain(int argc, wchar_t** argv)
             proxy3.Reset();
             proxy.Reset();
             Check(presenter.Destroy(), "SDK private retirement");
+            Require(presenter.PipelineCacheName() == cacheName, "Destroy cannot erase the selected bundle's cache scope");
             Require(!(presenter.PacingStats().flags & TheosRenderPipeline::XeFGPacing::Registered),"no retained pacing owner after successful SDK retirement");
         }
         Require(input.color.texture11.Get() == stable, "stable host resource");

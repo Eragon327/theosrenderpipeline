@@ -8,10 +8,24 @@ struct FlipMeteringState
 {
     static constexpr std::uint32_t FailureLimit = 8;
     static constexpr std::uint32_t NoIndependentFlip = 1;
-    bool configured{}, metered{}, refused{};
+    bool probed{}, admitted{}, configured{}, metered{}, refused{};
     std::uint32_t outputs{}, feedback{}, consecutiveFailures{};
     std::int64_t spacing{}, batchNs{};
     int status{};
+
+    // Called once, with the result of an off-only capability probe before any
+    // enable attempt. Refusing that probe cannot leave our metering configured.
+    bool Probe(int result, std::uint32_t driverFeedback) noexcept
+    {
+        if (probed) return admitted;
+        probed = true;
+        status = result;
+        feedback = driverFeedback;
+        admitted = result == 0;
+        refused = !admitted;
+        return admitted;
+    }
+    bool CanEnable() const noexcept { return admitted && !refused; }
 
     // False means an outstanding configuration could not be disabled. The
     // caller must retain the queue/owner and prohibit provider replacement.

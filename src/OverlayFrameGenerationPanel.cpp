@@ -289,6 +289,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                             ImGui::TextColored(kOchre, "Driver metering unavailable while VSync On is applied.");
                         ImGui::TextWrapped("%s", sourceBackend.XeFGPacingStatus().c_str());
                         ImGui::Text("Driver metering: %s; accepted batches: %llu",
+                            pacing.flags & TheosRenderPipeline::XeFGPacing::Unavailable ? "unavailable" :
                             pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? "active" : "idle", pacing.meteredCalls);
                     }
                 }

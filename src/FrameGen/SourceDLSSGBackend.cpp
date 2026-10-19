@@ -377,7 +377,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (intelStartup) {
 			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_)) ||
 				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, true, &native, 0,
-					XeFGConfiguration(), IntelPipelines(xefgPipelines_, xefg_.Snapshot().tensorModel ? "xefg-tensor-v1" : "xefg", xefg_.RuntimeModule())))) { return fault_; }
+					XeFGConfiguration(), IntelPipelines(xefgPipelines_, xefg_.PipelineCacheName(), xefg_.RuntimeModule())))) { return fault_; }
 			providerStatus_ = "Intel XeFG presenter; latency owner=XeLL";
 		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), "Streamline swapchain")) { return fault_; }
 		retainedNative_ = native;
@@ -634,11 +634,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 	VSyncConfiguration Backend::PresentationConfiguration() const
 	{
-		constexpr auto required = XeFGPacing::Installed | XeFGPacing::Registered | XeFGPacing::DriverAvailable | XeFGPacing::QueueReady;
 		bool meter = false;
 		if (provider_ == FrameGenerationProvider::XeFG && XeFGFlipMetering()) {
 			const auto flags = xefg_.PacingStats().flags;
-			meter = (flags & required) == required && !(flags & XeFGPacing::Unsafe);
+			meter = XeFGPacing::CanMeter(flags);
 		}
 		return {VSyncConfigurationMode(), meter, (presenterDesc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0};
 	}
@@ -1316,7 +1315,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return provider == FrameGenerationProvider::XeFG ?
 			xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), presenterDesc_,
 				frameConstants_.depthInverted == sl::eTrue, result, session_.Snapshot().frameIndex, XeFGConfiguration(),
-				IntelPipelines(xefgPipelines_, xefg_.Snapshot().tensorModel ? "xefg-tensor-v1" : "xefg", xefg_.RuntimeModule())) :
+				IntelPipelines(xefgPipelines_, xefg_.PipelineCacheName(), xefg_.RuntimeModule())) :
 			streamlineFactory_->CreateSwapChain(queue_.Get(), &presenterDesc_, result);
 	}
 	bool Backend::ApplyProviderSwitch(SwapChain& wrapper)

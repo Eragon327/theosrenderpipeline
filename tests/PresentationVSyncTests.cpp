@@ -1,4 +1,5 @@
 #include "FrameGen/PresentationVSync.h"
+#include "FrameGen/XeFGPacingAPI.h"
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
@@ -32,6 +33,20 @@ int main(int argc, char** argv) {
     // when the active presenter has no metering owner.
     Require(ResolveVSync({VSyncMode::Auto,true,true},1,0,true).sync==0,"XeFG Auto overrides caller VSync");
     Require(ResolveVSync({VSyncMode::Auto,false,true},1,0,true).sync==1,"provider return restores caller VSync");
+    using namespace TheosRenderPipeline;
+    constexpr auto ready = XeFGPacing::Installed | XeFGPacing::Registered | XeFGPacing::DriverAvailable | XeFGPacing::QueueReady;
+    Require(XeFGPacing::CanMeter(ready), "available pacing admits Auto before the first independent flip");
+    for (auto unavailable : {UINT(XeFGPacing::Unavailable),UINT(XeFGPacing::Unsafe),UINT(XeFGPacing::Unavailable|XeFGPacing::Unsafe)}) {
+        const auto meter=XeFGPacing::CanMeter(ready | unavailable);
+        Require(!meter, "refused/disabled/unsafe metering is unavailable to Auto");
+        const auto request=ResolveVSync({VSyncMode::Auto,meter,true},1,0,true);
+        Require(request.sync==1 && request.flags==0 && !request.autoMetering,
+            "driver refusal restores caller VSync and does not add tearing");
+        Require(ResolveVSync({VSyncMode::Off,meter,true},1,0,true).sync==0,
+            "explicit Off stays independent of metering refusal");
+    }
+    for (auto missing : {XeFGPacing::Installed,XeFGPacing::Registered,XeFGPacing::DriverAvailable,XeFGPacing::QueueReady})
+        Require(!XeFGPacing::CanMeter(ready & ~UINT(missing)), "Auto needs every pacing prerequisite");
     std::printf("PASS %u presentation policy cases, probe preservation, live/provider changes\n",cases);
     if (argc==1) return 0;
     Require(argc==2 && std::strcmp(argv[1],"--gpu")==0,"explicit GPU option");

@@ -69,6 +69,9 @@ namespace TheosRenderPipeline
         HRESULT Destroy();
         bool Initialized() const { return initialized_; }
         HMODULE RuntimeModule() const { return fgModule_; }
+        // Scope by the selected runtime bundle, which Probe establishes before
+        // Create populates the per-context snapshot and Destroy later clears it.
+        const char* PipelineCacheName() const { return tensor_.Selected() ? "xefg-tensor-v1" : "xefg"; }
         void ResetHistory() { needsReset_ = true; snapshot_.prepared = false; tensor_.ResetPacing(fg_); }
         const XeFGSnapshot& Snapshot() const { return snapshot_; }
         const std::string& Status() const { return status_; }

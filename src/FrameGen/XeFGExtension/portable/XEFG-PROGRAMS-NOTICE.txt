@@ -1,5 +1,12 @@
 Intel XeSS Frame Generation program data in MFG Unlocker
 
+TRP adaptation: trp_xefg_tensor.dll embeds the extracted DXIL programs described
+by the upstream notice below. tensor.fatbin is a separately supplied compiled
+GPU payload from MFGUnlocker 1.5.2-xefg134.1; its CUDA source is not reconstructed.
+These assets are not relabeled as original TRP or upstream MIT source.
+
+Upstream notice:
+
 MFGUnlocker.dll embeds compute shader programs (DXIL) that run the multi-frame model of Intel XeSS Frame Generation
 on non-Intel GPUs. 46 of them are derived from programs in Intel's XeSS SDK (libxess_fg.dll) and were modified
 by this project; the others are this project's own.
