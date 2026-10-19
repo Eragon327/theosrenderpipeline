@@ -535,8 +535,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (a_ui) { guides.ui = tag(ui_); }
 		if (a_hudless) { guides.hudless = tag(hudless_); }
 		hdrFrameTagged_ = false;
-		if (HDRSignalled()) {
-			// DLSS-G needs HUD-less and UI in the backbuffer's HDR10 encoding.
+		if (hdrNative_) {
+			// FG needs layers in the backbuffer format even when this retained
+			// RGB10A2 swapchain carries SDR (Windows HDR off or disabled live).
 			// BeforePresent writes these targets; without both layers, tag neither.
 			const bool layers = a_ui && a_hudless && HDROutputEligibleFormat(hudless_.desc.Format) &&
 				hudless_.desc.Width == a_width && hudless_.desc.Height == a_height &&
@@ -748,14 +749,15 @@ namespace TheosRenderPipeline::SourceDLSSG
 			// The same premultiplied UI layer DLSS-G recomposes. The HDR targets are
 			// current only when HDR output composed this prepared frame; otherwise
 			// XeFG holds generation rather than interpolate an older world image.
-			const auto layers = SelectXeFGLayers(HDRSignalled(), hdrOutputPass_ != nullptr, prepared && hdrLayersComposed, uiSource_ != nullptr);
+			const auto destination = a_destination->GetDesc();
+			const auto layers = SelectXeFGLayers(destination.Format, hudless_.desc.Format,
+				hdrOutputPass_ != nullptr, prepared && hdrLayersComposed, uiSource_ != nullptr);
 			auto pick = [&](XeFGLayer layer, ID3D12Resource* hdr, ID3D12Resource* standard) {
-				return layer == XeFGLayer::HDR ? hdr : layer == XeFGLayer::Standard ? standard : nullptr;
+				return layer == XeFGLayer::Converted ? hdr : layer == XeFGLayer::Standard ? standard : nullptr;
 			};
 			auto* intelHudless = pick(layers.hudless, hdrOutputPass_ ? hdrOutputPass_->HudlessTarget() : nullptr, hudless_.texture12.Get());
 			auto* intelUI = pick(layers.ui, hdrOutputPass_ ? hdrOutputPass_->UITarget() : nullptr, ui_.texture12.Get());
 			// No FP16/scRGB reinterpretation. XeFG copies matching native-format layers.
-			const auto destination = a_destination->GetDesc();
 			const bool compatible = intelHudless && intelHudless->GetDesc().Format == destination.Format;
 			if (intelUI) {
 				const auto ui = intelUI->GetDesc();
@@ -764,6 +766,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (!CheckXeFG(xefg_.SetDebugView(XeFGOnlyGenerated(), XeFGTagGenerated()))) { return fault_; }
 			if (xefg_.FlipMeteringRequested() != XeFGFlipMetering()) xefg_.SetFlipMetering(XeFGFlipMetering());
 			xefg_.SetSceneChangeThreshold(XeFGSceneChangeThresholdConfiguration());
+			if (enabled_ && (!generationAllowed || !prepared || !compatible) && xefg_.Snapshot().presents % 600 == 0) {
+				logger::info("[XeFG] generation held gate={} prepared={} compatible={} sourceFormat={} outputFormat={} convertedThisFrame={}",
+					generationAllowed, prepared, compatible, static_cast<unsigned>(hudless_.desc.Format),
+					static_cast<unsigned>(destination.Format), hdrLayersComposed);
+			}
 			marks.Begin(D3D12Stage::kXeFGInputs);
 			if (!CheckXeFG(xefg_.BeforePresent(list, motion_.texture12.Get(), depth_.texture12.Get(), intelHudless, intelUI,
 				generationAllowed && prepared && compatible, UIRecompositionConfiguration(),
@@ -1198,7 +1205,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Display state changes only between frames (AfterPresent), so tags,
 		// encoding and colour space agree within a frame.
 		const bool compose = a_prepared && hdrFrameTagged_;
-		const bool hdr = compose || HDRSignalled();
+		const bool hdr = HDRSignalled();
 		// A prepared world frame without both layers (for example native UI off)
 		// still expands; menus and loading without generation stay at UI brightness.
 		const bool expandWholeFrame = hdr && !compose && a_prepared;

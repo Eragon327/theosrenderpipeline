@@ -267,6 +267,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                         if (ImGui::Checkbox("NVIDIA flip metering (session only)", &meter))
                             sourceBackend.ConfigureXeFGFlipMetering(meter);
                         DrawSettingsHelp("Compares driver timing with software timing. Changes live and is not saved. "
+                                         "Requires VSync off (including SSE Display Tweaks). "
                                          "The driver must accept metering for it to become active.");
                         ImGui::TextWrapped("%s", sourceBackend.XeFGPacingStatus().c_str());
                         ImGui::Text("Driver metering: %s; accepted batches: %llu",

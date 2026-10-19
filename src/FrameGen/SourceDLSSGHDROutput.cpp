@@ -68,6 +68,21 @@ Targets PSCompose(Vertex v) {
     int3 p = int3(v.position.xy, 0);
     float4 c = composite.Load(p), u = ui.Load(p), s = scene.Load(p);
     float a = saturate(u.a);
+    if (Mode.y > 0.5) {
+        // Keep the finished SDR frame exact while producing fresh RGB10A2
+        // world/layers for FG. Infer any late coverage in SDR, without PQ.
+        float3 baseSDR = saturate(u.rgb + (1.0 - a) * s.rgb);
+        float3 deltaSDR = c.rgb - baseSDR;
+        float3 coverageSDR = deltaSDR >= 0.0 ? deltaSDR / max(1.0 - baseSDR, 1.0 / 65535.0) :
+                                             -deltaSDR / max(baseSDR, 1.0 / 65535.0);
+        float lateAlpha = saturate(max(coverageSDR.r, max(coverageSDR.g, coverageSDR.b)));
+        a = lateAlpha + (1.0 - lateAlpha) * a;
+        Targets t;
+        t.backbuffer = float4(c.rgb, 1.0);
+        t.hudless = float4(s.rgb, 1.0);
+        t.ui = float4(saturate(c.rgb - (1.0 - a) * s.rgb), a);
+        return t;
+    }
     // The native UI layer is premultiplied in the producer's SDR encoding.
     float3 uiPQ = EncodeUIPremultiplied(u.rgb, a);
     // Keep the captured world intact. Content drawn after its UI composition
