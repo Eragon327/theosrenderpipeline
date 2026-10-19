@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <vector>
 #include <imgui_internal.h>
 #include <string_view>
 #include <PCH.h>
@@ -85,6 +86,43 @@ bool LegacyNeuralRuntime(const OverlayUI::FrameView& view)
     return name == "nvngx_dlssnr.dll" || name.starts_with("nvngx_dlssnr_int8");
 }
 
+// An open, amber eye when shown; a dim, slashed eye when hidden. Fits a square of size.
+void DrawEye(ImDrawList* draw, ImVec2 min, float size, bool shown, bool hovered)
+{
+    const float w = size, h = size * 0.62f;
+    const ImVec2 left(min.x, min.y + size * 0.5f), right(min.x + w, min.y + size * 0.5f);
+    const ImVec2 centre(min.x + w * 0.5f, min.y + size * 0.5f);
+    const auto colour = ImGui::GetColorU32(shown ? kAmber : hovered ? kIvory : kMuted);
+    const float stroke = (std::max)(1.0f, Px(1.4f));
+    draw->AddBezierQuadratic(left, ImVec2(centre.x, centre.y - h), right, colour, stroke);
+    draw->AddBezierQuadratic(left, ImVec2(centre.x, centre.y + h), right, colour, stroke);
+    if (shown)
+    {
+        draw->AddCircleFilled(centre, size * 0.17f, colour);
+    }
+    else
+    {
+        draw->AddCircle(centre, size * 0.15f, colour, 0, stroke);
+        draw->AddLine(ImVec2(min.x + w * 0.15f, min.y + size * 0.88f), ImVec2(min.x + w * 0.85f, min.y + size * 0.12f),
+                      colour, stroke);
+    }
+}
+
+// The groups shown in the preview, for its footer: "NPCs and Creatures".
+std::string ShownGroups(unsigned groups, const char* const (&names)[4])
+{
+    std::vector<const char*> shown;
+    for (unsigned i = 0; i < 4; ++i) { if ((groups >> i) & 1) { shown.push_back(names[i]); } }
+    if (shown.size() == 4) { return "all groups"; }
+    std::string text;
+    for (std::size_t i = 0; i < shown.size(); ++i)
+    {
+        text += i == 0 ? "" : i + 1 == shown.size() ? " and " : ", ";
+        text += shown[i];
+    }
+    return text;
+}
+
 // One pass's object rules: the mask preview, then a row per group with its
 // override checkbox and Strength, Tone and Structure. Aligned with the shared
 // control column. Presets cannot change object rules, so they show greyed.
@@ -138,49 +176,39 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     }
 
     ImGui::BeginDisabled(locked);
-    // The preview is a session-only diagnostic for the whole image.
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Px(14.0f));
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Mask preview");
-    ImGui::TableNextColumn();
-    {
-        const char* modes[]{"Off", "Colour overlay", "Classes only"};
-        const char* groups[]{"All groups", "First person", "Player", "NPCs", "Creatures"};
-        const float half = (control - style.ItemSpacing.x) * 0.5f;
-        int mode = !masks.previewGroups ? 0 : masks.previewClassesOnly ? 2 : 1;
-        ImGui::SetNextItemWidth(half);
-        if (ImGui::Combo("##previewMode", &mode, modes, IM_ARRAYSIZE(modes)))
-        {
-            masks.previewGroups = mode == 0 ? 0u : masks.previewGroups ? masks.previewGroups : 0xFu;
-            masks.previewClassesOnly = mode == 2;
-        }
-        DrawSettingsHelp("Tints classified objects in their group colours over the finished image. Not saved.");
-        ImGui::SameLine();
-        int group = masks.previewGroups == 0x1u ? 1 : masks.previewGroups == 0x2u ? 2 : masks.previewGroups == 0x4u ? 3
-                    : masks.previewGroups == 0x8u ? 4 : 0;
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::BeginDisabled(!masks.previewGroups);
-        if (ImGui::Combo("##previewGroup", &group, groups, IM_ARRAYSIZE(groups))) { masks.previewGroups = group ? 1u << (group - 1) : 0xFu; }
-        ImGui::EndDisabled();
-        DrawSettingsHelp(!masks.previewGroups ? "Choose a preview first." : "Show every group, or one.");
-    }
-
     for (unsigned i = 0; i < 4; ++i)
     {
         auto& rule = rules.groups[i];
         ImGui::PushID(static_cast<int>(i));
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        ImGui::AlignTextToFramePadding();
-        const auto pos = ImGui::GetCursorScreenPos();
-        const float indent = Px(14.0f);
+        // The eye shows this group in the mask preview, whether or not it overrides.
+        // Eye, swatch and name share one frame-height line, like the controls.
+        const float frame = ImGui::GetFrameHeight();
+        const float eye = std::round(ImGui::GetTextLineHeight());
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Px(14.0f));
+        bool shown = (masks.previewGroups >> i) & 1;
+        if (ImGui::InvisibleButton("##eye", ImVec2(eye, frame)))
+        {
+            shown = !shown;
+            masks.previewGroups = shown ? (masks.previewGroups | (1u << i)) : (masks.previewGroups & ~(1u << i));
+        }
+        const bool eyeHovered = ImGui::IsItemHovered();
+        if (eyeHovered)
+        {
+            ImGui::SetTooltip(shown ? "Hide %s in the mask preview." : "Show %s in the mask preview.", names[i]);
+        }
+        const auto eyeMin = ImGui::GetItemRectMin();
+        DrawEye(ImGui::GetWindowDrawList(), ImVec2(eyeMin.x, eyeMin.y + (frame - eye) * 0.5f), eye, shown, eyeHovered);
+        ImGui::SameLine(0, style.ItemInnerSpacing.x * 1.5f);
         const float box = std::round(Px(8.0f));
-        const float top = pos.y + (ImGui::GetFrameHeight() - box) * 0.5f;
-        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x + indent, top), ImVec2(pos.x + indent + box, top + box),
+        ImGui::Dummy(ImVec2(box, frame));
+        const auto swatch = ImGui::GetItemRectMin();
+        const float top = swatch.y + (frame - box) * 0.5f;
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(swatch.x, top), ImVec2(swatch.x + box, top + box),
             ImGui::GetColorU32(swatches[i]), Px(2.0f));
-        ImGui::SetCursorScreenPos(ImVec2(pos.x + indent + box + style.ItemInnerSpacing.x, pos.y));
+        ImGui::SameLine(0, style.ItemInnerSpacing.x);
+        ImGui::AlignTextToFramePadding();
         // An overriding group's name is amber, as a changed setting is.
         if (rule.enabled) { ImGui::TextColored(kAmber, "%s", names[i]); } else { ImGui::TextUnformatted(names[i]); }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", NR::kObjectGroups[i]); }
@@ -205,6 +233,23 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
         ImGui::EndDisabled();
         ImGui::PopID();
     }
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Px(14.0f));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Mask preview");
+    ImGui::TableNextColumn();
+    ImGui::BeginDisabled(!masks.previewGroups);
+    ImGui::Checkbox("Classes only", &masks.previewClassesOnly);
+    ImGui::EndDisabled();
+    DrawSettingsHelp(masks.previewGroups ? "Shows only the chosen groups' colours on black."
+                                         : "Open a group's eye to start the preview.");
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    const auto shownText = masks.previewGroups ? "showing " + ShownGroups(masks.previewGroups, names) + " | not saved"
+                                               : std::string("open an eye to preview a group | not saved");
+    ImGui::TextDisabled("%s", shownText.c_str());
+    DrawSettingsHelp("The preview covers the whole finished image, so it is the same on both pass tabs.");
     ImGui::EndDisabled();
     ImGui::EndTable();
 
