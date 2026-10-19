@@ -163,6 +163,90 @@ inline bool UndoButton(const char* id)
     draw->PathStroke(colour, 0, stroke);
     return clicked;
 }
+// One option of a segmented control. A disabled option shows greyed, with
+// reason as its tooltip.
+struct Segment
+{
+    const char* label;
+    bool enabled{true};
+    const char* reason{nullptr};
+};
+// A row of joined buttons for a short, fixed set of options; the selected one is
+// amber. Fills the next item width. When the labels do not fit it falls back to
+// a combo with the same options. Returns true when the selection changes.
+inline bool Segmented(const char* id, int& selected, std::initializer_list<Segment> segments)
+{
+    const auto& style = ImGui::GetStyle();
+    const float width = ImGui::CalcItemWidth();
+    const float height = ImGui::GetFrameHeight();
+    const auto count = static_cast<int>(segments.size());
+    float needed = 0;
+    for (const auto& segment : segments) { needed += ImGui::CalcTextSize(segment.label).x + style.FramePadding.x * 2; }
+    bool changed = false;
+    ImGui::PushID(id);
+    if (needed > width || count == 0)
+    {
+        // Too narrow: the same choice as a combo.
+        const auto* current = selected >= 0 && selected < count ? (segments.begin() + selected)->label : "";
+        ImGui::SetNextItemWidth(width);
+        if (ImGui::BeginCombo("##segments", current))
+        {
+            int index = 0;
+            for (const auto& segment : segments)
+            {
+                ImGui::BeginDisabled(!segment.enabled);
+                if (ImGui::Selectable(segment.label, index == selected) && index != selected) { selected = index; changed = true; }
+                ImGui::EndDisabled();
+                if (segment.reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", segment.reason); }
+                ++index;
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::PopID();
+        return changed;
+    }
+    // Widths share the spare room equally, so short labels do not look cramped.
+    const float spare = (width - needed) / count;
+    auto* draw = ImGui::GetWindowDrawList();
+    const auto origin = ImGui::GetCursorScreenPos();
+    const auto border = ImGui::GetColorU32(ImGuiCol_Border);
+    float x = origin.x;
+    int index = 0;
+    for (const auto& segment : segments)
+    {
+        const float w = index + 1 == count ? origin.x + width - x
+                                           : std::round(ImGui::CalcTextSize(segment.label).x + style.FramePadding.x * 2 + spare);
+        ImGui::SetCursorScreenPos(ImVec2(x, origin.y));
+        ImGui::PushID(index);
+        ImGui::BeginDisabled(!segment.enabled);
+        if (ImGui::InvisibleButton("##segment", ImVec2(w, height)) && index != selected) { selected = index; changed = true; }
+        ImGui::EndDisabled();
+        const bool hovered = ImGui::IsItemHovered();
+        if (segment.reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", segment.reason); }
+        const bool on = index == selected;
+        // Unavailable options sit darker than the rest, so they read as out of reach.
+        const auto fill = on ? ImGui::GetColorU32(ImVec4(0.23f, 0.18f, 0.08f, 1.0f))
+                        : !segment.enabled ? ImGui::GetColorU32(ImVec4(0.07f, 0.075f, 0.078f, 1.0f))
+                        : hovered ? ImGui::GetColorU32(ImGuiCol_FrameBgHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg);
+        draw->AddRectFilled(ImVec2(x, origin.y), ImVec2(x + w, origin.y + height), fill);
+        if (index > 0) { draw->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + height), border); }
+        const auto size = ImGui::CalcTextSize(segment.label);
+        // A disabled row already dims everything drawn; a disabled option uses the disabled text colour.
+        const auto colour = !segment.enabled ? ImGui::GetColorU32(ImVec4(kMuted.x * 0.7f, kMuted.y * 0.7f, kMuted.z * 0.7f, 1.0f))
+                          : on ? ImGui::GetColorU32(kAmber) : ImGui::GetColorU32(ImGuiCol_Text);
+        draw->AddText(ImVec2(x + (w - size.x) * 0.5f, origin.y + (height - size.y) * 0.5f), colour, segment.label);
+        ImGui::PopID();
+        x += w;
+        ++index;
+    }
+    draw->AddRect(origin, ImVec2(origin.x + width, origin.y + height), border, style.FrameRounding);
+    // Register the whole control as one item for layout and SameLine.
+    ImGui::SetCursorScreenPos(origin);
+    ImGui::Dummy(ImVec2(width, height));
+    ImGui::PopID();
+    return changed;
+}
+
 // The state cell for one row: empty, or an undo button when it differs. The
 // tooltip gives the value it restores.
 inline void StateCell(std::initializer_list<const char*> keys)

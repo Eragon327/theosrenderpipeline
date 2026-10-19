@@ -63,6 +63,16 @@ void OverlayUI::DrawFrameMeasurements(const FrameView& view, float columnHeight)
     ImGui::Spacing();
 }
 
+namespace
+{
+// A timing for the menu: the shared formatter's value with its unit.
+std::string MenuMilliseconds(float value, bool available)
+{
+    auto text = TheosRenderPipeline::Telemetry::Milliseconds(value, available);
+    return text == "unavailable" ? text : text + " ms";
+}
+}
+
 void OverlayUI::DrawStageMeasurements(const FrameView& view, SettingsPage page)
 {
     const auto& timings = view.timings;
@@ -72,7 +82,7 @@ void OverlayUI::DrawStageMeasurements(const FrameView& view, SettingsPage page)
     auto row12 = [&](const char* name, Stage12 stage, const char* help = nullptr) {
         const auto i = static_cast<std::size_t>(stage);
         if (!view.timingEnabled || !timings.d3d12Available[i]) { return false; }
-        DrawSettingsValue(name, TheosRenderPipeline::Telemetry::Milliseconds(timings.d3d12Ms[i], true).c_str());
+        DrawSettingsValue(name, MenuMilliseconds(timings.d3d12Ms[i], true).c_str());
         if (help) { DrawSettingsHelp(help); }
         return true;
     };
@@ -88,7 +98,7 @@ void OverlayUI::DrawStageMeasurements(const FrameView& view, SettingsPage page)
         {
             const auto handoff = (std::max)(0.0f, timings.d3d11Ms[roundTrip] - timings.d3d12Ms[earlyList]);
             DrawSettingsValue("D3D11/D3D12 handoff",
-                              TheosRenderPipeline::Telemetry::Milliseconds(handoff, true).c_str());
+                              MenuMilliseconds(handoff, true).c_str());
             DrawSettingsHelp("Before-DLSS NR only: the input and result copies plus the waits between the two APIs.");
         }
         return;
@@ -110,7 +120,7 @@ void OverlayUI::DrawStageMeasurements(const FrameView& view, SettingsPage page)
         const auto i = static_cast<std::size_t>(stage);
         if (timings.d3d11ScopeInvalid[i]) { DrawSettingsValue(name, "invalid scope"); return; }
         DrawSettingsValue(
-            name, TheosRenderPipeline::Telemetry::Milliseconds(timings.d3d11Ms[i], timings.d3d11Available[i]).c_str());
+            name, MenuMilliseconds(timings.d3d11Ms[i], timings.d3d11Available[i]).c_str());
     };
     if (page == SettingsPage::Image)
     {
