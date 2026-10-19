@@ -60,6 +60,9 @@ namespace TheosRenderPipeline::NeuralRendering
 		bool RecordEvaluation(const EvaluationInput& a_input);
 
 		bool IsInitialized() const;
+		// A safe compatibility refusal or NGX creation refusal before any command
+		// reached the caller's list. Compatibility refusals return NotSupported.
+		std::uint32_t RefusedCreation() const;
 		RuntimeBuild Build() const;
 		std::uint64_t EvaluationsRecorded() const;
 		const std::string& Status() const;

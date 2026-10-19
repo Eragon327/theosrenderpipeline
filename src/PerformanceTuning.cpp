@@ -266,6 +266,10 @@ void PerformanceTuning::ResetTimingWindow()
 	d3d11FrameWindow_.fill(0.0f);
 	sourcePresentCpuWindow_.fill(0.0f);
 	sourcePresentCpuNext_ = sourcePresentCpuCount_ = 0;
+	d3d12LastFrame_.fill(0);
+	d3d12NewestFrame_ = 0;
+	holdWindow_.fill(0.0f);
+	holdNext_ = holdCount_ = 0;
 	gameFrameCadenceNext_ = 0;
 	d3d11FrameNext_ = 0;
 	gameFrameCadenceCount_ = 0;
@@ -601,6 +605,45 @@ bool PerformanceTuning::EndD3D11Stage(ID3D11DeviceContext* a_context, D3D11Stage
 	return true;
 }
 
+void PerformanceTuning::RecordD3D12Stage(D3D12Stage stage, float ms, std::uint64_t frame, bool bounded)
+{
+	const auto index = ToIndex(stage);
+	if (!TimingEnabled() || index >= kD3D12StageCount || !std::isfinite(ms) || ms < 0.0f) { return; }
+	auto& snapshot = timingSnapshot_;
+	const bool hold = stage == D3D12Stage::kFrameGenerationHold;
+	if (hold && bounded) {
+		++snapshot.holdBounded;
+		return;
+	}
+	++snapshot.d3d12Samples;
+	if (hold) {
+		++snapshot.holdExact;
+		PushPercentileSample(holdWindow_, holdNext_, holdCount_, ms);
+		if (holdCount_ == 1 || holdNext_ % kPercentileRefreshSamples == 0) {
+			snapshot.frameGenerationHold = SummarizePercentiles(holdWindow_, holdCount_);
+		}
+	}
+	// Smoothing restarts after a stage was unavailable. Frames are stored + 1:
+	// zero means never measured.
+	const bool seen = snapshot.d3d12Available[index];
+	snapshot.d3d12Ms[index] = Smooth(snapshot.d3d12Ms[index], ms, seen);
+	d3d12LastFrame_[index] = frame + 1;
+	d3d12NewestFrame_ = (std::max)(d3d12NewestFrame_, frame + 1);
+	for (std::size_t i = 0; i < kD3D12StageCount; ++i) {
+		snapshot.d3d12Available[i] = d3d12LastFrame_[i] && d3d12NewestFrame_ - d3d12LastFrame_[i] < kD3D12StaleFrames;
+	}
+	FrameTrace::GetSingleton()->Record(
+		FrameTrace::EventType::kGpuStage,
+		FrameTrace::kSuccess,
+		QueryQpc(),
+		frame,
+		static_cast<std::uint64_t>(FrameTrace::GpuDomain::kD3D12),
+		static_cast<std::uint16_t>(index),
+		static_cast<std::uint16_t>(kD3D12StageCount),
+		MillisecondsToNanoseconds(ms),
+		0);
+}
+
 void PerformanceTuning::RecordGameFrameCadenceMs(float a_ms)
 {
 	if (!TimingEnabled()) {
@@ -642,7 +685,17 @@ void PerformanceTuning::MaybeLogTimingSummary()
 			TheosRenderPipeline::Telemetry::Milliseconds(present.p50Ms, present.samples > 0),
 			TheosRenderPipeline::Telemetry::Milliseconds(present.p95Ms, present.samples > 0),
 			TheosRenderPipeline::Telemetry::Milliseconds(present.p99Ms, present.samples > 0), present.samples);
-		logger::info("[Performance] NVIDIA generation GPU cost unavailable; source NR has separate fence-retired telemetry. D3D11 frame ends before Present; runtime output counts do not measure scanout cadence");
+		const auto d12ms = [&](D3D12Stage a_stage) {
+			return TheosRenderPipeline::Telemetry::Milliseconds(timingSnapshot_.d3d12Ms[ToIndex(a_stage)],
+				timingSnapshot_.d3d12Available[ToIndex(a_stage)]);
+		};
+		const auto& hold = timingSnapshot_.frameGenerationHold;
+		logger::info("[Performance D3D12] smoothed ms: earlyNRList={} fgTagList={} outputList={} nrPrepare={} nrInference={} nrFinish={} output={} xefgInputs={} fgHold={}; fgHold p50={:.3f} p95={:.3f} p99={:.3f} n={} exact={} bounded={}",
+			d12ms(D3D12Stage::kEarlyNeuralList), d12ms(D3D12Stage::kFrameGenTagList), d12ms(D3D12Stage::kOutputList),
+			d12ms(D3D12Stage::kNeuralPrepare), d12ms(D3D12Stage::kNeuralInference), d12ms(D3D12Stage::kNeuralFinish),
+			d12ms(D3D12Stage::kOutput), d12ms(D3D12Stage::kXeFGInputs), d12ms(D3D12Stage::kFrameGenerationHold),
+			hold.p50Ms, hold.p95Ms, hold.p99Ms, hold.samples, timingSnapshot_.holdExact, timingSnapshot_.holdBounded);
+		logger::info("[Performance] fgHold runs from TRP's output to DLSS-G releasing that frame's inputs on the presenting queue; other GPU work running at the same time can add to it. D3D11 frame ends before Present; runtime output counts do not measure scanout cadence");
 		const auto& nr = timingSnapshot_.neuralEarly;
 		auto* memory = VideoMemoryTelemetry::GetSingleton();
 		memory->Update(); // Sample with the menu closed too; internally rate-limited.

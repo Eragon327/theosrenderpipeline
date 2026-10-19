@@ -4,6 +4,7 @@
 #include <d3d12.h>
 #include <wrl/client.h>
 #include "D3D11FrameCopy.h"
+#include "D3D12StageTimer.h"
 
 #include <array>
 #include <cstddef>
@@ -108,8 +109,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Called on the Present thread before any next-frame D3D11 input write.
 		// Bridges Streamline's completion fence through our shared fence. With no
 		// internal fence, the presenting-queue barrier is valid only with DLSS-G's
-		// default eBlockPresentingClientQueue mode.
-		HRESULT WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value);
+		// default eBlockPresentingClientQueue mode. a_timeHold: the presented
+		// frame generated frames, so the timer measures DLSS-G's input hold.
+		HRESULT WaitForInputReaders(ID3D12Fence* a_fence, std::uint64_t a_value, bool a_timeHold = false);
 		const InputWaitDiagnostics& LastInputWait() const { return inputWait_; }
 		HRESULT Begin(Work a_work, ID3D12GraphicsCommandList** a_list, AllocatorWaitTiming* a_wait = nullptr);
 		HRESULT Submit(Work a_work);
@@ -122,6 +124,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool Ready() const { return ready_ && SUCCEEDED(fault_); }
 		std::uint64_t LastValue(Work a_work) const;
 		std::size_t CurrentSlot(Work a_work) const;
+		// Every list from Begin to Submit is timed when the timer is enabled.
+		D3D12StageTimer& Timer() { return timer_; }
+		// Pass marks for the list a_work is recording; inert when not timed.
+		D3D12StageMarks Marks(Work a_work);
 
 		// Both resources enter and leave COMMON.
 		static HRESULT RecordCopy(ID3D12GraphicsCommandList* a_list,
@@ -152,6 +158,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<ID3D12CommandQueue> queue_;
 		Microsoft::WRL::ComPtr<IUnknown> fenceDeviceIdentity_;
 		std::array<WorkContext, static_cast<std::size_t>(Work::Count)> work_;
+		D3D12StageTimer timer_;
+		std::array<int, static_cast<std::size_t>(Work::Count)> timerRecords_{
+			D3D12StageTimer::kNoRecord, D3D12StageTimer::kNoRecord, D3D12StageTimer::kNoRecord };
 		InputWaitDiagnostics inputWait_;
 		InteropFailureDiagnostics observation_, failure_;
 		RetirementWaitPolicy waitPolicy_;

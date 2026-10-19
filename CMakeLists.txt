@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	TheosRenderPipeline
-	VERSION 0.4.3
+	VERSION 0.4.4
 	LANGUAGES C CXX
 )
 
@@ -38,6 +38,11 @@ option(TRP_ENABLE_NEURAL_RENDERING "Include Neural Rendering integration and con
 option(TRP_ENABLE_OPTIONAL_FEATURES "Include optional Ada/Ampere/Turing MFG compatibility" ON)
 if(TRP_ENABLE_NEURAL_RENDERING)
     target_sources(TheosRenderPipeline PRIVATE ${ARP_NEURAL_SOURCES})
+    if(TRP_ENABLE_OPTIONAL_FEATURES)
+        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeKernels.cpp src/FrameGen/NeuralRuntimeKernelPlan.cpp)
+    else()
+        target_sources(TheosRenderPipeline PRIVATE src/FrameGen/NeuralRuntimeKernelsNative.cpp)
+    endif()
     include(cmake/NeuralShaders.cmake)
     trp_target_neural_shaders(TheosRenderPipeline)
 else()
@@ -211,6 +216,8 @@ if(NOT EXISTS "${TRP_XEFG_SDK_DIR}/inc/xess_fg/xefg_swapchain_d3d12.h" OR
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${TRP_XEFG_SDK_DIR}/inc")
 set_source_files_properties(src/FrameGen/XeFGPresenter.cpp src/FrameGen/XeFGUnlock.cpp src/FrameGen/XeFGUnlockNative.cpp src/FrameGen/XeSSUpscaler.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
+set_source_files_properties(src/FrameGen/NeuralRuntimeKernels.cpp src/FrameGen/NeuralRuntimeKernelPlan.cpp src/FrameGen/NeuralRuntimeKernelsNative.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS "UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX")
 find_path(TRP_SIMPLEINI_INCLUDE_DIR SimpleIni.h REQUIRED)
 
 target_include_directories(
@@ -390,16 +397,24 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     add_test(NAME ReShadeAbsent COMMAND TRPReShadeIntegrationTests)
     add_subdirectory(tests/reshade-lifecycle)
     add_executable(TRPSourceDLSSGInteropFenceTests tests/SourceDLSSGInteropFenceTests.cpp
-        src/FrameGen/SourceDLSSGInterop.cpp)
+        src/FrameGen/SourceDLSSGInterop.cpp src/FrameGen/D3D12StageTimer.cpp)
     target_compile_features(TRPSourceDLSSGInteropFenceTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPSourceDLSSGInteropFenceTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_include_directories(TRPSourceDLSSGInteropFenceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(TRPSourceDLSSGInteropFenceTests PRIVATE d3d11 d3d12 dxgi d3dcompiler)
     add_test(NAME SourceDLSSGInteropFence COMMAND TRPSourceDLSSGInteropFenceTests)
     set_tests_properties(SourceDLSSGInteropFence PROPERTIES TIMEOUT 30)
+    add_executable(TRPD3D12StageTimerTests tests/D3D12StageTimerTests.cpp
+        src/FrameGen/SourceDLSSGInterop.cpp src/FrameGen/D3D12StageTimer.cpp)
+    target_compile_features(TRPD3D12StageTimerTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPD3D12StageTimerTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPD3D12StageTimerTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(TRPD3D12StageTimerTests PRIVATE d3d11 d3d12 dxgi)
+    add_test(NAME D3D12StageTimer COMMAND TRPD3D12StageTimerTests)
+    set_tests_properties(D3D12StageTimer PROPERTIES TIMEOUT 60)
 
     add_executable(TRPDeviceLossDiagnosticsTests tests/DeviceLossDiagnosticsTests.cpp
-        src/FrameGen/SourceDLSSGDeviceLoss.cpp src/FrameGen/SourceDLSSGInterop.cpp)
+        src/FrameGen/SourceDLSSGDeviceLoss.cpp src/FrameGen/SourceDLSSGInterop.cpp src/FrameGen/D3D12StageTimer.cpp)
     target_compile_features(TRPDeviceLossDiagnosticsTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPDeviceLossDiagnosticsTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_include_directories(TRPDeviceLossDiagnosticsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${TRP_SIMPLEINI_INCLUDE_DIR}")
@@ -463,6 +478,7 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_link_libraries(TRPNeuralRatioColorTests PRIVATE d3d11 d3dcompiler)
     add_test(NAME NeuralRatioColor COMMAND TRPNeuralRatioColorTests)
     add_subdirectory(tests/nr-peripheral)
+    add_subdirectory(tests/nr-ada)
     add_executable(TRPCommunityShaderFrameTests tests/CommunityShaderFrameTests.cpp)
     target_compile_features(TRPCommunityShaderFrameTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPCommunityShaderFrameTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

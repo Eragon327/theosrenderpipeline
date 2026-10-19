@@ -61,6 +61,49 @@ runtimes retain the license files accompanying their downloads.
   editions include this code; experimental XeFG MFG is off by default.
   https://github.com/Coldwood1026/OptiScalerDp4aUnlock/tree/9eea95bba9fda7121f214d2eba358423be598d7e
 
+## NR compatibility kernels and legacy INT8 runtime
+
+Universal's `nvngx_dlssnr_310.9.16.trpk` includes SM75/SM86 compatibility
+kernels from ShortFuse's community build, reproduced by
+[openNR](https://github.com/clshortfuse/openNR) at
+`57ca170cb836f549f0e64544f282d535666b0f7d` (Carlos Lopez Jr., MIT).
+The build input is pinned to SHA-256
+`CDFA6C1EC784867182164C7836F324F087B5C9F374D0C9FE46F54999FEABF3ED`.
+The pack keeps TRP's separately built SM89 kernels and NVIDIA's original SM120
+code/PTX. The complete community 310.9.16 DLL and duplicate model weights are
+not distributed. The verified host-admission patch facts also correspond to
+openNR's audited recipe. NVIDIA's code and model retain their own terms;
+openNR's MIT license does not relicense them. See tools/nr-runtime/README.md.
+
+Universal also retains the community INT8 v2 NR 310.8 runtime as
+`nvngx_dlssnr_int8.dll`, SHA-256
+`F82812BF0AAFD77F7F95ABC61B0AFA36967EF9D0A773137B85E1D978201C19F9`,
+for RTX 20/30 compatibility. Its known-bad RTX 40 path is refused by exact
+runtime hash. This is a modified runtime and is not represented as an
+unmodified NVIDIA-signed binary.
+
+openNR notice:
+
+Copyright (c) 2026 Carlos Lopez Jr.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 ## Libraries and SDKs
 
 CommonLibSSE-NG 8.1.0 (`3c0f5a87c3b166c9a6712d5c3bd180e9ac5ad0fd`) uses

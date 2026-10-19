@@ -1,3 +1,31 @@
+# 0.4.4
+
+- Universal runs original NVIDIA Neural Rendering 310.9.16 on RTX 20/30/40
+  using a verified kernel pack installed in memory. The original DLL stays
+  unchanged on disk. RTX 50 continues using NVIDIA's original kernels.
+- Standard retains two NR DLLs: legacy 310.8 and original 310.9.16. Universal
+  supplies the compatibility pack and retains the legacy community INT8 v2
+  DLL for RTX 20/30. Duplicate full community and standalone RTX 40 310.9.16
+  DLLs are replaced by the pack. Install matching Standard first, then
+  Universal after it in MO2.
+- Automatic prefers 310.9.16 on supported GPUs. Safe refusal falls back to
+  legacy INT8 then 310.8 on RTX 20/30, or 310.8 on RTX 40/50. INT8's known-bad
+  RTX 40 path remains blocked. Standard alone keeps 310.8 on older GPUs.
+- Existing explicit custom runtime choices are kept; older default-runtime
+  settings migrate to Automatic. Runtime labels put version and precision
+  first, with filenames available on hover.
+- NR reports GPU time separately for inference, preparation, reconstruction/UI
+  and the D3D11/D3D12 handoff, helping identify which stages cost frame time.
+
+Both editions retain NR, existing frame-generation compatibility and packaged
+settings defaults. Earlier RTX 40-only builds received scoped RTX 4080 SUPER
+game acceptance for two NR passes before upscaling, x4 frame generation and a
+loading transition. The combined pack retains those SM89 cubins but has a new
+identity; that earlier acceptance does not establish gameplay acceptance for
+the rebuilt packages. Local RTX 20/30/50 execution, Standard-only gameplay and
+physical cadence remain unverified. The tiny 58x32 second-model stress case
+remains a shared limitation of standalone and in-memory paths.
+
 # 0.4.3
 
 - Add a **Frame generation preset** dropdown with NVIDIA's Presets A

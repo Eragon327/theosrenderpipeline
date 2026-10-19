@@ -268,6 +268,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::uint64_t presentationQueryFailures_{};
 		std::int64_t presentationQpcFrequency_{};
 		std::uint64_t neuralTimestampFrequency_{};
+		bool timerReported_{}; // Stage timer availability was logged.
 		RuntimeDiagnostics runtimeDiagnostics_;
 		mutable std::mutex generationMutex_;
 		GenerationRequest generationRequest_;
@@ -291,8 +292,16 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Each refused runtime with the note shown while it stays selected.
 		std::vector<std::pair<std::filesystem::path, std::string>> neuralRefusedRuntimes_; // Protected by neuralMutex_.
 		int neuralComputeCapability_{ -1 };
-		// Replaces a refused runtime; returns its note, or nullptr. Requires neuralMutex_.
-		const std::string* ApplyNeuralFallback(NeuralOptions& options) const;
+		std::filesystem::path neuralLoggedRuntime_; // Last runtime Automatic or a fallback chose.
+		// Requires neuralMutex_. Picks Automatic's runtime for this GPU once the
+		// device exists, and replaces a refused runtime with Automatic's choice.
+		// Returns the refusal note while it applies, or nullptr.
+		const std::string* SelectNeuralRuntime(NeuralOptions& options);
+		// Requires neuralMutex_. Refuses a runtime for the session and switches.
+		void RefuseNeuralRuntime(const std::filesystem::path& runtime, const std::string& reason, std::string_view advice);
+		// After a failed NR Record: true when NGX refused to create the feature,
+		// so nothing was recorded and NR moves to the next runtime instead of failing.
+		bool RefuseNeuralCreation(const std::filesystem::path& runtime);
 #endif
 		std::unique_ptr<HDRPass> hdrPass_;
 		// Renderer-owned HDR output (render thread except the guarded settings/state).

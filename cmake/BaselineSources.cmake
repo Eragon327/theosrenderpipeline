@@ -141,6 +141,8 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/SourceDLSSGHDROutput.cpp
     src/FrameGen/SourceDLSSGHDROutput.h
     src/FrameGen/SourceDLSSGInterop.cpp
+    src/FrameGen/D3D12StageTimer.cpp
+    src/FrameGen/D3D12StageTimer.h
     src/FrameGen/SourceDLSSGDeviceLoss.cpp
     src/FrameGen/SourceDLSSGDeviceLoss.h
     src/FrameGen/SourceDLSSGInterop.h

@@ -3,6 +3,8 @@
 #include "NeuralRenderingCreationContext.h"
 #include "NeuralRenderingModulePathHook.h"
 #include "NeuralRenderingRuntimeIdentity.h"
+#include "NeuralRuntimeKernels.h"
+#include "NeuralRuntimeCompatibility.h"
 
 #include <PCH.h>
 
@@ -13,6 +15,7 @@
 #include <cmath>
 #include <format>
 #include <limits>
+#include <mutex>
 #include <utility>
 
 #include <wrl/client.h>
@@ -27,6 +30,9 @@ namespace TheosRenderPipeline::NeuralRendering
 		constexpr const char* kTheosRenderPipelineNGXEngineVersion = "0.1.0-neural-rendering-source";
 		constexpr auto kNeuralRenderingFeature = static_cast<NVSDK_NGX_Feature>(0x12);
 		std::atomic<bool> publicNGXInitialized{};
+		// Covers first load, kernel publication, public NGX and direct feature init.
+		// Subsequent passes must not observe a partly initialized shared module.
+		std::mutex initializationMutex;
 
 		using D3D12Init = NVSDK_NGX_Result(NVSDK_CONV*)(
 			unsigned long long,
@@ -124,6 +130,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		std::uint32_t lastEvaluateResult{ (std::numeric_limits<std::uint32_t>::max)() };
 		bool attempted{ false };
 		bool initialized{ false };
+		bool runtimeRefused{ false };
 		std::string status{ "not initialized" };
 
 		~State()
@@ -180,6 +187,7 @@ namespace TheosRenderPipeline::NeuralRendering
 			return false;
 		}
 		state.attempted = true;
+		std::scoped_lock initializationLock(initializationMutex);
 		if (!a_info.device || a_info.runtimePath.empty() || a_info.displayWidth == 0 ||
 			a_info.displayHeight == 0 || a_info.renderWidth == 0 || a_info.renderHeight == 0) {
 			state.status = "source session inputs are incomplete";
@@ -202,6 +210,38 @@ namespace TheosRenderPipeline::NeuralRendering
 		if (const auto existing = ::GetModuleHandleW(L"nvngx_dlssnr.dll")) {
 			if (!EqualPath(ModulePath(existing), identity.path)) {
 				state.status = "a different nvngx_dlssnr.dll is already resident";
+				return false;
+			}
+		}
+
+		// Own the runtime before public NGX can discover it. When needed, install the
+		// pack before either public NGX or the runtime's own init is entered.
+		// MO2's virtual path is not a reliable GetModuleHandle filename lookup.
+		const auto existingModule = PluginPaths::RetainLoadedModule(identity.path);
+		const bool resident = existingModule != nullptr;
+		state.module = existingModule ? existingModule : ::LoadLibraryExW(identity.path.c_str(), nullptr,
+			LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+		state.ownsModule = state.module != nullptr;
+		if (!state.module) {
+			state.status = std::format("runtime LoadLibrary failed ({})", ::GetLastError());
+			return false;
+		}
+		if (!EqualPath(ModulePath(state.module), identity.path)) {
+			state.status = "loaded NR module does not match the requested runtime path";
+			return false;
+		}
+		if (identity.sha256 == kKernelRuntimeSha256 &&
+			NeedsRuntimeKernels(ComputeCapability(a_info.device->GetAdapterLuid()))) {
+			// Keep the requested Data path for siblings. MO2 can resolve the DLL
+			// to Standard's physical folder while Universal supplies the pack.
+			// identity.path identifies the module, not the merged asset directory.
+			const auto packPath = a_info.runtimePath.parent_path() / std::filesystem::u8path(kKernelPackName);
+			logger::info("[DLSSNR Source] compatibility kernel pack request={}", packPath.string());
+			const auto result = ApplyRuntimeKernels(state.module, packPath, !resident);
+			logger::info("[DLSSNR Source] compatibility kernels applied={} unsafe={} status={}", result.applied, result.unsafe, result.status);
+			if (!result.applied) {
+				state.status = result.status;
+				state.runtimeRefused = !result.unsafe;
 				return false;
 			}
 		}
@@ -238,18 +278,6 @@ namespace TheosRenderPipeline::NeuralRendering
 		}
 		logger::info("[DLSSNR Source] public NGX initialized result=0x{:08X} loader={}",
 			static_cast<std::uint32_t>(publicInitResult), normalLoaderPath.string());
-
-		// Each session needs its own reference, including a second NR pass that
-		// may outlive the first session after an unfinished creation submission.
-		state.module = ::LoadLibraryExW(
-			identity.path.c_str(),
-			nullptr,
-			LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-		state.ownsModule = state.module != nullptr;
-		if (!state.module) {
-			state.status = std::format("runtime LoadLibrary failed ({})", ::GetLastError());
-			return false;
-		}
 
 		auto init = reinterpret_cast<D3D12Init>(
 			::GetProcAddress(state.module, "NVSDK_NGX_D3D12_Init"));
@@ -445,6 +473,13 @@ namespace TheosRenderPipeline::NeuralRendering
 	bool FeatureSession::IsInitialized() const
 	{
 		return state_ && state_->initialized;
+	}
+	std::uint32_t FeatureSession::RefusedCreation() const
+	{
+		if (state_ && state_->runtimeRefused) { return static_cast<std::uint32_t>(NVSDK_NGX_Result_FAIL_FeatureNotSupported); }
+		constexpr auto notCalled = (std::numeric_limits<std::uint32_t>::max)();
+		return state_ && !state_->initialized && state_->lastCreateResult != notCalled &&
+			NVSDK_NGX_FAILED(static_cast<NVSDK_NGX_Result>(state_->lastCreateResult)) ? state_->lastCreateResult : 0;
 	}
 	RuntimeBuild FeatureSession::Build() const
 	{

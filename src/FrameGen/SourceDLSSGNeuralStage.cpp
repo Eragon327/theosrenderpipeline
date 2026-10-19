@@ -3,6 +3,7 @@
 #include "NeuralRenderingRuntimeIdentity.h"
 #include "PerformanceTuning.h"
 #include "NeuralRuntimeCompatibility.h"
+#include "NeuralRuntimeKernels.h"
 #include "SourceDLSSGSettings.h"
 #include "../PluginPaths.h"
 #include <algorithm>
@@ -21,12 +22,74 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		std::scoped_lock lock(neuralMutex_);
 		// The note stays only while the selected runtime is the one being replaced.
-		const auto* note = ApplyNeuralFallback(a_options);
+		const auto* note = SelectNeuralRuntime(a_options);
 		neuralSnapshot_.fallback = note ? *note : std::string{};
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
 		neuralOptions_ = std::move(a_options);
+	}
+	const std::string* Backend::SelectNeuralRuntime(NeuralOptions& options)
+	{
+		if (!options.enabled) { return nullptr; }
+		auto refused = [&](const std::filesystem::path& path) -> const std::string* {
+			const auto entry = std::find_if(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
+				[&](const auto& item) { return PluginPaths::EqualPath(item.first, path); });
+			return entry == neuralRefusedRuntimes_.end() ? nullptr : &entry->second;
+		};
+		const std::string* note{};
+		if (!options.automaticRuntime && !(note = refused(options.runtimePath))) { return nullptr; }
+		// Until the device exists the GPU is unknown and 310.8 stands in; nothing
+		// creates a feature before CreateSwapChain chooses again.
+		if (neuralComputeCapability_ < 0 && device12_) {
+			neuralComputeCapability_ = NeuralRendering::ComputeCapability(device12_->GetAdapterLuid());
+		}
+		for (const auto candidate : AutomaticNeuralRuntimes((std::max)(neuralComputeCapability_, 0), NeuralRendering::RuntimeKernelsSupported())) {
+			const auto path = PluginPaths::Directory() / std::filesystem::u8path(candidate);
+			if (const auto* why = refused(path)) { note = note ? note : why; continue; }
+			std::error_code error;
+			if (std::filesystem::is_regular_file(path, error)) {
+				options.runtimePath = path;
+				if (neuralComputeCapability_ >= 0 && !PluginPaths::EqualPath(path, neuralLoggedRuntime_)) {
+					neuralLoggedRuntime_ = path;
+					logger::info("[SourceDLSSG NR] {} chose {} for GPU compute capability {}.{}",
+						options.automaticRuntime ? "Automatic" : "fallback", path.filename().string(),
+						neuralComputeCapability_ / 10, neuralComputeCapability_ % 10);
+				}
+				return note;
+			}
+		}
+		options.enabled = false;
+		return note;
+	}
+	void Backend::RefuseNeuralRuntime(const std::filesystem::path& runtime, const std::string& reason, std::string_view advice)
+	{
+		// Both NR stages of one frame can ask before the switch lands; record it once.
+		if (std::any_of(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
+			[&](const auto& entry) { return PluginPaths::EqualPath(entry.first, runtime); })) { return; }
+		neuralRefusedRuntimes_.emplace_back(runtime, std::string{});
+		auto next = neuralOptions_;
+		next.runtimePath = runtime;
+		SelectNeuralRuntime(next);
+		const auto name = runtime.filename().string();
+		neuralRefusedRuntimes_.back().second = next.enabled ?
+			std::format("{} {}, so {} is used instead.{}", name, reason, NeuralRuntimeLabel(next.runtimePath.string()), advice) :
+			std::format("{} {}, so NR is off.{}", name, reason, advice);
+		logger::warn("[SourceDLSSG NR] {} (GPU compute capability {}.{})", neuralRefusedRuntimes_.back().second,
+			neuralComputeCapability_ / 10, neuralComputeCapability_ % 10);
+		if (const auto* note = SelectNeuralRuntime(neuralOptions_)) { neuralSnapshot_.fallback = *note; }
+		neuralAvailability_.Reset();
+	}
+	bool Backend::RefuseNeuralCreation(const std::filesystem::path& runtime)
+	{
+		const auto result = neuralPass_ ? neuralPass_->RefusedCreation() : 0u;
+		if (!result) { return false; }
+		const auto status = neuralPass_->Status();
+		// NGX refused before NR recorded anything; this pass has no GPU work in flight.
+		neuralPass_.reset();
+		std::scoped_lock lock(neuralMutex_);
+		RefuseNeuralRuntime(runtime, std::format("could not start NR ({})", status), "");
+		return true;
 	}
 	const char* Backend::NeuralUnavailableReason(const NeuralOptions& options)
 	{
@@ -45,24 +108,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 				NeuralRendering::RuntimeBuild::Unknown;
 		}, retainedBuild);
 		if (refused) {
-			// Refuse it before any feature uses it; the next frame runs NVIDIA's runtime instead.
-			// Both NR stages of one frame can ask before the switch lands; record it once.
-			const bool known = std::any_of(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
-				[&](const auto& entry) { return PluginPaths::EqualPath(entry.first, options.runtimePath); });
-			if (!known) {
-				neuralRefusedRuntimes_.emplace_back(options.runtimePath, std::string{});
-				auto fallback = neuralOptions_;
-				ApplyNeuralFallback(fallback);
-				const auto name = options.runtimePath.filename().string();
-				neuralRefusedRuntimes_.back().second = fallback.enabled ?
-					std::format("{} is {}, so NVIDIA's {} is used instead. RTX 40 cards need a fixed build.", name, refused->description,
-						fallback.runtimePath.filename().string()) :
-					std::format("{} is {}, so NR is off. RTX 40 cards need a fixed build.", name, refused->description);
-				logger::warn("[SourceDLSSG NR] {} (GPU compute capability {}.{})", neuralRefusedRuntimes_.back().second,
-					neuralComputeCapability_ / 10, neuralComputeCapability_ % 10);
-			}
-			if (const auto* note = ApplyNeuralFallback(neuralOptions_)) { neuralSnapshot_.fallback = *note; }
-			neuralAvailability_.Reset();
+			// Refuse it before any feature uses it; the next frame runs the next runtime instead.
+			RefuseNeuralRuntime(options.runtimePath, std::format("is {}", refused->description), " RTX 40 cards need a fixed build.");
 			return "NR runtime refused for this GPU; switching runtime";
 		}
 		if (reason && reason != neuralReportedUnavailable_) { logger::warn("[SourceDLSSG NR] {}", reason); }
@@ -99,22 +146,6 @@ namespace TheosRenderPipeline::SourceDLSSG
                 options.secondPass.linked, second.preset, second.inputScale, second.tuning.intensity);
         }
         return true;
-    }
-
-    const std::string* Backend::ApplyNeuralFallback(NeuralOptions& options) const
-    {
-        auto refused = [&](const std::filesystem::path& path) -> const std::string* {
-            const auto entry = std::find_if(neuralRefusedRuntimes_.begin(), neuralRefusedRuntimes_.end(),
-                [&](const auto& item) { return PluginPaths::EqualPath(item.first, path); });
-            return entry == neuralRefusedRuntimes_.end() ? nullptr : &entry->second;
-        };
-        const auto* note = options.enabled ? refused(options.runtimePath) : nullptr;
-        if (!note) { return nullptr; }
-        const auto fallback = PluginPaths::Directory() / std::filesystem::u8path(kDefaultNeuralRuntime);
-        std::error_code error;
-        if (!refused(fallback) && std::filesystem::is_regular_file(fallback, error)) { options.runtimePath = fallback; }
-        else { options.enabled = false; }
-        return note;
     }
 
     bool Backend::FailNeuralRecording()
@@ -176,7 +207,13 @@ namespace TheosRenderPipeline::SourceDLSSG
             frameNeuralReset_, camera->depthInverted == sl::eTrue,
             camera->mvecScale.x * motion_.desc.Width, camera->mvecScale.y * motion_.desc.Height,
             motion_.texture12.Get(), depth_.texture12.Get(), nullptr, earlyNeuralColor_.texture12.Get(), nullptr,
-            neuralTimestampFrequency_)) { return FailNeuralRecording(); }
+            neuralTimestampFrequency_, interop_.Marks(Work::Upscaling))) {
+            if (!RefuseNeuralCreation(frameNeuralOptions_.runtimePath)) { return FailNeuralRecording(); }
+            // Nothing was recorded: retire the empty list and run DLSS on the original
+            // colour this frame. The next frame uses the next runtime.
+            neuralEligible_ = false;
+            return Check(interop_.Submit(Work::Upscaling), "submit NR list after a refused runtime");
+        }
         if (!Check(Interop::RecordCopy(list, neuralPass_->Corrected(), earlyNeuralColor_.texture12.Get()), "early NR result copy") ||
             !Check(interop_.Submit(Work::Upscaling), "submit NR before DLSS") ||
             !Check(interop_.WaitD3D11(Work::Upscaling), "DLSS waits for NR")) { return false; }

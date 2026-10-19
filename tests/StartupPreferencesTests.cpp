@@ -68,6 +68,7 @@ int main(int argc, char** argv)
         const std::filesystem::path firstRoot = "C:/First Game/Data/SKSE/Plugins";
         const std::filesystem::path movedRoot = "D:/Moved Game/Data/SKSE/Plugins";
         Require(!configuredStreamline.empty() && !configuredNeural.empty(), "packaged runtime paths present");
+        Require(TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(configuredNeural), "packaged NR runtime is Automatic");
         owner.ResolveRuntimePaths(firstRoot);
         Require(std::filesystem::path(owner.settings.sourceDLSSGStreamlineDirectory).is_absolute() &&
             std::filesystem::path(owner.settings.neuralRenderingRuntimePath).is_absolute(), "runtime uses resolved paths");
@@ -87,7 +88,8 @@ int main(int argc, char** argv)
             owner.LoadStartupPreferences(pathsReloaded);
             owner.ResolveRuntimePaths(movedRoot);
             Require(owner.settings.sourceDLSSGStreamlineDirectory == (movedRoot / configuredStreamline).lexically_normal().string() &&
-                owner.settings.neuralRenderingRuntimePath == (movedRoot / configuredNeural).lexically_normal().string(),
+                owner.settings.neuralRenderingRuntimePath ==
+                    (movedRoot / TheosRenderPipeline::SourceDLSSG::kDefaultNeuralRuntime).lexically_normal().string(),
                 "saved relative paths follow a moved installation");
         }
         CSimpleIniA absolutePaths;

@@ -1,9 +1,10 @@
 #include "GPU.h"
 #include <numeric>
+#include <fstream>
 #include <nvsdk_ngx.h>
 
 int wmain(int argc,wchar_t** argv){
-    Require(argc == 5, "usage: benchmark absolute-NR-DLL native|uniform|peripheral|passes|coldpasses width height");
+    Require(argc >= 5 && argc <= 7, "usage: benchmark absolute-NR-DLL native|uniform|peripheral|passes|coldpasses width height [preset [output-float4-file]]");
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
     const std::wstring mode=argv[2];
     const bool coldStart = mode == L"coldpasses";
@@ -29,6 +30,7 @@ int wmain(int argc,wchar_t** argv){
     NeuralOptions options;options.enabled=true;options.runtimePath=argv[1];options.beforeUpscaling=true;
     options.tuning.uiCorrection=false;options.reconstruction.inputScale=mode==L"uniform"?.9f:1.f;
     options.reconstruction.peripheralCompression=mode==L"peripheral";
+    if(argc>=6)options.reconstruction.preset=std::stoi(argv[5]);
     std::vector<Pixel> pixels(size_t(w)*h);
     for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x)
         pixels[y*w+x]={.1f+.6f*x/w,.1f+.6f*y/h,.2f+.3f*((x/8+y/8)%2),1};
@@ -64,6 +66,7 @@ int wmain(int argc,wchar_t** argv){
         gpu.list->EndQuery(query.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0);
         const bool recorded=pass->Record(gpu.device.Get(),gpu.list.Get(),frame%kCommandSlots,options,frame==0 || recreate,true,float(w),float(h),
             motion.Get(),depth.Get(),options.beforeUpscaling?nullptr:ui.Get(),scene.Get(),options.beforeUpscaling?nullptr:composed.Get(),frequency);
+        if(!recorded && pass->RefusedCreation())std::printf("REFUSED 0x%08X\n",pass->RefusedCreation());
         Require(recorded,pass->Status().c_str());
         if (coldStart) {
             Require(GetModuleHandleW(L"nvngx.dll") || GetModuleHandleW(L"_nvngx.dll"),
@@ -84,11 +87,26 @@ int wmain(int argc,wchar_t** argv){
         }
     }
     auto result=gpu.Read(pass->Corrected());size_t changed=0;
+    if(argc==7){
+        std::ofstream output(std::filesystem::path(argv[6]),std::ios::binary);
+        output.write(reinterpret_cast<const char*>(result.data()),static_cast<std::streamsize>(result.size()*sizeof(Pixel)));
+        Require(output.good(),"write complete float4 output for runtime comparison");
+    }
     for(size_t i=0;i<result.size();++i)for(unsigned ch=0;ch<4;++ch){
         Require(std::isfinite(result[i][ch]),"finite real NR output");
         if(ch<3 && std::abs(result[i][ch]-pixels[i][ch])>.01f)++changed;
     }
     Require(changed>result.size()/10,"real runtime must alter the image");
+    // A runtime without working kernels for this GPU can run and still render
+    // black (community int8 v2 on RTX 40), which also "alters the image".
+    double inputMean=0,outputMean=0;size_t black=0;
+    for(size_t i=0;i<result.size();++i){
+        inputMean+=(pixels[i][0]+pixels[i][1]+pixels[i][2])/3.0;outputMean+=(result[i][0]+result[i][1]+result[i][2])/3.0;
+        if(result[i][0]<.02f && result[i][1]<.02f && result[i][2]<.02f)++black;
+    }
+    std::uint64_t fingerprint=1469598103934665603ull;
+    for(const auto& p:result)for(unsigned ch=0;ch<3;++ch){fingerprint^=static_cast<std::uint64_t>(std::llround(p[ch]*1000.0));fingerprint*=1099511628211ull;}
+    std::printf("OUTPUT input_mean=%.4f output_mean=%.4f black_share=%.4f fingerprint=%016llX\n",inputMean/result.size(),outputMean/result.size(),double(black)/result.size(),static_cast<unsigned long long>(fingerprint));
     auto mean=[](const auto& v){return std::accumulate(v.begin(),v.end(),0.0)/v.size();};
     std::printf("RESULT mode=%ls source=%ux%u model=%ux%u samples=%zu NR_total_ms=%.6f inference_ms=%.6f changed=%zu\n",mode.c_str(),w,h,
         TheosRenderPipeline::NeuralRendering::ModelExtent(w,options.reconstruction),TheosRenderPipeline::NeuralRendering::ModelExtent(h,options.reconstruction),

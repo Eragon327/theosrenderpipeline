@@ -21,7 +21,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			float motionScaleX, float motionScaleY,
 			ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 			ID3D12Resource* hudless, ID3D12Resource* composed,
-			std::uint64_t timestampFrequency = 0);
+			std::uint64_t timestampFrequency = 0, const D3D12StageMarks& marks = {});
 		ID3D12Resource* Composed() const { return composed_.Get(); }
 		ID3D12Resource* Corrected() const { return corrected_.Get(); }
 		NeuralTelemetrySnapshot Telemetry() const { return telemetry_.Snapshot(); }
@@ -41,6 +41,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 				((guideWidth || guideHeight) && (guideWidth != guideWidth_ || guideHeight != guideHeight_)));
 		}
 		const std::string& Status() const { return status_; }
+		// NGX refused to create a feature with this runtime. Initialization then
+		// stops before Record writes to the frame's list, so the pass can be dropped.
+		std::uint32_t RefusedCreation() const
+		{
+			const auto first = feature_.RefusedCreation();
+			return first ? first : secondFeature_.RefusedCreation();
+		}
 	private:
 		bool Initialize(ID3D12Device* device, const NeuralOptions& options,
 			ID3D12Resource* motion, ID3D12Resource* hudless, ID3D12Resource* composed);

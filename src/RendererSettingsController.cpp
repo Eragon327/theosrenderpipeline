@@ -92,7 +92,8 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     capabilities.nvidiaAdapter = SourceDLSSG::Backend::Get().NvidiaAdapter();
 #if !defined(TRP_NO_NEURAL_RENDERING)
     // The draft may select a different runtime file; check the one it selects.
-    const auto draftRuntime = ResolveRuntimePath(settingsDraft.sourceDLSSG.neuralRuntime, PluginPaths::Directory()).string();
+    const auto draftRuntime = TheosRenderPipeline::SourceDLSSG::ResolveNeuralRuntimeSetting(
+        settingsDraft.sourceDLSSG.neuralRuntime, PluginPaths::Directory()).string();
     capabilities.neuralRuntime = TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(draftRuntime);
     capabilities.neuralOperational = SourceDLSSG::Backend::Get().Ready() && !SourceDLSSG::Backend::Get().NeuralState().failed;
 #endif
@@ -162,6 +163,8 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         options.enabled = frameGen_.settings.sourceDLSSG.neuralEnabled &&
             NeuralSettingsUnavailable(upscaler_.mUpscaleType, capabilities) == nullptr;
         options.runtimePath = frameGen_.settings.neuralRenderingRuntimePath;
+        options.automaticRuntime =
+            TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(frameGen_.settings.configuredRuntimePaths.neural);
         options.tuning = frameGen_.settings.sourceDLSSG.neuralTuning;
         options.reconstruction = frameGen_.settings.sourceDLSSG.neuralReconstruction;
         options.secondPass = frameGen_.settings.sourceDLSSG.neuralSecondPass;
@@ -234,6 +237,8 @@ RendererSettingsResult RendererSettingsController::SetNeuralRenderingEnabled(boo
         auto& backend = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         auto options = backend.NeuralConfiguration();
         options.runtimePath = frameGen_.settings.neuralRenderingRuntimePath;
+        options.automaticRuntime =
+            TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(frameGen_.settings.configuredRuntimePaths.neural);
         options.enabled = enabled;
         if (enabled && !TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(options.runtimePath))
         {

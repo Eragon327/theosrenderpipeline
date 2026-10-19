@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/NeuralShaders.cmake")
 add_executable(TRPNeuralPeripheralTests PeripheralTests.cpp FeatureDouble.cpp
     ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp
     ../../src/FrameGen/SourceDLSSGNeuralResolve.cpp
-    ../../src/FrameGen/SourceDLSSGInterop.cpp)
+    ../../src/FrameGen/SourceDLSSGInterop.cpp ../../src/FrameGen/D3D12StageTimer.cpp)
 target_compile_features(TRPNeuralPeripheralTests PRIVATE cxx_std_23)
 target_compile_definitions(TRPNeuralPeripheralTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_include_directories(TRPNeuralPeripheralTests PRIVATE . ../../src)
@@ -31,13 +31,18 @@ add_test(NAME NeuralShaderBytecode COMMAND TRPNeuralShaderBytecodeTests)
 option(TRP_NR_VENDOR_BENCHMARK "Build the manual hardware NR benchmark" OFF)
 if(TRP_NR_VENDOR_BENCHMARK)
     set(NGX_SDK "" CACHE PATH "Locally supplied NGX SDK")
+    option(TRP_NR_ADA_KERNELS "Include the Universal RTX 20/30/40 kernel installer in manual probes" OFF)
+    set(nr_ada_sources ../../src/FrameGen/NeuralRuntimeKernelsNative.cpp)
+    if(TRP_NR_ADA_KERNELS)
+        set(nr_ada_sources ../../src/FrameGen/NeuralRuntimeKernels.cpp ../../src/FrameGen/NeuralRuntimeKernelPlan.cpp)
+    endif()
     add_executable(TRPNeuralPeripheralBenchmark VendorBenchmark.cpp
         ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp
         ../../src/FrameGen/SourceDLSSGNeuralResolve.cpp
-        ../../src/FrameGen/SourceDLSSGInterop.cpp
+        ../../src/FrameGen/SourceDLSSGInterop.cpp ../../src/FrameGen/D3D12StageTimer.cpp
         ../../src/FrameGen/NeuralRenderingFeatureSession.cpp
         ../../src/FrameGen/NeuralRenderingModulePathHook.cpp
-        ../../src/FrameGen/NeuralRenderingRuntimeIdentity.cpp)
+        ../../src/FrameGen/NeuralRenderingRuntimeIdentity.cpp ${nr_ada_sources})
     target_compile_features(TRPNeuralPeripheralBenchmark PRIVATE cxx_std_23)
     trp_target_neural_shaders(TRPNeuralPeripheralBenchmark)
     target_compile_definitions(TRPNeuralPeripheralBenchmark PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN TRP_NR_VENDOR_BENCHMARK)
@@ -48,10 +53,10 @@ if(TRP_NR_VENDOR_BENCHMARK)
     add_executable(TRPNeuralHDRRangeProbe HDRRangeProbe.cpp
         ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp
         ../../src/FrameGen/SourceDLSSGNeuralResolve.cpp
-        ../../src/FrameGen/SourceDLSSGInterop.cpp
+        ../../src/FrameGen/SourceDLSSGInterop.cpp ../../src/FrameGen/D3D12StageTimer.cpp
         ../../src/FrameGen/NeuralRenderingFeatureSession.cpp
         ../../src/FrameGen/NeuralRenderingModulePathHook.cpp
-        ../../src/FrameGen/NeuralRenderingRuntimeIdentity.cpp)
+        ../../src/FrameGen/NeuralRenderingRuntimeIdentity.cpp ${nr_ada_sources})
     target_compile_features(TRPNeuralHDRRangeProbe PRIVATE cxx_std_23)
     trp_target_neural_shaders(TRPNeuralHDRRangeProbe)
     target_compile_definitions(TRPNeuralHDRRangeProbe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN TRP_NR_VENDOR_BENCHMARK)

@@ -74,6 +74,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     backend.ConfigureHDROutput(settings.sourceDLSSG.hdrOutput);
     TheosRenderPipeline::SourceDLSSG::NeuralOptions options;
     options.runtimePath = settings.neuralRenderingRuntimePath;
+    options.automaticRuntime = TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(settings.configuredRuntimePaths.neural);
     options.enabled = settings.sourceDLSSG.neuralEnabled && !options.runtimePath.empty() &&
         TheosRenderPipeline::SupportsNeuralRenderingMode(upscalerSettings->mUpscaleType, TheosRenderPipeline::CommunityShaders::Active());
     options.tuning = settings.sourceDLSSG.neuralTuning;

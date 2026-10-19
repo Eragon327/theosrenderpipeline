@@ -109,7 +109,7 @@ void DrawNeuralSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bo
     const auto height = draft.neuralBeforeUpscaling ? host->RenderHeight() : host->OutputHeight();
     const char* placements[]{"Before upscaling", "After upscaling"};
     const char* styles[]{"Style 0", "Style 1", "Style 2", "Style 3", "Style 4", "Style 5", "Style 6", "Style 7"};
-    const char* networks[]{"Default", "Shipping"};
+    const char* networks[]{"Default", "Previous model"};
     const char* methods[]{"Auto | Reconstruct reduced input", "Residual | Add NR changes",
                           "Ratio | Transfer lighting and colour"};
 
@@ -218,7 +218,7 @@ void DrawNeuralSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bo
         PassRow("Network preset", "Network", true, unavailable, enabled, [&](int pass) {
             const bool changed = ImGui::Combo("##v", pass ? &shown.preset : &reconstruction.preset, networks,
                                               IM_ARRAYSIZE(networks));
-            DrawSettingsHelp("NR network selection, separate from the DLSS model preset.");
+            DrawSettingsHelp("Default runs the runtime's newest network. Previous model runs the 310.8 network, which 310.9.16 also includes.");
             return changed;
         });
         ImGui::EndTable();
@@ -328,29 +328,30 @@ void DrawNeuralRuntime(TheosRenderPipeline::SourceDLSSG::Preferences& draft)
         listedFor = draft.neuralRuntime;
         listed = Clock::now();
     }
-    auto name = [](const std::string& path) {
-        const auto utf8 = std::filesystem::u8path(path).filename().u8string();
-        return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
-    };
+    using TheosRenderPipeline::SourceDLSSG::NeuralRuntimeLabel;
     if (BeginSettingRows("nrRuntime", LabelWidth({"One pass while weapons are drawn", "Input colour is linear HDR", "NR input resolution"})))
     {
         SettingRow("Runtime", "NeuralRenderingRuntimePath", true, false, [&] {
             bool changed = false;
-            if (ImGui::BeginCombo("##v", name(draft.neuralRuntime).c_str())) {
+            if (ImGui::BeginCombo("##v", NeuralRuntimeLabel(draft.neuralRuntime).c_str())) {
                 for (const auto& runtime : runtimes) {
+                    ImGui::PushID(runtime.c_str());
                     const bool selected = runtime == draft.neuralRuntime;
-                    if (ImGui::Selectable(name(runtime).c_str(), selected) && !selected) { draft.neuralRuntime = runtime; changed = true; }
+                    if (ImGui::Selectable(NeuralRuntimeLabel(runtime).c_str(), selected) && !selected) { draft.neuralRuntime = runtime; changed = true; }
                     if (selected) { ImGui::SetItemDefaultFocus(); }
+                    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("File: %s", runtime.c_str()); }
+                    ImGui::PopID();
                 }
                 ImGui::EndCombo();
             }
-            DrawSettingsHelp("Any nvngx_dlssnr*.dll in Data/SKSE/Plugins/TheosRenderPipeline/NVIDIA. nvngx_dlssnr.dll is NVIDIA's runtime; "
-                             "other files, such as community builds, load by their file version (310 or later). "
-                             "Community builds do not come from NVIDIA. Apply switches it; the log records each file's version and hash.");
+            DrawSettingsHelp("Automatic chooses the runtime for your GPU. Universal unlocks NVIDIA 310.9.16 on RTX 20/30/40; RTX 50 uses it natively. The kernel pack uses FP16 fallback on RTX 20/30 and FP8 on RTX 40. Legacy INT8 is an RTX 20/30 alternative. Hover an entry for its filename.");
             return changed;
         });
         ImGui::EndTable();
     }
+    const auto applied = TheosRenderPipeline::SourceDLSSG::Backend::Get().NeuralConfiguration();
+    if (applied.automaticRuntime && applied.enabled && TheosRenderPipeline::SourceDLSSG::IsAutomaticNeuralRuntime(draft.neuralRuntime))
+        ImGui::TextDisabled("Automatic is using %s", NeuralRuntimeLabel(applied.runtimePath.string()).c_str());
 }
 
 void DrawSourceNeuralControls(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bool& sharpening,
@@ -403,6 +404,8 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
                                            : "unavailable");
         DrawSettingsHelp("Combined model inference and inter-pass preparation. Excludes input preparation, final Pass "
                          "2 restoration, reconstruction, UI composition and the D3D11/D3D12 handoff.");
+        if (state.active)
+            DrawStageMeasurements(SettingsPage::NeuralRendering);
         DrawNRAppliedPasses(applied);
         if (state.active) {
             const auto execution = state.passOverride == TheosRenderPipeline::NeuralRendering::PassOverride::None ?

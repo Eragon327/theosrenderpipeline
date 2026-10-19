@@ -1,4 +1,11 @@
-# Theo's Render Pipeline — Standard, 0.4.3
+# Theo's Render Pipeline — Standard, 0.4.4
+
+Version 0.4.4 adds Automatic NR runtime selection and NVIDIA NR 310.9.16 on
+RTX 20/30/40 through Universal's in-memory kernel pack. Install matching
+Standard first, then Universal after it in MO2. Standard retains legacy NR
+310.8 and the original NVIDIA 310.9.16 DLL. Universal adds the compatibility
+pack and retains legacy INT8 for RTX 20/30. NR remains available in both
+editions and defaults off. See CHANGELOG.md and the NR runtime notes below.
 
 Version 0.4.3 adds a frame generation preset dropdown (NVIDIA Presets A, B and
 C), bundles DLSS Frame Generation 310.9.16 for Preset C, adds an NR runtime
@@ -42,7 +49,7 @@ RTX 20 users need Universal's compatibility path installed after Standard.
 This edition supplies the retained runtime bundle and all 0.2.5 fixes.
 
 DLSS/DLAA, native NVIDIA frame generation, Neural Rendering, NVIDIA Reflex and
-native-resolution menus for Skyrim. All eight NVIDIA runtime DLLs are included,
+native-resolution menus for Skyrim. The complete NVIDIA runtime bundle is included,
 with Intel's XeSS, XeFG and XeLL runtimes and Intel's license.
 
 Version 0.2.5 improves startup compatibility with existing renderer hooks,
@@ -188,12 +195,46 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. ReGrade+, combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.3 package still needs its final game test.
+development builds; the exact 0.4.4 package has not been tested with ReShade.
+
+## NR runtime notes
+
+Use **Neural Rendering > Runtime > Automatic** for the default selection.
+Standard supplies two NR DLLs: legacy `nvngx_dlssnr.dll` (310.8) and original
+NVIDIA `nvngx_dlssnr_310.9.16.dll`. Universal supplies the adjacent
+`nvngx_dlssnr_310.9.16.trpk` and legacy `nvngx_dlssnr_int8.dll`.
+
+On RTX 20/30/40, Universal first tries the original 310.9.16 DLL with the
+pack. RTX 20/30 use the community FP16 compatibility kernels; RTX 40 uses
+TRP's FP8 kernels. RTX 50 uses NVIDIA's original kernels without a patch.
+The installer verifies the complete runtime and pack hashes, original memory
+bytes and all changes before use. The original 310.9.16 file is unchanged on
+disk. A safe refusal falls back to legacy INT8 then 310.8 on RTX 20/30, or
+310.8 on RTX 40. The known incompatible INT8 path is blocked on RTX 40.
+Standard never installs compatibility kernels and keeps 310.8 on older GPUs.
+
+The separate community and standalone RTX 40 310.9.16 DLLs are no longer
+included. Explicit custom runtime choices remain available, including older
+files supplied separately. If an explicit choice names a file you removed,
+choose Automatic. Older default-runtime settings migrate to Automatic.
+Keep the pack in `SKSE/Plugins/TheosRenderPipeline/NVIDIA/` and use the matching
+Standard/Universal pair. Runtime labels put the version and precision first;
+hover an entry to see its filename.
+
+An earlier RTX 40-only kernel pack passed a scoped RTX 4080 SUPER / driver
+610.88 game smoke test with two NR passes before upscaling at 3413x960, x4
+frame generation and a loading transition. That acceptance belongs to the
+earlier binaries. The combined RTX 20/30/40 pack preserves the same RTX 40
+cubins, but has separate build and validation evidence. Local RTX 20/30/50
+hardware execution, Standard-only gameplay, other-placement visual acceptance
+and physical display cadence remain unverified. A tiny 58x32 second-model
+stress case times out with both standalone and in-memory paths; use normal
+rendering dimensions.
 
 ## With the Universal edition
 
 For the RTX 40 MFG unlock or experimental RTX 20/30 support, install the matching
-0.4.3 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
+0.4.4 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
 the NVIDIA runtimes included here, including NR.
 
 Both editions contain settings files; the later mod's files win. Switching
