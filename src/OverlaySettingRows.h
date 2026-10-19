@@ -190,7 +190,8 @@ inline std::string NeuralStyleName(int style)
     default: return std::format("Custom {}", style);
     }
 }
-inline const char* NeuralNetworkName(int preset) { return preset != 0 ? "310.8" : "Newest"; }
+// NR network presets: 0 is 310.9.16's small FP8 model, 1 the older model 310.8 also runs.
+inline const char* NeuralNetworkName(int preset) { return preset != 0 ? "Old" : "Small"; }
 
 // One option of a segmented control. A disabled option shows greyed, with
 // reason as its tooltip.

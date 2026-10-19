@@ -32,7 +32,7 @@ void DrawNRAppliedPasses(const OverlayUI::FrameView& view, const TheosRenderPipe
                           std::format("{} x {}", TheosRenderPipeline::NeuralRendering::ModelExtent(width, config),
                                       TheosRenderPipeline::NeuralRendering::ModelExtent(height, config))
                               .c_str());
-        DrawSettingsValue("Network", preset == 1 ? "Shipping" : "Default");
+        DrawSettingsValue("Network", NeuralNetworkName(preset));
     };
     pass("Pass 1", applied.reconstruction.inputScale, applied.reconstruction.preset);
     if (applied.passes == 2)
@@ -720,10 +720,15 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             return changed;
         });
         SettingRow("Network", key("Network").c_str(), true, unavailable, [&] {
-            int index = network != 0 ? 1 : 0;
+            // 310.8 has only the old model, so it runs Old whichever is saved.
+            const bool legacy = LegacyNeuralRuntime(view);
+            int index = legacy || network != 0 ? 1 : 0;
             const bool changed = Segmented("network", index, {
-                {"Newest", true, "The runtime's newest network."},
-                {"310.8", true, "The 310.8 network, which 310.9.16 also includes."}});
+                {"Small", !legacy, legacy ? "310.9.16 only. 310.8 always runs the old model."
+                                          : "310.9.16's small FP8 model: faster and softer. NVIDIA's "
+                                            "CC_SMALL_FP8; Preset B in OptiScaler forks."},
+                {"Old", true, "The model 310.8 runs, also included in 310.9.16. NVIDIA's CC_SILVER_AARDWOLD; "
+                              "Preset A in OptiScaler forks."}});
             if (changed) { network = index; }
             DrawSettingsHelp("NR network, separate from the DLSS model preset.");
             return changed;
