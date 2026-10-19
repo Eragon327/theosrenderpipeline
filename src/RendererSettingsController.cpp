@@ -191,6 +191,11 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         actionMessage = "Session settings applied.";
         actionMessageIsError = false;
     }
+    if (!actionMessageIsError && frameGen_.settings.sourceDLSSG.xefgTensorCores !=
+            TheosRenderPipeline::SourceDLSSG::Backend::Get().XeFGTensorRequested()) {
+        actionMessage += a_saveAsDefault ? " Restart Skyrim to change the XeFG tensor backend."
+                                        : " Save as default and restart Skyrim to change the XeFG tensor backend.";
+    }
     logger::info("[Overlay] source settings applied save={} mode={} quality={} preset={} requestedMode={} requestedQuality={} requestedPreset={}", a_saveAsDefault,
                  upscaler_.mUpscaleType, upscaler_.mQualityLevel, upscaler_.mDLSSPreset,
                  settingsDraft.upscaleType, settingsDraft.qualityLevel, settingsDraft.dlssPreset);

@@ -66,6 +66,10 @@ void Generation()
         Preferences preferences; preferences.xefgFrameTime = false;
         StorePreferences(ini, preferences);
         Require(!LoadPreferences(ini).xefgFrameTime, "a saved XeFG frame-time opt-out round trips");
+        Require(!LoadPreferences(ini).xefgTensorCores, "existing INIs leave the optional tensor backend off");
+        preferences.xefgTensorCores = true;
+        StorePreferences(ini, preferences);
+        Require(LoadPreferences(ini).xefgTensorCores, "the explicit tensor opt-in survives save and restart");
         RendererSettingsDraft current; current.valid = true;
         auto draft = current; draft.sourceDLSSG.xefgFrameTime = false;
         Require(CountRendererSettingsChanges(draft, current) == 1, "XeFG frame time participates in Apply/Discard");

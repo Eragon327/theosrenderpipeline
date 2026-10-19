@@ -1,6 +1,7 @@
 #include "XeFGTestSupport.h"
 #include "FrameGen/XeFGPresenter.h"
 #include "NvidiaPresenterFixture.h"
+#include "FrameGen/PipelineCache.h"
 #include <dbghelp.h>
 #include <chrono>
 #include <algorithm>
@@ -33,11 +34,12 @@ int wmain(int argc, wchar_t** argv)
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     Require(argc == 2 || argc == 3, "Intel runtime directory, optional NVIDIA runtime directory");
     const bool profile = GetEnvironmentVariableW(L"TRP_XEFG_PROFILE", nullptr, 0) != 0;
+    const bool tensorRequested = GetEnvironmentVariableW(L"TRP_XEFG_TENSOR_TEST", nullptr, 0) != 0;
     const unsigned width = profile ? 5120 : 640, height = profile ? 1440 : 360;
     std::vector<double> presentTimes, retirementTimes, sleepTimes;
     ComPtr<ID3D12Debug> debug;
     Check(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)), "debug");
-    debug->EnableDebugLayer();
+    if (!tensorRequested) debug->EnableDebugLayer();
     ComPtr<IDXGIFactory4> factory;
     ComPtr<IDXGIAdapter1> adapter;
     Check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "factory");
@@ -50,7 +52,7 @@ int wmain(int argc, wchar_t** argv)
         "D3D11");
     Check(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d12)), "D3D12");
     ComPtr<ID3D12InfoQueue> messages;
-    Check(d12.As(&messages), "debug messages");
+    if (!tensorRequested) Check(d12.As(&messages), "debug messages");
     D3D12_COMMAND_QUEUE_DESC qd{};
     ComPtr<ID3D12CommandQueue> queue;
     Check(d12->CreateCommandQueue(&qd, IID_PPV_ARGS(&queue)), "queue");
@@ -87,7 +89,7 @@ int wmain(int argc, wchar_t** argv)
     desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
     TheosRenderPipeline::XeFGPresenter presenter;
     presenter.SetLogger([](const char* text) { std::printf("[Owner] %s\n", text); });
-    Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1])), "production admission");
+    Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1]), tensorRequested), "production admission");
     Inputs input;
     input.Create(interop, d11.Get(), width, height, colorFormat);
     auto* stable = input.color.texture11.Get();
@@ -99,6 +101,8 @@ int wmain(int argc, wchar_t** argv)
     constexpr unsigned maximum = TheosRenderPipeline::XeFGMaxGeneratedFrames;
     std::array<unsigned, maximum + 1> generatedCounts{};
     constexpr unsigned frameCount = 120;
+    TheosRenderPipeline::PipelineCache pipelines;
+    pipelines.Open(d12.Get(), {}); // Exercise cached loads on subsequent presenters.
     const bool nativeOnly = GetEnvironmentVariableW(L"TRP_XEFG_NATIVE_ONLY", nullptr, 0) != 0;
     const bool releaseNvidia = GetEnvironmentVariableW(L"TRP_XEFG_RELEASE_NV", nullptr, 0) != 0;
     wchar_t cyclesText[8]{};
@@ -134,10 +138,11 @@ int wmain(int argc, wchar_t** argv)
         if (!nativeOnly) {
             ComPtr<IDXGISwapChain> proxy;
             Check(presenter.Create(d12.Get(), queue.Get(), factory.Get(), desc, round == 1, &proxy,
-                      nvidia ? nvidia->session.Snapshot().frameIndex : 0, {experimental && round < 2, maximum}),
+                      nvidia ? nvidia->session.Snapshot().frameIndex : 0, {experimental && round < 2, maximum}, pipelines.Library()),
                 "production Intel presenter");
             ComPtr<IDXGISwapChain3> proxy3;
             Check(proxy.As(&proxy3), "proxy3");
+            const auto tensorBefore = presenter.TensorStats();
             for (unsigned frame = 0; frame < frameCount; ++frame) {
                 MSG message{};
                 while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
@@ -244,7 +249,7 @@ int wmain(int argc, wchar_t** argv)
                     "selected count bounds");
                 if (!enable) Require(state.framesPresented == 1, "off passthrough");
                 Require(state.frameLimitUs == (profile ? 0 : 16667), "output cap remains independent of ratio");
-                Require(state.maxGeneratedFrames == (experimental && !expectRefusal && round < 2 ? maximum : 1u),
+                Require(state.maxGeneratedFrames == (state.tensorModel || (experimental && !expectRefusal && round < 2) ? maximum : 1u),
                     "opt-in capacity, including disable after resident unlock");
                 if (expectRefusal)
                     Require(!state.unlockReady && state.generatedFrames == 1, "refused unlock retains official x2");
@@ -270,6 +275,13 @@ int wmain(int argc, wchar_t** argv)
                 }
             }
             Check(presenter.Disable(), "disable");
+            const auto completed = presenter.Snapshot();
+            const auto tensorAfter = presenter.TensorStats();
+            std::printf("tensor_complete round=%u model=%u active=%u launches=%llu fallbacks=%llu cachedPSOs=%llu libraryBytes=%zu\n", round,
+                completed.tensorModel, completed.tensorActive, completed.tensorLaunches, completed.tensorFallbacks,
+                tensorAfter.cachedPSOs, pipelines.Library() ? pipelines.Library()->GetSerializedSize() : 0);
+            if (completed.tensorActive) Require(completed.tensorLaunches > tensorBefore.launches && completed.tensorFallbacks == 0,
+                "actual tensor dispatch and no unexpected fallback");
             Check(interop.Drain(), "retire shared resources");
             proxy3.Reset();
             proxy.Reset();
@@ -308,7 +320,7 @@ int wmain(int argc, wchar_t** argv)
         for (unsigned count = 2; count <= maximum; ++count)
             Require(generatedCounts[count] == 0, "refusal never enables experimental counts");
     }
-    for (UINT64 n = 0; n < messages->GetNumStoredMessagesAllowedByRetrievalFilter(); ++n) {
+    for (UINT64 n = 0; messages && n < messages->GetNumStoredMessagesAllowedByRetrievalFilter(); ++n) {
         SIZE_T size{};
         messages->GetMessage(n, nullptr, &size);
         std::vector<unsigned char> storage(size);

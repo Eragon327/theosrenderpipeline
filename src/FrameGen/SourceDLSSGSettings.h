@@ -30,6 +30,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Give Intel XeFG the measured application frame time; on non-Intel GPUs
 		// its software pacing uses this as a sanity check. Live toggle.
 		bool xefgFrameTime{ true };
+		// Optional private Universal backend; runtime selection needs a restart.
+		bool xefgTensorCores{ false };
 		// Intel XeFG scene-change sensitivity, 0-1. Live.
 		float xefgSceneChangeThreshold{ XeFGDefaultSceneChangeThreshold };
 		GenerationRequest generation{};
@@ -76,6 +78,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Preferences value;
 		value.provider = static_cast<FrameGenerationProvider>(ini.GetLongValue("FrameGeneration", "Provider", 0));
 		value.xefgFrameTime = ini.GetBoolValue("FrameGeneration", "XeFGFrameTime", true);
+		value.xefgTensorCores = ini.GetBoolValue("FrameGeneration", "XeFGTensorCores", false);
 		value.xefgSceneChangeThreshold = static_cast<float>(ini.GetDoubleValue("FrameGeneration", "XeFGSceneChangeThreshold",
 			XeFGDefaultSceneChangeThreshold));
 		value.xefg.generatedFrames = static_cast<std::uint32_t>(std::clamp(ini.GetLongValue("FrameGeneration", "XeFGMultiplier", 2), 2L, static_cast<long>(XeFGMaxGeneratedFrames+1))-1);
@@ -122,6 +125,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		constexpr auto section = "SourceDLSSG";
 		ini.SetLongValue("FrameGeneration", "Provider", static_cast<int>(value.provider));
 		ini.SetBoolValue("FrameGeneration", "XeFGFrameTime", value.xefgFrameTime);
+		ini.SetBoolValue("FrameGeneration", "XeFGTensorCores", value.xefgTensorCores);
 		ini.SetDoubleValue("FrameGeneration", "XeFGSceneChangeThreshold", value.xefgSceneChangeThreshold);
 		ini.Delete("FrameGeneration", "XeFGExperimentalMFG");
 		ini.SetLongValue("FrameGeneration", "XeFGMultiplier", value.xefg.generatedFrames+1);

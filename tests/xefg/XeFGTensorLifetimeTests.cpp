@@ -1,0 +1,33 @@
+#include "FrameGen/XeFGTensorRuntime.h"
+#include <dxgi1_6.h>
+#include <wrl/client.h>
+#include <cstdio>
+#include <string_view>
+using Microsoft::WRL::ComPtr;
+static void Require(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL %s\n",message);ExitProcess(1);}}
+int wmain(int argc,wchar_t** argv){
+    Require(argc==3,"runtime directory and injected failure mode");
+    SetEnvironmentVariableW(L"TRP_XEFG_MOCK_MODE",argv[2]);
+    ComPtr<IDXGIFactory4> factory;ComPtr<IDXGIAdapter1> adapter;ComPtr<ID3D12Device> device;
+    Require(SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))&&SUCCEEDED(factory->EnumAdapters1(0,&adapter)),"hardware adapter");
+    Require(SUCCEEDED(D3D12CreateDevice(adapter.Get(),D3D_FEATURE_LEVEL_12_0,IID_PPV_ARGS(&device))),"test device");
+    TheosRenderPipeline::XeFGTensorRuntime runtime;
+    Require(runtime.Select(device.Get(),std::filesystem::absolute(argv[1]),true),"real loader selects mock extension after bundle admission");
+    const auto first=runtime.Start(device.Get(),nullptr,nullptr);
+    const bool safe=std::wstring_view(argv[2])==L"safe-start";
+    const bool unsafeStart=std::wstring_view(argv[2])==L"unsafe-start";
+    if(safe){
+        Require(FAILED(first)&&!runtime.Unsafe()&&!runtime.ModelReady(),"clean initialization rejection can fall back");
+        Require(SUCCEEDED(runtime.Retire())&&runtime.Snapshot().cachedPSOs==0,"inactive clean rejection needs no retirement callback");
+    }else{
+        Require(unsafeStart?FAILED(first):SUCCEEDED(first),"injected initialization outcome");
+        Require(FAILED(runtime.Retire())&&runtime.Unsafe(),"retirement failure is unsafe even if extension omits its flag");
+        const auto before=runtime.Snapshot();
+        Require(FAILED(runtime.Start(device.Get(),nullptr,nullptr)),"uncertain owner prevents replacement");
+        Require(FAILED(runtime.Retire()),"uncertain retirement is not retried");
+        const auto after=runtime.Snapshot();
+        Require(before.matchedPSOs==after.matchedPSOs&&before.cachedPSOs==after.cachedPSOs,"failed owner retains all state without new extension calls");
+    }
+    Require(GetModuleHandleW(L"trp_xefg_tensor.dll")!=nullptr,"extension remains process resident");
+    std::printf("PASS tensor lifetime mode=%ls unsafe=%u starts=%llu retires=%llu (mock callbacks; no model execution)\n",argv[2],runtime.Unsafe(),runtime.Snapshot().matchedPSOs,runtime.Snapshot().cachedPSOs);
+}

@@ -49,6 +49,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		FrameGenerationProvider RequestedProvider() const { return requestedProvider_.load(); }
 		const XeFGSnapshot& XeFGState() const { return xefg_.Snapshot(); }
 		const std::string& XeFGUnlockStatus() const { return xefg_.UnlockStatus(); }
+		const std::string& XeFGTensorStatus() const { return xefg_.TensorStatus(); }
+		void ConfigureXeFGTensor(bool requested) { if (!attempted_) { xefgTensorRequested_ = requested; } }
+		bool XeFGTensorRequested() const { return xefgTensorRequested_; }
 		void ConfigureXeFG(XeFGOptions options)
 		{
 			options = SanitizeXeFG(options);
@@ -246,6 +249,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		SessionAPI api_{};
 		Session session_;
 		XeFGPresenter xefg_;
+		bool xefgTensorRequested_{};
 		std::atomic<std::uint32_t> xefgOptions_{1};
 		XeSSUpscaler xess_;
 		UINT adapterVendor_{};

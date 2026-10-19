@@ -88,10 +88,23 @@ namespace TheosRenderPipeline
         apiReady_ = true;
         return S_OK;
     }
-    HRESULT XeFGPresenter::Probe(ID3D12Device* device, const std::filesystem::path& directory)
+    HRESULT XeFGPresenter::Probe(ID3D12Device* device, const std::filesystem::path& directory, bool tensorRequested)
     {
-        auto hr = Load(directory);
+        if (!tensorChoiceMade_) {
+            snapshot_.tensorRequested = tensorRequested;
+            tensor_.Select(device, directory, tensorRequested);
+            tensorChoiceMade_ = true;
+            if (tensorRequested && log_) log_(tensor_.Status().c_str());
+        }
+        auto hr = Load(tensor_.Selected() ? tensor_.Directory() : directory);
         if (FAILED(hr) || !device) { return FAILED(hr) ? hr : E_POINTER; }
+        if (tensor_.Selected()) {
+            hr = tensor_.Start(device, fgModule_, llModule_);
+            if (log_) log_(tensor_.Status().c_str());
+            if (FAILED(hr) && tensor_.Unsafe()) { status_ = tensor_.Status(); return E_UNEXPECTED; }
+            // A safely refused model leaves this exact 1.3.4 SDK at official x2.
+            // Dispatch-only refusal keeps the ported model's HLSL fallback.
+        }
         // Admission does not change within a session; skip another SDK context.
         if (device == admittedDevice_) { return S_OK; }
         D3D12_FEATURE_DATA_SHADER_MODEL sm{D3D_SHADER_MODEL_6_4};
@@ -116,12 +129,22 @@ namespace TheosRenderPipeline
         *swapchain = nullptr;
         if (!apiReady_ || initialized_ || fg_ || ll_ || !device || !queue || !factory || !SupportsFormat(desc.BufferDesc.Format)) { return E_INVALIDARG; }
         options = SanitizeXeFG(options);
-        snapshot_.experimentalMFG = options.experimentalMFG;
+        if (tensor_.Selected()) {
+            const auto started = tensor_.Start(device, fgModule_, llModule_);
+            if (FAILED(started) && tensor_.Unsafe()) { status_ = tensor_.Status(); return E_UNEXPECTED; }
+        }
+        snapshot_.experimentalMFG = options.experimentalMFG || tensor_.Selected();
         snapshot_.unlockReady = false;
         snapshot_.maxGeneratedFrames = 1;
         snapshot_.generatedFrames = 1;
         unlockStatus_="Experimental MFG off; official x2";
-        if (options.experimentalMFG) {
+        snapshot_.tensorModel = tensor_.ModelReady();
+        snapshot_.tensorActive = (tensor_.Snapshot().flags & XeFGTensor::TensorReady) != 0;
+        if (tensor_.Selected()) {
+            snapshot_.unlockReady = snapshot_.tensorModel;
+            unlockStatus_ = tensor_.Status();
+            if (log_) log_(unlockStatus_.c_str());
+        } else if (options.experimentalMFG) {
             std::string reason;
             const auto patched = XeFGUnlock::EnsureInstalled(fgModule_, reason);
             unlockStatus_ = std::string(patched == XeFGUnlock::PatchResult::Applied ? "Experimental MFG ready: "
@@ -354,12 +377,18 @@ namespace TheosRenderPipeline
         ++snapshot_.presents; snapshot_.totalOutputs += status.framesPresented;
         if (status.framesPresented > 1) { ++snapshot_.generatedPresents; }
         status_ = snapshot_.enabled ? "XeFG x"+std::to_string(snapshot_.generatedFrames+1)+" active" : "XeFG passthrough";
+        if (tensor_.Selected()) {
+            const auto state = tensor_.Snapshot();
+            snapshot_.tensorLaunches = state.launches; snapshot_.tensorFallbacks = state.fallbacks;
+        }
         if (log_ && (snapshot_.presents <= 3 || snapshot_.presents % 600 == 0)) {
             const auto pacing = XeFGUnlock::Snapshot();
             const auto text="present frame="+std::to_string(snapshot_.frameId)+" outputs="+std::to_string(snapshot_.framesPresented)+
                 " requestedMultiplier="+std::to_string(snapshot_.generatedFrames+1)+" capacity="+std::to_string(snapshot_.maxGeneratedFrames+1)+
                 " intervalUs="+std::to_string(snapshot_.frameLimitUs)+" processPacingCounters: presents="+std::to_string(pacing.presents)+
-                " refused="+std::to_string(pacing.refused)+" wallWaits="+std::to_string(pacing.wallWaits);
+                " refused="+std::to_string(pacing.refused)+" wallWaits="+std::to_string(pacing.wallWaits)+
+                " tensor="+std::to_string(snapshot_.tensorActive)+" tensorLaunches="+std::to_string(snapshot_.tensorLaunches)+
+                " tensorFallbacks="+std::to_string(snapshot_.tensorFallbacks);
             log_(text.c_str());
         }
         return S_OK;
@@ -383,6 +412,9 @@ namespace TheosRenderPipeline
             if (FAILED(hr)) { return hr; }
             ll_ = nullptr;
         }
+        const auto retired = tensor_.Retire();
+        if (FAILED(retired)) { status_ = tensor_.Status(); return retired; }
+        snapshot_.tensorModel = snapshot_.tensorActive = false;
         snapshot_.prepared = snapshot_.enabled = false; needsReset_ = true;
         return S_OK;
     }

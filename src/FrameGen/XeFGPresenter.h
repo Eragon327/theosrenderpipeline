@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include "XeFGOptions.h"
+#include "XeFGTensorRuntime.h"
 
 namespace TheosRenderPipeline
 {
@@ -27,6 +28,8 @@ namespace TheosRenderPipeline
         float sceneChangeThreshold{-1}; // Last value Intel accepted; -1 is Intel's default.
         std::uint32_t maxGeneratedFrames{1}, generatedFrames{1};
         bool experimentalMFG{}, unlockReady{};
+        bool tensorRequested{}, tensorModel{}, tensorActive{};
+        std::uint64_t tensorLaunches{}, tensorFallbacks{};
     };
 
     // One Intel-owned presenter and XeLL owner. DLLs remain process-resident.
@@ -36,7 +39,7 @@ namespace TheosRenderPipeline
     class XeFGPresenter final
     {
     public:
-        HRESULT Probe(ID3D12Device* device, const std::filesystem::path& directory);
+        HRESULT Probe(ID3D12Device* device, const std::filesystem::path& directory, bool tensorRequested = false);
         void SetLogger(void (*callback)(const char*)) { log_ = callback; }
         HRESULT Create(ID3D12Device* device, ID3D12CommandQueue* queue, IDXGIFactory* factory,
             const DXGI_SWAP_CHAIN_DESC& desc, bool inverted, IDXGISwapChain** swapchain,
@@ -69,6 +72,8 @@ namespace TheosRenderPipeline
         const XeFGSnapshot& Snapshot() const { return snapshot_; }
         const std::string& Status() const { return status_; }
         const std::string& UnlockStatus() const { return unlockStatus_; }
+        const std::string& TensorStatus() const { return tensor_.Status(); }
+        XeFGTensor::Stats TensorStats() const { return tensor_.Snapshot(); }
         static bool SupportsFormat(DXGI_FORMAT format);
     private:
         HRESULT FG(xefg_swapchain_result_t result, const char* operation);
@@ -120,5 +125,7 @@ namespace TheosRenderPipeline
         float frameIntervalMs_{};
         bool debugOnlyGenerated_{}, debugTagGenerated_{};
         std::optional<float> sceneChangeThreshold_; // Last value sent to this context.
+        XeFGTensorRuntime tensor_;
+        bool tensorChoiceMade_{};
     };
 }

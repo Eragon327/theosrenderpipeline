@@ -375,9 +375,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (xeSSStartup &&
 			!Check(xess_.Open(device12_.Get(), PluginPaths::IntelDirectory()), "XeSS context", "XeSS")) { return fault_; }
 		if (intelStartup) {
-			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory())) ||
+			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_)) ||
 				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, true, &native, 0,
-					XeFGConfiguration(), IntelPipelines(xefgPipelines_, "xefg", xefg_.RuntimeModule())))) { return fault_; }
+					XeFGConfiguration(), IntelPipelines(xefgPipelines_, xefg_.Snapshot().tensorModel ? "xefg-tensor-v1" : "xefg", xefg_.RuntimeModule())))) { return fault_; }
 			providerStatus_ = "Intel XeFG presenter; latency owner=XeLL";
 		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), "Streamline swapchain")) { return fault_; }
 		retainedNative_ = native;
@@ -1260,7 +1260,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (request == FrameGenerationProvider::XeFG) {
 			const bool compatible = XeFGPresenter::SupportsFormat(presenterDesc_.BufferDesc.Format) &&
 				hudless_.texture12 && XeFGPresenter::SupportsFormat(hudless_.desc.Format);
-			const auto result = compatible ? xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory()) : DXGI_ERROR_UNSUPPORTED;
+			const auto result = compatible ? xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_) : DXGI_ERROR_UNSUPPORTED;
 			if (FAILED(result)) {
 				providerStatus_ = std::format("XeFG unavailable: {} (0x{:08X}); current presenter retained",
 					compatible ? xefg_.Status() : "requires compatible SDR/HDR10 inputs", static_cast<unsigned>(result));
@@ -1282,7 +1282,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return provider == FrameGenerationProvider::XeFG ?
 			xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), presenterDesc_,
 				frameConstants_.depthInverted == sl::eTrue, result, session_.Snapshot().frameIndex, XeFGConfiguration(),
-				IntelPipelines(xefgPipelines_, "xefg", xefg_.RuntimeModule())) :
+				IntelPipelines(xefgPipelines_, xefg_.Snapshot().tensorModel ? "xefg-tensor-v1" : "xefg", xefg_.RuntimeModule())) :
 			streamlineFactory_->CreateSwapChain(queue_.Get(), &presenterDesc_, result);
 	}
 	bool Backend::ApplyProviderSwitch(SwapChain& wrapper)

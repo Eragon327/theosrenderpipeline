@@ -251,6 +251,15 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             }
             if (editIntel)
             {
+                ImGui::BeginDisabled(!TheosRenderPipeline::XeFGUnlock::Available());
+                ImGui::Checkbox("XeFG tensor model (experimental)", &settingsDraft.sourceDLSSG.xefgTensorCores);
+                ImGui::EndDisabled();
+                DrawSettingsHelp("Uses the private NVIDIA tensor backend when its runtime bundle is installed. "
+                                 "Save as default and restart Skyrim to change it. Universal only.");
+                if (settingsDraft.sourceDLSSG.xefgTensorCores != sourceBackend.XeFGTensorRequested())
+                    ImGui::TextColored(kOchre, "Save and restart to change the XeFG tensor backend.");
+                if (sourceBackend.XeFGTensorRequested())
+                    ImGui::TextWrapped("%s", sourceBackend.XeFGTensorStatus().c_str());
                 if (TheosRenderPipeline::XeFGUnlock::Available())
                     DrawSettingsHelp("x2 is Intel's official mode. x3-x6 patch Intel's runtime in memory and are experimental. "
                                      "The first Apply to x3-x6 recreates the Intel presenter; later multiplier changes apply live.");
