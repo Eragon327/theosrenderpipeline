@@ -25,7 +25,7 @@ namespace TheosRenderPipeline::NeuralRendering
         HRESULT hr{};
         if (!shader_) {
             constexpr char source[] = "cbuffer Params:register(b0){float Group;float3 Pad;}"
-                "float2 main(float4 p:SV_Position):SV_Target{return float2(Group,p.z);}";
+                "float main(float4 p:SV_Position):SV_Target{return asfloat((asuint(p.z)&~7u)|((uint)Group&7u));}";
             ComPtr<ID3DBlob> code, errors;
             if (FAILED(hr = D3DCompile(source, sizeof(source)-1, "NR-object-capture", nullptr, nullptr,
                     "main", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors)) ||
@@ -42,7 +42,7 @@ namespace TheosRenderPipeline::NeuralRendering
         }
         D3D11_TEXTURE2D_DESC desc{}; desc.Width = width; desc.Height = height;
         desc.MipLevels = desc.ArraySize = 1; desc.SampleDesc.Count = 1;
-        desc.Format = DXGI_FORMAT_R32G32_FLOAT; desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.Format = DXGI_FORMAT_R32_FLOAT; desc.Usage = D3D11_USAGE_DEFAULT; // PackObjectPixel layout
         desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
         ComPtr<ID3D11Texture2D> texture;
         ComPtr<ID3D11RenderTargetView> target;

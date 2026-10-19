@@ -16,7 +16,7 @@ namespace TheosRenderPipeline::NeuralRendering
 cbuffer Params:register(b0) { uint Width,Height,GuideWidth,GuideHeight; float4 Strength; float2 GuideOffset,Padding; };
 Texture2D<float4> Original:register(t0);
 Texture2D<float4> Neural:register(t1);
-Texture2D<float2> Objects:register(t2);
+Texture2D<float> Objects:register(t2);
 Texture2D<float> Depth:register(t3);
 RWTexture2D<float4> Result:register(u0);
 [numthreads(8,8,1)] void main(uint3 p:SV_DispatchThreadID) {
@@ -27,10 +27,11 @@ RWTexture2D<float4> Result:register(u0);
     // existing SDK pixel jitter to sample the corresponding raw guide pixel.
     int2 coordinate=int2(floor((float2(p.xy)+0.5)*float2(GuideWidth,GuideHeight)/float2(Width,Height)+GuideOffset));
     uint2 q=uint2(clamp(coordinate,int2(0,0),int2(GuideWidth,GuideHeight)-1));
-    float2 object=Objects.Load(int3(q,0)); float depth=Depth.Load(int3(q,0));
-    uint group=(uint)round(object.x);
-    bool valid=isfinite(object.x) && isfinite(object.y) && isfinite(depth) && group>=1 && group<=4 && object.x==float(group) &&
-        abs(object.y-depth)<=max(0.00000024,abs(depth)*0.000002);
+    // PackObjectPixel: depth with the group in its three lowest mantissa bits.
+    uint packed=asuint(Objects.Load(int3(q,0))); float depth=Depth.Load(int3(q,0));
+    uint group=packed&7u; float objectDepth=asfloat(packed&~7u);
+    bool valid=isfinite(objectDepth) && isfinite(depth) && group>=1 && group<=4 &&
+        abs(objectDepth-depth)<=max(0.00000024,abs(depth)*0.000002);
     float amount=valid ? Strength[clamp(group,1,4)-1] : 1;
     float4 n=Neural.Load(int3(p.xy,0)), original=Original.Load(int3(p.xy,0));
     // Exact endpoints preserve all channels of the selected source.

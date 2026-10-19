@@ -46,7 +46,7 @@ namespace TheosRenderPipeline::NeuralRendering
         if(d.Width!=original->GetDesc().Width || d.Height!=original->GetDesc().Height ||
             d.Format!=original->GetDesc().Format || d.Width!=neural->GetDesc().Width || d.Height!=neural->GetDesc().Height ||
             d.Format!=neural->GetDesc().Format || m.Width!=g.Width || m.Height!=g.Height ||
-            m.Format!=DXGI_FORMAT_R32G32_FLOAT || g.Format!=DXGI_FORMAT_R32_FLOAT) { return E_INVALIDARG; }
+            m.Format!=DXGI_FORMAT_R32_FLOAT || g.Format!=DXGI_FORMAT_R32_FLOAT) { return E_INVALIDARG; }
         auto hr=Initialize(device); if(FAILED(hr)) { return hr; }
         auto transition=[&](ID3D12Resource* r,D3D12_RESOURCE_STATES before,D3D12_RESOURCE_STATES after) {
             D3D12_RESOURCE_BARRIER b{}; b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;

@@ -134,17 +134,19 @@ int main(){
     for(unsigned iteration=0;iteration<12;++iteration){
         const UINT gw=iteration%2 ? W/2:W, gh=iteration%2 ? H/2:H;
         const std::array<float,2> offset{iteration%3==0?0.0f:iteration%3==1?0.75f:-0.75f,iteration%2?0.375f:-0.375f};
-        std::vector<float> original(W*H*4),neural(W*H*4),objects(gw*gh*2),depth(gw*gh,0.5f);
+        std::vector<float> original(W*H*4),neural(W*H*4),objects(gw*gh),depth(gw*gh,0.5f);
         for(UINT i=0;i<W*H;++i){ original[i*4]=0.25f;original[i*4+1]=-0.5f;original[i*4+2]=4;original[i*4+3]=0.75f;
             neural[i*4]=1.25f;neural[i*4+1]=0.5f;neural[i*4+2]=8;neural[i*4+3]=0.25f; }
-        for(UINT y=0;y<gh;++y)for(UINT x=0;x<gw;++x){unsigned i=y*gw+x; objects[i*2]=float(x%8);objects[i*2+1]=0.5f;
+        // Packed groups 0..7: 0 is unclassified and 5..7 are out of range.
+        for(UINT y=0;y<gh;++y)for(UINT x=0;x<gw;++x){unsigned i=y*gw+x; auto group=static_cast<ObjectGroup>(x%8);float objectDepth=0.5f;
             if(y%4==1)depth[i]=0.25f; // a later opaque occluder invalidates the group
-            if(y%4==2)objects[i*2+1]=std::numeric_limits<float>::quiet_NaN();
-            if(y%4==3)objects[i*2]=1.25f; }
+            if(y%4==2)objectDepth=std::numeric_limits<float>::quiet_NaN();
+            if(y%4==3)objectDepth=0.5f+0.001f; // a different surface at this pixel
+            objects[i]=PackObjectPixel(group,objectDepth); }
         auto a=gpu.Texture(DXGI_FORMAT_R32G32B32A32_FLOAT),b=gpu.Texture(DXGI_FORMAT_R32G32B32A32_FLOAT);
-        auto m=gpu.Texture(DXGI_FORMAT_R32G32_FLOAT,false,gw,gh),d=gpu.Texture(DXGI_FORMAT_R32_FLOAT,false,gw,gh);
+        auto m=gpu.Texture(DXGI_FORMAT_R32_FLOAT,false,gw,gh),d=gpu.Texture(DXGI_FORMAT_R32_FLOAT,false,gw,gh);
         auto output=gpu.Texture(DXGI_FORMAT_R32G32B32A32_FLOAT,true);
-        gpu.Upload(a.Get(),original,4);gpu.Upload(b.Get(),neural,4);gpu.Upload(m.Get(),objects,2);gpu.Upload(d.Get(),depth,1);gpu.Submit();
+        gpu.Upload(a.Get(),original,4);gpu.Upload(b.Get(),neural,4);gpu.Upload(m.Get(),objects,1);gpu.Upload(d.Get(),depth,1);gpu.Submit();
         Check(blend.Record(gpu.device.Get(),gpu.list.Get(),iteration%TheosRenderPipeline::SourceDLSSG::kCommandSlots,
             settings,a.Get(),b.Get(),m.Get(),d.Get(),output.Get(),offset),"production object blend");
         auto bytes=gpu.Read(output.Get(),16);std::vector<float> pixels(W*H*4);std::memcpy(pixels.data(),bytes.data(),bytes.size());

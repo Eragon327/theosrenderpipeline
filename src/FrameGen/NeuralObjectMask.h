@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 
@@ -23,6 +24,17 @@ namespace TheosRenderPipeline::NeuralRendering
         }
         return value;
     }
+    // The captured classification is one R32_FLOAT per pixel: the object's depth
+    // with its three lowest mantissa bits replaced by the group. D3D11 cannot
+    // open two-channel 32-bit textures shared with D3D12, and the blend needs
+    // full depth precision; this costs at most 7 ulp (under 1e-6 relative).
+    // The capture and blend shaders use the same layout.
+    inline float PackObjectPixel(ObjectGroup group, float depth)
+    {
+        return std::bit_cast<float>((std::bit_cast<std::uint32_t>(depth) & ~7u) | (static_cast<unsigned>(group) & 7u));
+    }
+    inline ObjectGroup PackedObjectGroup(float value) { return static_cast<ObjectGroup>(std::bit_cast<std::uint32_t>(value) & 7u); }
+    inline float PackedObjectDepth(float value) { return std::bit_cast<float>(std::bit_cast<std::uint32_t>(value) & ~7u); }
     inline float ObjectStrength(const ObjectMaskSettings& settings, ObjectGroup group)
     {
         const auto index = static_cast<unsigned>(group);

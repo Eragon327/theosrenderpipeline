@@ -56,6 +56,36 @@ int main(int argc, char** argv)
 
     Interop interop;
     Check(interop.Initialize(device11.Get(), device12.Get(), queue.Get()), "initialize production interop");
+    // Every guide format the backend shares between D3D11 and D3D12, with the
+    // bind flags EnsureGuide uses. A format D3D11 cannot open shared fails here,
+    // not on the game's first frame with the feature on.
+    // (The NR object mask is R32_FLOAT for this reason: D3D11 here refuses to
+    // open R32G32 and R32G32B32A32 textures shared from D3D12.)
+    auto guide = [](DXGI_FORMAT format) {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = 3413; desc.Height = 960; desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+        desc.Format = format; desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+        return desc;
+    };
+    for (const auto format : { DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R10G10B10A2_UNORM }) {
+        SharedTexture shared;
+        const auto hr = interop.CreateSharedTexture(guide(format), shared);
+        std::printf("shared guide format=%d result=0x%08lX\n", static_cast<int>(format), static_cast<unsigned long>(hr));
+        Require(SUCCEEDED(hr) && shared.texture11 && shared.texture12, "every shared guide format opens on both APIs");
+    }
+    // An optional texture that cannot be shared reports its failure but leaves
+    // the interop usable; a required one would latch the first fault.
+    {
+        SharedTexture refused;
+        const auto hr = interop.CreateSharedTexture(guide(DXGI_FORMAT_R32G32B32A32_FLOAT), refused, true);
+        std::printf("optional unshareable guide result=0x%08lX\n", static_cast<unsigned long>(hr));
+        Require(FAILED(hr) && !refused.texture11 && !refused.texture12, "unshareable optional guide is refused");
+        Require(interop.Ready() && SUCCEEDED(interop.Fault()), "an optional allocation failure does not fault the interop");
+        SharedTexture after;
+        Check(interop.CreateSharedTexture(guide(DXGI_FORMAT_R32_FLOAT), after), "interop still allocates after an optional failure");
+    }
     Check(interop.WaitForInputReaders(nullptr, 0), "no-fence presenting queue bridge");
     const auto beforeInvalid = interop.LastValue(Work::FrameGeneration);
     Require(interop.WaitForInputReaders(nullptr, 1) == E_UNEXPECTED, "missing nonzero fence rejected");

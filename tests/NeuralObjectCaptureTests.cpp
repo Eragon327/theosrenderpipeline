@@ -51,8 +51,9 @@ float4 ps():SV_Target {return float4(0.25,0.5,0.75,1);})";
         const auto frame=10+group;
         Check(capture.Record(context.Get(),static_cast<ObjectGroup>(group),frame,{16,16},depth.Get(),nullptr,[&]{context->Draw(3,0);}),"record opaque group");
         auto* mask=capture.Current(frame);Require(mask&&capture.Draws()==1,"current frame has one captured draw");
-        const auto pixels=Read(device.Get(),context.Get(),mask,2);
-        for(unsigned i=0;i<256;++i){Require(pixels[i*2]==float(group)&&pixels[i*2+1]==0.25f,"every pixel contains exact group and depth");}
+        const auto pixels=Read(device.Get(),context.Get(),mask,1);
+        for(unsigned i=0;i<256;++i){Require(PackedObjectGroup(pixels[i])==static_cast<ObjectGroup>(group)&&PackedObjectDepth(pixels[i])==0.25f,
+            "every pixel packs the exact group and depth");}
         Require(!capture.Current(frame+1),"stale capture rejected");
         ComPtr<ID3D11PixelShader> restored;context->PSGetShader(&restored,nullptr,nullptr);Require(restored.Get()==ps.Get(),"pixel shader restored");
         ComPtr<ID3D11RenderTargetView> restoredTarget;ComPtr<ID3D11DepthStencilView> restoredDepth;

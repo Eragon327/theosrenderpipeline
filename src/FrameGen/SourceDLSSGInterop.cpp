@@ -134,7 +134,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return S_OK;
 	}
 
-	HRESULT Interop::CreateSharedTexture(const D3D11_TEXTURE2D_DESC& a_desc, SharedTexture& a_output)
+	HRESULT Interop::CreateSharedTexture(const D3D11_TEXTURE2D_DESC& a_desc, SharedTexture& a_output, bool a_optional)
 	{
 		Observe("CreateSharedTexture");
 		if (!Ready()) { return FAILED(fault_) ? fault_ : E_UNEXPECTED; }
@@ -160,13 +160,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		SharedTexture result;
 		auto hr = device12_->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_SHARED,
 			&desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&result.texture12));
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { return a_optional ? hr : Check(hr); }
 		HANDLE handle = nullptr;
 		hr = device12_->CreateSharedHandle(result.texture12.Get(), nullptr, GENERIC_ALL, nullptr, &handle);
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { return a_optional ? hr : Check(hr); }
 		hr = device11_->OpenSharedResource1(handle, IID_PPV_ARGS(&result.texture11));
 		::CloseHandle(handle);
-		if (FAILED(hr)) { return Check(hr); }
+		if (FAILED(hr)) { return a_optional ? hr : Check(hr); }
 		result.texture11->GetDesc(&result.desc);
 		a_output = std::move(result);
 		return S_OK;

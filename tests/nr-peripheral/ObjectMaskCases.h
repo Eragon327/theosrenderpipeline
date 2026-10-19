@@ -24,8 +24,9 @@ static void ObjectMaskCases(GPU& gpu)
         auto ui=gpu.Texture(w,h,std::vector<Pixel>(w*h,{.05f,.025f,0,.25f})),composed=gpu.Texture(w,h);
         const std::vector<Pixel> pixels(w*h,{.2f,.3f,.4f,.5f});
         std::vector<Pixel> classes(gw*gh);
-        for(unsigned y=0;y<gh;++y)for(unsigned x=0;x<gw;++x)classes[y*gw+x]={float(x%4+1),y%3==0?.2f:.4f,0,0};
-        auto mask=gpu.Texture(gw,gh,classes,DXGI_FORMAT_R32G32_FLOAT);
+        for(unsigned y=0;y<gh;++y)for(unsigned x=0;x<gw;++x)
+            classes[y*gw+x]={PackObjectPixel(static_cast<ObjectGroup>(x%4+1),y%3==0?.2f:.4f),0,0,0};
+        auto mask=gpu.Texture(gw,gh,classes,DXGI_FORMAT_R32_FLOAT);
         std::vector<Pixel> baseline;
         for(bool masked:{false,true}) {
             Fixture::creations=Fixture::evaluations=Fixture::resets=0;

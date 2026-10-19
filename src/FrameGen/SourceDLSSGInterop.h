@@ -100,7 +100,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// presenting queue, not an unrelated worker queue.
 		HRESULT Initialize(ID3D11Device* a_device11, ID3D12Device* a_device12,
 			ID3D12CommandQueue* a_queue);
-		HRESULT CreateSharedTexture(const D3D11_TEXTURE2D_DESC& a_desc, SharedTexture& a_output);
+		// An optional texture's failure is returned without faulting the interop:
+		// nothing was created, so the caller can carry on without that feature.
+		HRESULT CreateSharedTexture(const D3D11_TEXTURE2D_DESC& a_desc, SharedTexture& a_output, bool a_optional = false);
 		HRESULT CopyInput(ID3D11Texture2D* a_input, const SharedTexture& a_destination);
 		HRESULT CopyInputRegion(ID3D11Texture2D* a_input, const SharedTexture& a_destination, FrameExtent a_extent);
 		HRESULT SignalD3D11(Work a_work);

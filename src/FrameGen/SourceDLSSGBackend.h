@@ -208,8 +208,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool Check(HRESULT a_result, const char* a_operation, const char* a_source = "SourceDLSSG");
 		bool CheckSession(bool a_result);
 		bool CheckXeFG(HRESULT result);
+		// An optional guide's allocation failure returns false without a fault.
 		bool EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair,
-			DXGI_FORMAT a_format = DXGI_FORMAT_UNKNOWN, FrameExtent a_extent = {});
+			DXGI_FORMAT a_format = DXGI_FORMAT_UNKNOWN, FrameExtent a_extent = {}, bool a_optional = false);
 		bool CopyDepth(ID3D11Texture2D* a_depth);
 		void ReleaseGuides();
 		bool RecreateNeuralIfNeeded(const NeuralOptions& options);
@@ -296,6 +297,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<IDXGISwapChain> retainedNative_;
 		SharedTexture motion_, depth_, ui_, hudless_, earlyNeuralColor_, objectMask_;
         bool objectMaskCurrent_{};
+        bool objectMaskRefused_{}; // Its shared texture could not be created; normal NR for the session.
         bool CopyObjectMask(FrameExtent extent);
 #if !defined(TRP_NO_NEURAL_RENDERING)
 		std::unique_ptr<NeuralPass> neuralPass_;

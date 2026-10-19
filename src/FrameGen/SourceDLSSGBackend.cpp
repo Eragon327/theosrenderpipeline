@@ -433,14 +433,21 @@ namespace TheosRenderPipeline::SourceDLSSG
 #if !defined(TRP_NO_NEURAL_RENDERING)
         if (!frameNeuralOptions_.enabled || !frameNeuralOptions_.objectMasks.enabled) { return true; }
         auto* source = NeuralObjects::Current();
-        if (!source) { return true; }
-        if (!EnsureGuide(source,objectMask_,DXGI_FORMAT_R32G32_FLOAT,extent) ||
-            !Check(interop_.CopyInputRegion(source,objectMask_,extent),"NR object-classification copy")) { return false; }
+        if (!source || objectMaskRefused_) { return true; }
+        // Masks are experimental: a mask texture that cannot be shared turns them
+        // off for the session and the frame continues with normal NR.
+        if (!EnsureGuide(source,objectMask_,DXGI_FORMAT_R32_FLOAT,extent,true)) {
+            if (FAILED(fault_)) { return false; }
+            objectMaskRefused_ = true;
+            logger::warn("[NR Objects] shared classification texture unavailable; object masks off for this session, normal NR continues");
+            return true;
+        }
+        if (!Check(interop_.CopyInputRegion(source,objectMask_,extent),"NR object-classification copy")) { return false; }
         objectMaskCurrent_ = true;
 #endif
         return true;
     }
-	bool Backend::EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair, DXGI_FORMAT a_format, FrameExtent a_extent)
+	bool Backend::EnsureGuide(ID3D11Texture2D* a_source, SharedTexture& a_pair, DXGI_FORMAT a_format, FrameExtent a_extent, bool a_optional)
 	{
 		if (!a_source) { return false; }
 		D3D11_TEXTURE2D_DESC desc{};
@@ -459,10 +466,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		desc.Usage = D3D11_USAGE_DEFAULT; desc.CPUAccessFlags = 0; desc.MiscFlags = 0;
 		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 		if (&a_pair == &depth_) { desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS; }
-		const auto allocation = interop_.CreateSharedTexture(desc, a_pair);
+		const auto allocation = interop_.CreateSharedTexture(desc, a_pair, a_optional);
 		if (FAILED(allocation)) {
-			logger::error("[SourceDLSSG] shared guide format={} size={}x{} bind=0x{:X} mip={} array={}",
-				static_cast<int>(desc.Format), desc.Width, desc.Height, desc.BindFlags, desc.MipLevels, desc.ArraySize);
+			logger::error("[SourceDLSSG] shared guide format={} size={}x{} bind=0x{:X} mip={} array={} result=0x{:08X}",
+				static_cast<int>(desc.Format), desc.Width, desc.Height, desc.BindFlags, desc.MipLevels, desc.ArraySize,
+				static_cast<std::uint32_t>(allocation));
+			if (a_optional) { a_pair = {}; return false; }
 		}
 		return Check(allocation, "shared guide allocation");
 	}
