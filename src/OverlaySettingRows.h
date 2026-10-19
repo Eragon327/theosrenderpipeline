@@ -53,7 +53,9 @@ inline ImU32 ChangedTint() { return ImGui::GetColorU32(ImVec4(kAmber.x, kAmber.y
 namespace Rows
 {
 // Widths in 1x units; callers multiply by the zoom.
-inline constexpr float MaxControl = 520, MinControl = 140, StateColumn = 28;
+inline constexpr float MaxControl = 520, MinControl = 140;
+// The state column holds one undo button, a frame high and square.
+inline float StateColumn() { return ImGui::GetFrameHeight(); }
 // One control column shared by every row table drawn while it is active, so
 // controls start and end at the same x inside and outside the pass panel.
 struct Grid
@@ -87,7 +89,7 @@ inline void Label(const char* label, bool changed, bool restarts)
 inline bool BeginSettingRows(const char* id, float labelWidth)
 {
     const float available = ImGui::GetContentRegionAvail().x;
-    const float state = ActivePresetDecor() ? Px(Rows::StateColumn) : 0;
+    const float state = ActivePresetDecor() ? Rows::StateColumn() : 0;
     float control = std::clamp(available - labelWidth - state - ImGui::GetStyle().CellPadding.x * 6,
         Px(Rows::MinControl), Px(Rows::MaxControl));
     if (const auto* grid = Rows::ActiveGrid())
@@ -199,8 +201,10 @@ inline Rows::Grid NeuralRowsGrid()
     const float inside = LabelWidth({"Peripheral compression", "Local structure", "UI correction", "Skin structure"});
     Rows::Grid grid;
     grid.controlX = Rows::ColumnStart(origin, (std::max)(outside, inset + inside));
-    const float right = origin + available - inset - Px(Rows::StateColumn) - style.CellPadding.x * 3;
-    grid.controlWidth = std::clamp(right - grid.controlX, Px(Rows::MinControl), Px(Rows::MaxControl));
+    // Controls fill the column up to the undo button, which ends at the pass
+    // panel's inner edge; there is no maximum width, so no gap opens beyond it.
+    const float right = origin + available - inset - Rows::StateColumn() - style.CellPadding.x * 3;
+    grid.controlWidth = (std::max)(Px(Rows::MinControl), right - grid.controlX);
     return grid;
 }
 // Makes grid the active column for its lifetime.
