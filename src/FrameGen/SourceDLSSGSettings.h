@@ -11,6 +11,7 @@
 #include "HDROutput.h"
 #include "FrameGenerationProvider.h"
 #include "XeFGOptions.h"
+#include "PresentationVSync.h"
 #include "DlssgPreset.h"
 #include "NeuralRuntimeFiles.h"
 
@@ -21,6 +22,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	struct Preferences
 	{
 		FrameGenerationProvider provider{FrameGenerationProvider::NVIDIA};
+		VSyncMode vsync{VSyncMode::Auto};
 		XeFGOptions xefg{};
 		int reflexMode{ 1 };
 		int outputFPSLimit{ 0 };
@@ -53,6 +55,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	inline Preferences SanitizePreferences(Preferences value)
 	{
 		if (!ValidProvider(static_cast<int>(value.provider))) { value.provider = FrameGenerationProvider::NVIDIA; }
+		value.vsync = SanitizeVSync(value.vsync);
 		value.xefg = SanitizeXeFG(value.xefg);
 		value.xefgSceneChangeThreshold = SanitizeXeFGSceneChange(value.xefgSceneChangeThreshold);
 		// The multiplier is the only user choice: x3-x6 request the experimental unlock.
@@ -77,6 +80,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		constexpr auto section = "SourceDLSSG";
 		Preferences value;
 		value.provider = static_cast<FrameGenerationProvider>(ini.GetLongValue("FrameGeneration", "Provider", 0));
+		const auto vsync = ini.GetLongValue("FrameGeneration", "VSync", 0);
+		value.vsync = vsync >= 0 && vsync <= 2 ? static_cast<VSyncMode>(vsync) : VSyncMode::Auto;
 		value.xefgFrameTime = ini.GetBoolValue("FrameGeneration", "XeFGFrameTime", true);
 		value.xefgTensorCores = ini.GetBoolValue("FrameGeneration", "XeFGTensorCores", false);
 		value.xefgSceneChangeThreshold = static_cast<float>(ini.GetDoubleValue("FrameGeneration", "XeFGSceneChangeThreshold",
@@ -124,6 +129,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value = SanitizePreferences(value);
 		constexpr auto section = "SourceDLSSG";
 		ini.SetLongValue("FrameGeneration", "Provider", static_cast<int>(value.provider));
+		ini.SetLongValue("FrameGeneration", "VSync", static_cast<int>(value.vsync));
 		ini.SetBoolValue("FrameGeneration", "XeFGFrameTime", value.xefgFrameTime);
 		ini.SetBoolValue("FrameGeneration", "XeFGTensorCores", value.xefgTensorCores);
 		ini.SetDoubleValue("FrameGeneration", "XeFGSceneChangeThreshold", value.xefgSceneChangeThreshold);

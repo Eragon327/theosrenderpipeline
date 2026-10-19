@@ -632,6 +632,31 @@ namespace TheosRenderPipeline::SourceDLSSG
 			return S_OK;
 		});
 	}
+	VSyncConfiguration Backend::PresentationConfiguration() const
+	{
+		constexpr auto required = XeFGPacing::Installed | XeFGPacing::Registered | XeFGPacing::DriverAvailable | XeFGPacing::QueueReady;
+		bool meter = false;
+		if (provider_ == FrameGenerationProvider::XeFG && XeFGFlipMetering()) {
+			const auto flags = xefg_.PacingStats().flags;
+			meter = (flags & required) == required && !(flags & XeFGPacing::Unsafe);
+		}
+		return {VSyncConfigurationMode(), meter, (presenterDesc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0};
+	}
+	void Backend::ObserveVSync(VSyncSubmission submission, HRESULT result)
+	{
+		VSyncObservation previous;
+		{
+			std::scoped_lock lock(vsyncMutex_);
+			previous = vsyncState_;
+			vsyncState_ = {true, submission, result, provider_};
+		}
+		if (!previous.observed || previous.submission != submission || previous.provider != provider_ || previous.result != result) {
+			logger::info("[Presentation] VSync policy={} provider={} incomingSync={} incomingFlags=0x{:X} submittedSync={} submittedFlags=0x{:X} autoMetering={} result=0x{:08X}",
+				VSyncName(submission.mode), provider_ == FrameGenerationProvider::XeFG ? "XeFG" : "NVIDIA",
+				submission.incomingSync, submission.incomingFlags, submission.sync, submission.flags,
+				submission.autoMetering, static_cast<unsigned>(result));
+		}
+	}
 	HRESULT Backend::BeforePresent(ID3D12Resource* a_source, ID3D12Resource* a_destination, DXGI_COLOR_SPACE_TYPE a_colorSpace)
 	{
 		if (!Ready()) { return FAILED(fault_) ? fault_ : E_UNEXPECTED; }
@@ -764,7 +789,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 				if (ui.Format != destination.Format || ui.Width != destination.Width || ui.Height != destination.Height) { intelUI = nullptr; }
 			}
 			if (!CheckXeFG(xefg_.SetDebugView(XeFGOnlyGenerated(), XeFGTagGenerated()))) { return fault_; }
-			if (xefg_.FlipMeteringRequested() != XeFGFlipMetering()) xefg_.SetFlipMetering(XeFGFlipMetering());
+			const bool meter = XeFGFlipMetering() && VSyncConfigurationMode() != VSyncMode::On;
+			if (xefg_.FlipMeteringRequested() != meter) xefg_.SetFlipMetering(meter);
 			xefg_.SetSceneChangeThreshold(XeFGSceneChangeThresholdConfiguration());
 			if (enabled_ && (!generationAllowed || !prepared || !compatible) && xefg_.Snapshot().presents % 600 == 0) {
 				logger::info("[XeFG] generation held gate={} prepared={} compatible={} sourceFormat={} outputFormat={} convertedThisFrame={}",

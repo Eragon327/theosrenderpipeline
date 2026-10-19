@@ -28,6 +28,19 @@ void Feedback()
 void Generation()
 {
     using namespace SourceDLSSG;
+    {
+        CSimpleIniA ini;
+        Require(LoadPreferences(ini).vsync==VSyncMode::Auto,"existing settings default to Auto VSync");
+        for (auto mode : {VSyncMode::Auto,VSyncMode::Off,VSyncMode::On}) {
+            Preferences preferences;preferences.vsync=mode;StorePreferences(ini,preferences);
+            Require(LoadPreferences(ini).vsync==mode,"VSync Save/restart round trip");
+        }
+        ini.SetLongValue("FrameGeneration","VSync",99);
+        Require(LoadPreferences(ini).vsync==VSyncMode::Auto,"invalid saved VSync recovers to Auto");
+        RendererSettingsDraft current;current.valid=true;
+        auto draft=current;draft.sourceDLSSG.vsync=VSyncMode::Off;
+        Require(CountRendererSettingsChanges(draft,current)==1,"VSync participates in Apply/Discard");
+    }
     for (const unsigned count : {1u, 3u, 5u}) for (const bool dynamic : {false, true}) {
         for (const unsigned target : {0u, 1u, 60u, 61u, 165u, 1000u, 1001u}) {
             GenerationRequest request{count, target, dynamic};

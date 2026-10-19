@@ -66,6 +66,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     backend.ConfigureReflex(static_cast<sl::ReflexMode>(settings.sourceDLSSG.reflexMode));
     backend.ConfigurePreset(settings.sourceDLSSG.preset);
     backend.ConfigureXeFGFrameTime(settings.sourceDLSSG.xefgFrameTime);
+    backend.ConfigureVSync(settings.sourceDLSSG.vsync);
     backend.ConfigureXeFGTensor(settings.sourceDLSSG.xefgTensorCores);
     backend.ConfigureXeFGSceneChangeThreshold(settings.sourceDLSSG.xefgSceneChangeThreshold);
     backend.ConfigureOutputFPSLimit(settings.sourceDLSSG.outputFPSLimit);

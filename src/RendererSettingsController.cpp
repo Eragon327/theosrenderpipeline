@@ -153,6 +153,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     {
         auto& source = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         source.RequestProvider(frameGen_.settings.sourceDLSSG.provider);
+        source.ConfigureVSync(frameGen_.settings.sourceDLSSG.vsync);
         source.ConfigureReflex(static_cast<sl::ReflexMode>(frameGen_.settings.sourceDLSSG.reflexMode));
         source.ConfigurePreset(frameGen_.settings.sourceDLSSG.preset);
         source.ConfigureXeFGFrameTime(frameGen_.settings.sourceDLSSG.xefgFrameTime);

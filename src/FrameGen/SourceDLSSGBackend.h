@@ -1,5 +1,6 @@
 #pragma once
 #include "SourceRetirementPolicy.h"
+#include "PresentationVSync.h"
 
 #include "SourceDLSSGInterop.h"
 #include "SourceDLSSGDeviceLoss.h"
@@ -55,6 +56,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const std::string& XeFGPacingStatus() const { return xefg_.PacingStatus(); }
 		void ConfigureXeFGFlipMetering(bool enabled) { xefgFlipMetering_.store(enabled, std::memory_order_relaxed); }
 		bool XeFGFlipMetering() const { return xefgFlipMetering_.load(std::memory_order_relaxed); }
+		void ConfigureVSync(VSyncMode mode) { vsyncMode_.store(SanitizeVSync(mode)); }
+		VSyncMode VSyncConfigurationMode() const { return vsyncMode_.load(); }
+		VSyncConfiguration PresentationConfiguration() const;
+		struct VSyncObservation { bool observed{}; VSyncSubmission submission{}; HRESULT result{S_FALSE}; FrameGenerationProvider provider{}; };
+		void ObserveVSync(VSyncSubmission submission, HRESULT result);
+		VSyncObservation VSyncState() const { std::scoped_lock lock(vsyncMutex_); return vsyncState_; }
 		void ConfigureXeFG(XeFGOptions options)
 		{
 			options = SanitizeXeFG(options);
@@ -259,6 +266,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool nvidiaInitialized_{}, nvidiaSessionStarted_{};
 		FrameGenerationProvider provider_{FrameGenerationProvider::NVIDIA};
 		std::atomic<FrameGenerationProvider> requestedProvider_{FrameGenerationProvider::NVIDIA};
+		std::atomic<VSyncMode> vsyncMode_{VSyncMode::Auto};
+		mutable std::mutex vsyncMutex_;
+		VSyncObservation vsyncState_;
 		Microsoft::WRL::ComPtr<IDXGIFactory> nativeFactory_, streamlineFactory_;
 		DXGI_SWAP_CHAIN_DESC presenterDesc_{};
 		std::string providerStatus_{"NVIDIA presenter"};

@@ -1,5 +1,6 @@
 #include "XeFGTestSupport.h"
 #include "FrameGen/XeFGPresenter.h"
+#include "FrameGen/PresentationVSync.h"
 #include "NvidiaPresenterFixture.h"
 #include "FrameGen/PipelineCache.h"
 #include <dbghelp.h>
@@ -98,6 +99,7 @@ int wmain(int argc, wchar_t** argv)
     Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1]), tensorRequested), "production admission");
     const bool meteringOff = GetEnvironmentVariableW(L"TRP_XEFG_METERING_OFF",nullptr,0)!=0;
     const bool meteringToggle = GetEnvironmentVariableW(L"TRP_XEFG_METERING_TOGGLE",nullptr,0)!=0;
+    const bool vsyncPolicy = GetEnvironmentVariableW(L"TRP_XEFG_VSYNC_POLICY",nullptr,0)!=0;
     const bool expectedDriverRefusal = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_REFUSAL",nullptr,0)!=0;
     const bool expectedUnsafeMetering = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_UNSAFE",nullptr,0)!=0;
     presenter.SetFlipMetering(!meteringOff);
@@ -153,8 +155,12 @@ int wmain(int argc, wchar_t** argv)
                 "production Intel presenter");
             ComPtr<IDXGISwapChain3> proxy3;
             Check(proxy.As(&proxy3), "proxy3");
+            ComPtr<IDXGISwapChain1> proxy1;
+            Check(proxy.As(&proxy1), "proxy1");
             const auto tensorBefore = presenter.TensorStats();
             for (unsigned frame = 0; frame < frameCount; ++frame) {
+                const auto vsyncMode = frame >= 32 && frame < 64 ? VSyncMode::On : VSyncMode::Auto;
+                if (vsyncPolicy) presenter.SetFlipMetering(vsyncMode != VSyncMode::On);
                 if (meteringToggle && (frame==32 || frame==64)) {
                     presenter.SetFlipMetering(frame==64);
                     std::printf("metering_test round=%u frame=%u enabled=%u\n",round,frame,frame==64);
@@ -241,7 +247,10 @@ int wmain(int argc, wchar_t** argv)
                 if (round == 0 && ((stallMode == 1 || stallMode == 3) ? frame >= 9 && frame < 15 : stallMode == 2 && frame >= 2 && frame < 8))
                     Sleep(500);
                 const auto presentStart = std::chrono::steady_clock::now();
-                const auto result = proxy->Present(0, 0);
+                const auto presentation = ResolveVSync({vsyncMode,true,true},1,0,true);
+                DXGI_PRESENT_PARAMETERS parameters{};
+                const auto result = vsyncPolicy ? (frame % 2 ? proxy1->Present1(presentation.sync,presentation.flags,&parameters) :
+                    proxy->Present(presentation.sync,presentation.flags)) : proxy->Present(0, 0);
                 const auto presentEnd = std::chrono::steady_clock::now();
                 if (stallMode && round == 0 && frame < 60)
                     std::printf("stall-test frame=%u present=%.1f ms\n", frame,
@@ -249,6 +258,13 @@ int wmain(int argc, wchar_t** argv)
                 Check(result, "Intel present");
                 Require(result == S_OK, "visible present");
                 const auto completedPresent=presenter.AfterPresent(result);
+                if (vsyncPolicy && vsyncMode == VSyncMode::On)
+                    Require(!(presenter.PacingStats().flags & TheosRenderPipeline::XeFGPacing::Metered),"VSync On disables metering");
+                if (vsyncPolicy && (frame==31 || frame==32 || frame==63 || frame==64)) {
+                    const auto state=presenter.PacingStats();
+                    std::printf("vsync_policy round=%u frame=%u mode=%s incoming=1 submitted=%u flags=0x%X pacingFlags=%u metered=%llu\n",
+                        round,frame,VSyncName(vsyncMode),presentation.sync,presentation.flags,state.flags,state.meteredCalls);
+                }
                 if (expectedUnsafeMetering && FAILED(completedPresent)) {
                     const auto failed=presenter.PacingStats();
                     Require((failed.flags&TheosRenderPipeline::XeFGPacing::Unsafe)&&failed.driverFailures>0,"failed driver off call retains uncertain state");

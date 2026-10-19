@@ -112,7 +112,23 @@ template<class InnerPresent> HRESULT SwapChain::PresentThrough(InnerPresent&& a_
 HRESULT STDMETHODCALLTYPE SwapChain::Present(UINT a_syncInterval, UINT a_flags)
 {
 	if (a_flags & DXGI_PRESENT_TEST) { return inner_ ? inner_->Present(a_syncInterval, a_flags) : E_UNEXPECTED; }
-	return PresentThrough([&] { return inner_->Present(a_syncInterval, a_flags); });
+	return PresentThrough([&] {
+		const auto options = SelectVSync(a_syncInterval, a_flags);
+		const auto result = inner_->Present(options.sync, options.flags);
+		backend_.ObserveVSync(options, result);
+		return result;
+	});
+}
+
+VSyncSubmission SwapChain::SelectVSync(UINT sync, UINT flags)
+{
+	const auto configuration = backend_.PresentationConfiguration();
+	bool windowed = false;
+	if (WantsImmediate(configuration) && configuration.allowTearing) {
+		BOOL fullscreen = TRUE;
+		windowed = SUCCEEDED(inner_->GetFullscreenState(&fullscreen, nullptr)) && !fullscreen;
+	}
+	return ResolveVSync(configuration, sync, flags, windowed);
 }
 
 HRESULT STDMETHODCALLTYPE SwapChain::GetBuffer(UINT a_buffer, REFIID a_iid, void** a_surface)
@@ -213,7 +229,12 @@ HRESULT STDMETHODCALLTYPE SwapChain::Present1(
 {
 	if (!inner1_) { return E_NOINTERFACE; }
 	if (a_flags & DXGI_PRESENT_TEST) { return inner1_->Present1(a_syncInterval, a_flags, a_parameters); }
-	return PresentThrough([&] { return inner1_->Present1(a_syncInterval, a_flags, a_parameters); });
+	return PresentThrough([&] {
+		const auto options = SelectVSync(a_syncInterval, a_flags);
+		const auto result = inner1_->Present1(options.sync, options.flags, a_parameters);
+		backend_.ObserveVSync(options, result);
+		return result;
+	});
 }
 
 BOOL STDMETHODCALLTYPE SwapChain::IsTemporaryMonoSupported()
