@@ -101,7 +101,10 @@ int wmain(int argc, wchar_t** argv)
     const bool meteringToggle = GetEnvironmentVariableW(L"TRP_XEFG_METERING_TOGGLE",nullptr,0)!=0;
     const bool vsyncPolicy = GetEnvironmentVariableW(L"TRP_XEFG_VSYNC_POLICY",nullptr,0)!=0;
     const bool expectedDriverRefusal = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_REFUSAL",nullptr,0)!=0;
-    const bool expectedUnsafeMetering = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_UNSAFE",nullptr,0)!=0;
+    wchar_t updateFailure[8]{};
+    const bool expectedUpdateFailure = GetEnvironmentVariableW(L"TRP_XEFG_TEST_METER_UPDATE_FAILURE",updateFailure,8)!=0;
+    const bool unsafeUpdateFailure = expectedUpdateFailure && updateFailure[0] == L'5';
+    const bool expectedUnsafeMetering = unsafeUpdateFailure || GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_UNSAFE",nullptr,0)!=0;
     presenter.SetFlipMetering(!meteringOff);
     Inputs input;
     input.Create(interop, d11.Get(), width, height, colorFormat);
@@ -136,6 +139,7 @@ int wmain(int argc, wchar_t** argv)
     std::printf("owner cycles=%u releaseRetiredNvidia=%u experimental=%u inputReuse=%s\n", cycles, releaseNvidia,
         experimental, gpuInputWait ? "gpu-fence" : "cpu-drain");
     for (unsigned round = 0; round < cycles; ++round) {
+        if (expectedUpdateFailure) SetEnvironmentVariableW(L"TRP_XEFG_PACING_FAULT",nullptr);
         ComPtr<IDXGISwapChain> native;
         Check(presentingFactory->CreateSwapChain(queue.Get(), &desc, &native), "native before Intel");
         if (nvidia) {
@@ -159,6 +163,14 @@ int wmain(int argc, wchar_t** argv)
             Check(proxy.As(&proxy1), "proxy1");
             const auto tensorBefore = presenter.TensorStats();
             for (unsigned frame = 0; frame < frameCount; ++frame) {
+                if (expectedUpdateFailure && frame == 24) {
+                    const auto state = presenter.PacingStats();
+                    Require(state.flipCalls > 0 && state.driverStatus == 0,
+                        "driver configuration succeeds before injected update refusal");
+                    SetEnvironmentVariableW(L"TRP_XEFG_PACING_FAULT",unsafeUpdateFailure ? L"5" : L"4");
+                    std::printf("metering_update_failure round=%u frame=%u mode=%ls priorCalls=%llu\n",round,frame,
+                        unsafeUpdateFailure ? L"update-and-off" : L"update-only",state.flipCalls);
+                }
                 const auto vsyncMode = frame >= 32 && frame < 64 ? VSyncMode::On : VSyncMode::Auto;
                 if (vsyncPolicy) presenter.SetFlipMetering(vsyncMode != VSyncMode::On);
                 if (meteringToggle && (frame==32 || frame==64)) {
@@ -277,6 +289,16 @@ int wmain(int argc, wchar_t** argv)
                     return 0;
                 }
                 Check(completedPresent, "production completion");
+                if (expectedUpdateFailure && frame == 48) {
+                    const auto state = presenter.PacingStats();
+                    Require(state.driverFailures > 0 && state.driverStatus == 0,
+                        "failed updates followed by acknowledged driver off");
+                    Require(!(state.flags & (TheosRenderPipeline::XeFGPacing::Metered | TheosRenderPipeline::XeFGPacing::Unsafe)),
+                        "software pacing after failed updates is cleanly unmetered");
+                    std::printf("metering_update_recovered round=%u calls=%llu failures=%llu status=%d\n",
+                        round,state.flipCalls,state.driverFailures,state.driverStatus);
+                    SetEnvironmentVariableW(L"TRP_XEFG_PACING_FAULT",nullptr);
+                }
                 const auto retirementStart = std::chrono::steady_clock::now();
                 Check(gpuInputWait ? interop.WaitD3D11(Work::SwapChain) : interop.Drain(),
                     gpuInputWait ? "ONLY_NOW input reuse GPU wait" : "retire ONLY_NOW copies");
@@ -327,7 +349,9 @@ int wmain(int argc, wchar_t** argv)
                 Require((paced.flags & TheosRenderPipeline::XeFGPacing::Registered)!=0,"private pacing context registration");
                 Require(paced.deadlines>0&&paced.extraPaces>0,"actual SDK deadlines and intermediate output pacing");
                 Require(meteringOff ? paced.flipCalls==0 : paced.flipCalls>0,"driver metering requests observed");
-                Require(expectedDriverRefusal ? paced.driverFailures>0&&paced.meteredCalls==0 : paced.driverFailures==0,"driver refusal uses software pacing; normal configuration stays clean");
+                Require(expectedUpdateFailure ? paced.driverFailures>0&&paced.driverStatus==0 :
+                    expectedDriverRefusal ? paced.driverFailures>0&&paced.meteredCalls==0 : paced.driverFailures==0,
+                    "driver refusal uses software pacing; normal configuration stays clean");
                 if (fullscreen&&!meteringOff&&!expectedDriverRefusal) Require(paced.meteredCalls>0,"independent-flip driver metering actually accepted");
             }
             std::printf("tensor_complete round=%u model=%u active=%u launches=%llu fallbacks=%llu cachedPSOs=%llu libraryBytes=%zu\n", round,

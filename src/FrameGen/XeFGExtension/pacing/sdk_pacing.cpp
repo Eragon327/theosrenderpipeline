@@ -2,6 +2,7 @@
 #include "sdk_pacing_dlssg.h"
 #include "MinHook.h"
 #include "PacingSupport.h"
+#include "FlipMeteringState.h"
 #include <intrin.h>
 #include <algorithm>
 #include <atomic>
@@ -57,12 +58,8 @@ struct Owner
     // written by the presenting thread before a native Present and read by its deadlines (flipMutex).
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> flipQueue;
     std::mutex flipMutex;
-    struct Flip
+    struct Flip : detail::FlipMeteringState
     {
-        bool configured{}, metered{}, refused{};
-        uint32_t outputs{}, feedback{}, consecutiveFailures{};
-        int64_t spacing{}, batchNs{};
-        int status{};
         uint64_t calls{}, limited{};
         // seam.1: output 0's Present call of the batch (its frame's low 32 bits), the base of the
         // batch's metered deadlines. The SDK stamps its batch start only after waiting for output 0's
@@ -97,8 +94,7 @@ std::atomic<uint64_t> deadlines{}, extraPaces{}, flipCalls{}, meteredCalls{}, dr
 std::atomic<bool> unsafe{};
 // A batch is configured once the estimate holds this many batch deltas (DLSS-G averages six).
 constexpr uint32_t kFlipMinimumSamples = 3;
-// The driver refusing this many configurations in a row turns the owner's flip metering off.
-constexpr uint32_t kFlipFailureLimit = 8;
+// Repeated driver refusals select software pacing after checked driver disable.
 // hitch.1: the batch time the driver gets grows at most 1/kFlipGrowthDivisor per batch over the one in
 // effect (same output count): every flip of the batch is held to it, so one high estimate must not
 // slow a whole batch down at once. Shorter times apply at once.
@@ -117,7 +113,6 @@ struct NvFlipConfigV2
 };
 static_assert(sizeof(NvFlipConfigV2) == 24);
 constexpr UINT kFlipConfigVersion2 = UINT(sizeof(NvFlipConfigV2)) | (2u << 16);
-constexpr UINT kFlipFeedbackNoIflip = 1u; // NVAPI_FLIP_CONFIG_FEEDBACK_NO_IFLIP
 constexpr UINT kMaximumFramesPerFlipBatch = 8; // NVAPI_MAX_FRAMES_PER_FLIP_BATCH
 
 bool Read(uintptr_t address, void* output, size_t bytes) noexcept
@@ -339,6 +334,8 @@ int CallSetFlipConfig(SetFlipConfigFunction function, IUnknown* queue, NvFlipCon
     char fault[16]{};GetEnvironmentVariableA("TRP_XEFG_PACING_FAULT",fault,sizeof(fault));
     if (fault[0]=='1' && config->nFramesPerBatch) return -7001;
     if (fault[0]=='3' && !config->nFramesPerBatch) return -7003;
+    if ((fault[0]=='4' || fault[0]=='5') && config->nFramesPerBatch) return -7004;
+    if (fault[0]=='5' && !config->nFramesPerBatch) return -7003;
 #endif
     __try { return function(queue, 0, config); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return -9999; }
@@ -357,22 +354,14 @@ void ConfigureFlip(Owner& owner, uint32_t outputs, int64_t batchNs, const char* 
     const int status = CallSetFlipConfig(function, owner.flipQueue.Get(), &config);
     ++flip.calls; ++flipCalls; if (status != 0) ++driverFailures;
     const bool statusChanged = status != flip.status, feedbackChanged = config.flipConfigFeedbackMask != flip.feedback;
-    flip.status = status; flip.feedback = config.flipConfigFeedbackMask;
-    if (!outputs && status != 0 && flip.configured) {
+    if (!flip.Record(outputs, batchNs, status, config.flipConfigFeedbackMask)) {
         // An unsuccessful off call does not prove the driver's previous state is
         // gone. Retain the configuration/queue and stop host replacement.
         unsafe.store(true,std::memory_order_release);
         owner.disabled.store(true,std::memory_order_release);
         return;
     }
-    if (status == 0) flip.consecutiveFailures = 0;
-    else if (outputs && ++flip.consecutiveFailures >= kFlipFailureLimit) flip.refused = true;
-    flip.configured = outputs && status == 0;
-    flip.metered = flip.configured && !(config.flipConfigFeedbackMask & kFlipFeedbackNoIflip);
     if (flip.metered) ++meteredCalls;
-    flip.outputs = flip.configured ? outputs : 0;
-    flip.batchNs = flip.configured ? batchNs : 0;
-    flip.spacing = flip.configured ? batchNs/int64_t(outputs) : 0;
     if (flip.calls <= 8 || !outputs || ((statusChanged || feedbackChanged)
         && owner.flipLogs.fetch_add(1, std::memory_order_relaxed) < 32))
         try
