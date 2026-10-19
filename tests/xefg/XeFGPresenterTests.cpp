@@ -269,7 +269,7 @@ int wmain(int argc, wchar_t** argv)
                     const auto failed=presenter.PacingStats();
                     Require((failed.flags&TheosRenderPipeline::XeFGPacing::Unsafe)&&failed.driverFailures>0,"failed driver off call retains uncertain state");
                     Check(interop.Drain(),"host retirement after injected metering fault");
-                    proxy3.Reset();proxy.Reset();
+                    proxy1.Reset();proxy3.Reset();proxy.Reset();
                     Require(FAILED(presenter.Destroy()),"uncertain driver configuration prevents successful provider retirement");
                     Require(presenter.PacingStats().flags&TheosRenderPipeline::XeFGPacing::Registered,"unsafe pacing owner is retained");
                     Require(presenter.TensorStats().flags&TheosRenderPipeline::XeFGTensor::ModelReady,"model resources retained after metering retirement fault");
@@ -336,6 +336,7 @@ int wmain(int argc, wchar_t** argv)
             if (completed.tensorActive) Require(completed.tensorLaunches > tensorBefore.launches && completed.tensorFallbacks == 0,
                 "actual tensor dispatch and no unexpected fallback");
             Check(interop.Drain(), "retire shared resources");
+            proxy1.Reset();
             proxy3.Reset();
             proxy.Reset();
             Check(presenter.Destroy(), "SDK private retirement");
