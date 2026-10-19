@@ -330,6 +330,30 @@ int main()
 
     CheckLateOverlays(gpu, pass, settings);
 
+    // Windows HDR off, or HDR disabled live, leaves the RGB10A2 swapchain
+    // allocated. FG still needs fresh, matching SDR layers without PQ encoding.
+    Check(pass.RecordCompose(gpu.device.Get(), gpu.list.Get(), 1, HDROutput::MakeShaderConstants(settings, true),
+        compositeTexture.Get(), uiTexture.Get(), sceneTexture.Get(), backbuffer.Get()), "SDR composition into retained 10-bit output");
+    gpu.Submit();
+    const auto sdrOutput = gpu.Read(backbuffer.Get(), 4), sdrWorld = gpu.Read(pass.HudlessTarget(), 4),
+        sdrUI = gpu.Read(pass.UITarget(), 8);
+    float sdrIdentityError = 0;
+    for (UINT i = 0; i < W * H; ++i) {
+        const auto output = Unpack10(sdrOutput, i), world = Unpack10(sdrWorld, i);
+        const auto layer = Unpack16(sdrUI, i);
+        Require(layer[3] >= Channel8(ui[i], 3) - 1.0f/65535 && layer[3] <= 1, "SDR layer retains native coverage");
+        for (int c = 0; c < 3; ++c) {
+            Require(std::fabs(output[c] - Channel8(composite[i], c)) <= 0.5f*code10 + 1e-6f,
+                "retained 10-bit SDR output preserves the finished frame without PQ");
+            Require(std::fabs(world[c] - Channel8(scene[i], c)) <= 0.5f*code10 + 1e-6f,
+                "retained 10-bit SDR world stays HUD-less without PQ");
+            sdrIdentityError = (std::max)(sdrIdentityError,
+                std::fabs(output[c] - std::clamp(layer[c] + (1-layer[3])*world[c], 0.0f, 1.0f)));
+        }
+    }
+    Require(sdrIdentityError <= 1.5f*code10, "retained 10-bit SDR layers recompose the finished frame");
+    std::printf("retained 10-bit SDR: exact output/world quantization; composition error=%.2f codes\n", sdrIdentityError/code10);
+
     // Encode: SDR passthrough is exact; UI-brightness encoding matches the reference.
     Check(pass.RecordEncode(gpu.device.Get(), gpu.list.Get(), 2, HDROutput::MakeShaderConstants(settings, true),
         compositeTexture.Get(), backbuffer.Get()), "record passthrough");

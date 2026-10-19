@@ -8,8 +8,10 @@
 #include <xell/xell_d3d12.h>
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include "XeFGOptions.h"
+#include "XeFGTensorRuntime.h"
 
 namespace TheosRenderPipeline
 {
@@ -23,8 +25,12 @@ namespace TheosRenderPipeline
         std::uint32_t frameLimitUs{};
         float frameTimeMs{}; // Last frameRenderTime sent; 0 lets Intel estimate.
         float sleepMs{}; // CPU time in the last XeLL sleep.
+        float sceneChangeThreshold{-1}; // Last value Intel accepted; -1 is Intel's default.
         std::uint32_t maxGeneratedFrames{1}, generatedFrames{1};
         bool experimentalMFG{}, unlockReady{};
+        bool tensorRequested{}, tensorModel{}, tensorActive{};
+        std::uint64_t tensorLaunches{}, tensorFallbacks{};
+        XeFGPacing::Stats pacing;
     };
 
     // One Intel-owned presenter and XeLL owner. DLLs remain process-resident.
@@ -34,7 +40,7 @@ namespace TheosRenderPipeline
     class XeFGPresenter final
     {
     public:
-        HRESULT Probe(ID3D12Device* device, const std::filesystem::path& directory);
+        HRESULT Probe(ID3D12Device* device, const std::filesystem::path& directory, bool tensorRequested = false);
         void SetLogger(void (*callback)(const char*)) { log_ = callback; }
         HRESULT Create(ID3D12Device* device, ID3D12CommandQueue* queue, IDXGIFactory* factory,
             const DXGI_SWAP_CHAIN_DESC& desc, bool inverted, IDXGISwapChain** swapchain,
@@ -45,6 +51,10 @@ namespace TheosRenderPipeline
         HRESULT Prepare(const sl::Constants& camera, bool frameTime = false);
         // Intel debug features; applied when changed and again after recreation.
         HRESULT SetDebugView(bool onlyGenerated, bool tagGenerated);
+        // Scene-change sensitivity, 0-1; applied when changed and after recreation.
+        // A runtime without the call, or one refusing the value, keeps the value in
+        // effect (Intel's default unless set) and generation continues.
+        void SetSceneChangeThreshold(float threshold);
         // ui is optional: a premultiplied UI-only layer matching the HUD-less
         // format and size. AUTO composition blends it when tagged and otherwise
         // extracts the UI from the back buffer.
@@ -59,10 +69,19 @@ namespace TheosRenderPipeline
         HRESULT Destroy();
         bool Initialized() const { return initialized_; }
         HMODULE RuntimeModule() const { return fgModule_; }
-        void ResetHistory() { needsReset_ = true; snapshot_.prepared = false; }
+        // Scope by the selected runtime bundle, which Probe establishes before
+        // Create populates the per-context snapshot and Destroy later clears it.
+        const char* PipelineCacheName() const { return tensor_.Selected() ? "xefg-tensor-v1" : "xefg"; }
+        void ResetHistory() { needsReset_ = true; snapshot_.prepared = false; tensor_.ResetPacing(fg_); }
         const XeFGSnapshot& Snapshot() const { return snapshot_; }
         const std::string& Status() const { return status_; }
         const std::string& UnlockStatus() const { return unlockStatus_; }
+        const std::string& TensorStatus() const { return tensor_.Status(); }
+        XeFGTensor::Stats TensorStats() const { return tensor_.Snapshot(); }
+        XeFGPacing::Stats PacingStats() const { return tensor_.PacingStats(); }
+        const std::string& PacingStatus() const { return tensor_.PacingStatus(); }
+        bool FlipMeteringRequested() const { return tensor_.FlipMeteringRequested(); }
+        void SetFlipMetering(bool enabled) { tensor_.SetFlipMetering(enabled); }
         static bool SupportsFormat(DXGI_FORMAT format);
     private:
         HRESULT FG(xefg_swapchain_result_t result, const char* operation);
@@ -92,6 +111,7 @@ namespace TheosRenderPipeline
         TRP_FG_FUNCTION(xefgSwapChainGetLastPresentStatus)
         TRP_FG_FUNCTION(xefgSwapChainSetUiCompositionState)
         TRP_FG_FUNCTION(xefgSwapChainDestroy)
+        TRP_FG_FUNCTION(xefgSwapChainSetSceneChangeThreshold) // Optional.
         TRP_LL_FUNCTION(xellGetVersion)
         TRP_LL_FUNCTION(xellD3D12CreateContext)
         TRP_LL_FUNCTION(xellSetSleepMode)
@@ -112,5 +132,9 @@ namespace TheosRenderPipeline
         std::chrono::steady_clock::time_point lastFrameBegin_{};
         float frameIntervalMs_{};
         bool debugOnlyGenerated_{}, debugTagGenerated_{};
+        std::optional<float> sceneChangeThreshold_; // Last value sent to this context.
+        XeFGTensorRuntime tensor_;
+        bool tensorChoiceMade_{};
+        void* retiredPacingContext_{}; // Identity only, after SDK Destroy succeeds.
     };
 }

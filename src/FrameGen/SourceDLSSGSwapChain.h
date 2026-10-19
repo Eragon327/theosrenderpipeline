@@ -6,6 +6,7 @@
 #include <atomic>
 #include <array>
 #include "SourceDLSSGInterop.h"
+#include "PresentationVSync.h"
 
 namespace TheosRenderPipeline::SourceDLSSG {
 class Backend;
@@ -107,6 +108,7 @@ private:
 	std::array<SharedTexture, 2> buffers_;
 	std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, 2> nativeBuffers_;
 	HRESULT BeginPresent();
+	VSyncSubmission SelectVSync(UINT sync, UINT flags);
 	template<class InnerPresent> HRESULT PresentThrough(InnerPresent&& a_present);
 	HRESULT FinishPresent(HRESULT a_presented);
 	HRESULT StartHDROutput(HRESULT a_presented);

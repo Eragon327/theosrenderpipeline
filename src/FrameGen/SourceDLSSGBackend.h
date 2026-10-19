@@ -1,5 +1,6 @@
 #pragma once
 #include "SourceRetirementPolicy.h"
+#include "PresentationVSync.h"
 
 #include "SourceDLSSGInterop.h"
 #include "SourceDLSSGDeviceLoss.h"
@@ -49,6 +50,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 		FrameGenerationProvider RequestedProvider() const { return requestedProvider_.load(); }
 		const XeFGSnapshot& XeFGState() const { return xefg_.Snapshot(); }
 		const std::string& XeFGUnlockStatus() const { return xefg_.UnlockStatus(); }
+		const std::string& XeFGTensorStatus() const { return xefg_.TensorStatus(); }
+		void ConfigureXeFGTensor(bool requested) { if (!attempted_) { xefgTensorRequested_ = requested; } }
+		bool XeFGTensorRequested() const { return xefgTensorRequested_; }
+		const std::string& XeFGPacingStatus() const { return xefg_.PacingStatus(); }
+		void ConfigureXeFGFlipMetering(bool enabled) { xefgFlipMetering_.store(enabled, std::memory_order_relaxed); }
+		bool XeFGFlipMetering() const { return xefgFlipMetering_.load(std::memory_order_relaxed); }
+		void ConfigureVSync(VSyncMode mode) { vsyncMode_.store(SanitizeVSync(mode)); }
+		VSyncMode VSyncConfigurationMode() const { return vsyncMode_.load(); }
+		VSyncConfiguration PresentationConfiguration() const;
+		struct VSyncObservation { bool observed{}; VSyncSubmission submission{}; HRESULT result{S_FALSE}; FrameGenerationProvider provider{}; };
+		void ObserveVSync(VSyncSubmission submission, HRESULT result);
+		VSyncObservation VSyncState() const { std::scoped_lock lock(vsyncMutex_); return vsyncState_; }
 		void ConfigureXeFG(XeFGOptions options)
 		{
 			options = SanitizeXeFG(options);
@@ -113,6 +126,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool UIRecompositionConfiguration() const { return UsesUIRecomposition(PresetConfiguration()); }
 		void ConfigureXeFGFrameTime(bool a_enabled) { xefgFrameTime_.store(a_enabled, std::memory_order_relaxed); }
 		bool XeFGFrameTimeConfiguration() const { return xefgFrameTime_.load(std::memory_order_relaxed); }
+		void ConfigureXeFGSceneChangeThreshold(float a_threshold)
+		{
+			xefgSceneChange_.store(SanitizeXeFGSceneChange(a_threshold), std::memory_order_relaxed);
+		}
+		float XeFGSceneChangeThresholdConfiguration() const { return xefgSceneChange_.load(std::memory_order_relaxed); }
 		// Lab diagnostics, not saved: present only generated frames (Intel and NVIDIA), or tag them (Intel).
 		void ConfigureXeFGDebugView(bool a_onlyGenerated, bool a_tagGenerated)
 		{
@@ -241,12 +259,16 @@ namespace TheosRenderPipeline::SourceDLSSG
 		SessionAPI api_{};
 		Session session_;
 		XeFGPresenter xefg_;
+		bool xefgTensorRequested_{};
 		std::atomic<std::uint32_t> xefgOptions_{1};
 		XeSSUpscaler xess_;
 		UINT adapterVendor_{};
 		bool nvidiaInitialized_{}, nvidiaSessionStarted_{};
 		FrameGenerationProvider provider_{FrameGenerationProvider::NVIDIA};
 		std::atomic<FrameGenerationProvider> requestedProvider_{FrameGenerationProvider::NVIDIA};
+		std::atomic<VSyncMode> vsyncMode_{VSyncMode::Auto};
+		mutable std::mutex vsyncMutex_;
+		VSyncObservation vsyncState_;
 		Microsoft::WRL::ComPtr<IDXGIFactory> nativeFactory_, streamlineFactory_;
 		DXGI_SWAP_CHAIN_DESC presenterDesc_{};
 		std::string providerStatus_{"NVIDIA presenter"};
@@ -258,7 +280,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::atomic<sl::ReflexMode> reflexMode_{ sl::ReflexMode::eLowLatency };
 		std::atomic<DlssgPreset> preset_{ DlssgPreset::B };
 		std::atomic<bool> releaseForPreset_{};
-		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{};
+		std::atomic<bool> xefgFrameTime_{ true }, xefgOnlyGenerated_{}, xefgTagGenerated_{}, xefgGpuInputWait_{}, xefgFlipMetering_{true};
+		std::atomic<float> xefgSceneChange_{ XeFGDefaultSceneChangeThreshold };
 		std::atomic<bool> nvidiaOverlapNextFrame_{};
 		bool nvidiaOverlapLogged_{}; // Present thread.
 		std::uint64_t frameGenerationTimingKey_{ ~0ull }; // Present thread; the configuration being timed.

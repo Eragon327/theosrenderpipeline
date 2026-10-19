@@ -51,6 +51,12 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                         frameGenerationRuntimeActive ? UIHealth::kHealthy : UIHealth::kIdle);
         DrawSettingsValue("Multiplier", std::format("x{}", activeDisplayMultiplier).c_str());
         DrawSettingsValue("Display", std::format("{:.0f} Hz", frameGen->refreshRate).c_str());
+        const auto vsync = sourceBackend.VSyncState();
+        if (vsync.observed) {
+            DrawSettingsValue("Incoming VSync", vsync.submission.incomingSync ? "On" : "Off");
+            DrawSettingsValue("Presenter VSync", vsync.submission.sync ? "On requested" : "Off requested");
+            if (FAILED(vsync.result)) ImGui::TextColored(kOchre, "Last presentation request failed.");
+        }
         DrawSettingsValue("Latency", intel ? "XeLL" : TheosRenderPipeline::SourceDLSSG::ReflexModeName(sourceState.reflexSubmitted));
         DrawSettingsValue("Output cap", intel ? (sourceBackend.XeFGState().frameLimitUs ?
             std::format("{:.1f} FPS", 1000000.0 / sourceBackend.XeFGState().frameLimitUs).c_str() : "Off") :
@@ -208,6 +214,14 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             ImGui::TextDisabled("Provider change pending; waiting for world inputs...");
         }
         bool runtimeInterpolationRequested = frameGen->RuntimeInterpolationRequested();
+        int vsyncChoice = static_cast<int>(settingsDraft.sourceDLSSG.vsync);
+        const char* vsyncChoices[]{"Auto", "Off", "On"};
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::Combo("VSync", &vsyncChoice, vsyncChoices, 3))
+            settingsDraft.sourceDLSSG.vsync = static_cast<TheosRenderPipeline::SourceDLSSG::VSyncMode>(vsyncChoice);
+        DrawSettingsHelp("Auto turns VSync off for available XeFG driver metering and otherwise follows the game. "
+                         "Apply changes the request live; Save as default keeps it. On prevents XeFG driver metering. "
+                         "Other mods' frame limits still apply. DLSS-G manages its final output timing.");
         if (ImGui::Checkbox("Frame generation##runtime", &runtimeInterpolationRequested))
         {
             frameGen->RequestRuntimeInterpolation(runtimeInterpolationRequested);
@@ -251,6 +265,34 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             }
             if (editIntel)
             {
+                ImGui::BeginDisabled(!TheosRenderPipeline::XeFGUnlock::Available());
+                ImGui::Checkbox("XeFG tensor model (experimental)", &settingsDraft.sourceDLSSG.xefgTensorCores);
+                ImGui::EndDisabled();
+                DrawSettingsHelp("Uses the private NVIDIA tensor backend when its runtime bundle is installed. "
+                                 "Save as default and restart Skyrim to change it. Universal only.");
+                if (settingsDraft.sourceDLSSG.xefgTensorCores != sourceBackend.XeFGTensorRequested())
+                    ImGui::TextColored(kOchre, "Save and restart to change the XeFG tensor backend.");
+                if (sourceBackend.XeFGTensorRequested())
+                {
+                    ImGui::TextWrapped("%s", sourceBackend.XeFGTensorStatus().c_str());
+                    const auto& pacing = sourceBackend.XeFGState().pacing;
+                    if (pacing.flags & TheosRenderPipeline::XeFGPacing::Installed) {
+                        bool meter = sourceBackend.XeFGFlipMetering();
+                        ImGui::BeginDisabled(settingsDraft.sourceDLSSG.vsync == TheosRenderPipeline::SourceDLSSG::VSyncMode::On);
+                        if (ImGui::Checkbox("NVIDIA flip metering (session only)", &meter))
+                            sourceBackend.ConfigureXeFGFlipMetering(meter);
+                        ImGui::EndDisabled();
+                        DrawSettingsHelp("Compares driver timing with software timing. Changes live and is not saved. "
+                                         "Auto VSync supplies immediate presentation for metering. "
+                                         "The driver must accept metering for it to become active.");
+                        if (sourceBackend.VSyncConfigurationMode() == TheosRenderPipeline::SourceDLSSG::VSyncMode::On)
+                            ImGui::TextColored(kOchre, "Driver metering unavailable while VSync On is applied.");
+                        ImGui::TextWrapped("%s", sourceBackend.XeFGPacingStatus().c_str());
+                        ImGui::Text("Driver metering: %s; accepted batches: %llu",
+                            pacing.flags & TheosRenderPipeline::XeFGPacing::Unavailable ? "unavailable" :
+                            pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? "active" : "idle", pacing.meteredCalls);
+                    }
+                }
                 if (TheosRenderPipeline::XeFGUnlock::Available())
                     DrawSettingsHelp("x2 is Intel's official mode. x3-x6 patch Intel's runtime in memory and are experimental. "
                                      "The first Apply to x3-x6 recreates the Intel presenter; later multiplier changes apply live.");
@@ -348,6 +390,21 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 ImGui::Checkbox("Send frame time to XeFG##sourceDLSSG", &settingsDraft.sourceDLSSG.xefgFrameTime);
                 DrawSettingsHelp("Gives Intel's frame pacing the measured frame time. On AMD and NVIDIA cards Intel "
                                  "uses it to sanity-check pacing. Apply to compare live.");
+                auto& sceneChange = settingsDraft.sourceDLSSG.xefgSceneChangeThreshold;
+                ImGui::TextUnformatted("Scene change sensitivity");
+                if (sceneChange != TheosRenderPipeline::XeFGDefaultSceneChangeThreshold)
+                {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Default##xefgSceneChange"))
+                        sceneChange = TheosRenderPipeline::XeFGDefaultSceneChangeThreshold;
+                }
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::SliderFloat("##xefgSceneChange", &sceneChange, 0.0f, 1.0f, "%.2f");
+                sceneChange = TheosRenderPipeline::SanitizeXeFGSceneChange(sceneChange);
+                DrawSettingsHelp("How readily XeFG treats a sudden change, such as a camera cut or a fast turn, as a "
+                                 "new scene and shows the rendered frame instead of generating one. Higher avoids "
+                                 "smeared transitions but generates less in fast motion. Intel's default is 0.70. "
+                                 "Apply to compare live.");
             }
             ImGui::Separator();
             ImGui::BeginDisabled(editIntel);

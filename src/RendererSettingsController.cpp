@@ -153,9 +153,11 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     {
         auto& source = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         source.RequestProvider(frameGen_.settings.sourceDLSSG.provider);
+        source.ConfigureVSync(frameGen_.settings.sourceDLSSG.vsync);
         source.ConfigureReflex(static_cast<sl::ReflexMode>(frameGen_.settings.sourceDLSSG.reflexMode));
         source.ConfigurePreset(frameGen_.settings.sourceDLSSG.preset);
         source.ConfigureXeFGFrameTime(frameGen_.settings.sourceDLSSG.xefgFrameTime);
+        source.ConfigureXeFGSceneChangeThreshold(frameGen_.settings.sourceDLSSG.xefgSceneChangeThreshold);
         source.ConfigureOutputFPSLimit(frameGen_.settings.sourceDLSSG.outputFPSLimit);
         source.ConfigureGeneration(frameGen_.settings.sourceDLSSG.generation);
         source.ConfigureXeFG(frameGen_.settings.sourceDLSSG.xefg);
@@ -189,6 +191,11 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     {
         actionMessage = "Session settings applied.";
         actionMessageIsError = false;
+    }
+    if (!actionMessageIsError && frameGen_.settings.sourceDLSSG.xefgTensorCores !=
+            TheosRenderPipeline::SourceDLSSG::Backend::Get().XeFGTensorRequested()) {
+        actionMessage += a_saveAsDefault ? " Restart Skyrim to change the XeFG tensor backend."
+                                        : " Save as default and restart Skyrim to change the XeFG tensor backend.";
     }
     logger::info("[Overlay] source settings applied save={} mode={} quality={} preset={} requestedMode={} requestedQuality={} requestedPreset={}", a_saveAsDefault,
                  upscaler_.mUpscaleType, upscaler_.mQualityLevel, upscaler_.mDLSSPreset,

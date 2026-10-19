@@ -11,18 +11,15 @@ int main()
     auto expect = [&](XeFGLayers got, XeFGLayer hudless, XeFGLayer ui, const char* why) {
         Require(got.hudless == hudless && got.ui == ui, why); ++cases;
     };
-    // HDR output composed both layers this frame: XeFG reads its HDR10 copies.
-    expect(SelectXeFGLayers(true, true, true, true), XeFGLayer::HDR, XeFGLayer::HDR, "fresh HDR layers");
-    // HDR signalled but nothing composed this frame (no UI layer, or not prepared):
-    // the HDR targets are stale, so neither is offered and generation holds.
-    expect(SelectXeFGLayers(true, true, false, true), XeFGLayer::None, XeFGLayer::None, "stale HDR world image never offered");
-    expect(SelectXeFGLayers(true, true, false, false), XeFGLayer::None, XeFGLayer::None, "stale HDR without UI never offered");
-    // HDR turned off live (the retained 10-bit swapchain stays, but HDR is not
-    // signalled): the standard layers, whose format check then holds generation.
-    expect(SelectXeFGLayers(false, true, false, true), XeFGLayer::Standard, XeFGLayer::Standard, "HDR off uses the standard layers");
-    expect(SelectXeFGLayers(false, true, true, true), XeFGLayer::Standard, XeFGLayer::Standard, "HDR off ignores an earlier composition");
-    // SDR: standard layers; no UI source, no UI layer.
-    expect(SelectXeFGLayers(false, false, false, true), XeFGLayer::Standard, XeFGLayer::Standard, "SDR with a UI layer");
-    expect(SelectXeFGLayers(false, false, false, false), XeFGLayer::Standard, XeFGLayer::None, "SDR without a UI layer");
-    std::printf("PASS: %u XeFG layer selections: fresh HDR, stale HDR refused, HDR off, SDR\n", cases);
+    constexpr auto sdr = DXGI_FORMAT_R8G8B8A8_UNORM, retained = DXGI_FORMAT_R10G10B10A2_UNORM;
+    // The same retained format applies with HDR on, Windows HDR off, and a
+    // live HDR-disable. None may select incompatible 8-bit world layers.
+    expect(SelectXeFGLayers(retained, sdr, true, true, true), XeFGLayer::Converted, XeFGLayer::Converted, "fresh retained 10-bit layers");
+    expect(SelectXeFGLayers(retained, sdr, true, false, true), XeFGLayer::None, XeFGLayer::None, "stale converted world never offered");
+    expect(SelectXeFGLayers(retained, sdr, true, false, false), XeFGLayer::None, XeFGLayer::None, "stale converted world without UI refused");
+    expect(SelectXeFGLayers(retained, sdr, false, true, true), XeFGLayer::None, XeFGLayer::None, "missing conversion refused");
+    expect(SelectXeFGLayers(sdr, sdr, true, false, true), XeFGLayer::Standard, XeFGLayer::Standard, "matching SDR ignores stale conversion");
+    expect(SelectXeFGLayers(sdr, sdr, false, false, false), XeFGLayer::Standard, XeFGLayer::None, "matching SDR without UI");
+    expect(SelectXeFGLayers(retained, retained, false, false, true), XeFGLayer::Standard, XeFGLayer::Standard, "matching native 10-bit producer");
+    std::printf("PASS: %u XeFG layer selections: retained 10-bit SDR/HDR, stale conversion refused, matching native formats\n", cases);
 }

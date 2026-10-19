@@ -24,8 +24,9 @@ Rendering (NR), and native-resolution menus and HUD. Current version:
 **End** opens settings; change the key under **Advanced > Menu key**. **Apply**
 changes the session; **Save as default** persists settings and window layout;
 **Discard** drops unapplied edits. Saved settings go to
-`Data/SKSE/Plugins/TheosRenderPipeline.User.ini`, which holds only values that
-differ from the packaged `TheosRenderPipeline.ini`. No package ships the user
+`Data/SKSE/Plugins/TheosRenderPipeline.User.ini`, which holds changed values and
+explicit overrides needed when an installed `TheosRenderPipeline.ini` has been
+customized. No package ships the user
 file, so updates keep it; MO2 places it in Overwrite. NR keyboard
 shortcuts are opt-in. HDR is experimental, through Community Shaders or TRP's own
 HDR output; see [HDR](#hdr-experimental).
@@ -259,6 +260,12 @@ use the installation guides for configuration, shaders and required runtimes.
 The Intel fixtures in `tests/xefg` are built and run explicitly against
 identified Intel and NVIDIA runtime directories. Their output counts do not
 establish physical display cadence.
+
+The optional Universal XeFG tensor helper has a separate, opt-in
+[source build](src/FrameGen/XeFGExtension/README.md). Its maintained C++ is in
+`src/FrameGen/XeFGExtension`; compiled GPU assets and generated runtime profiles
+are supplied separately and verified against a tracked manifest. The helper is
+not required to compile the normal renderer and does not deploy automatically.
 
 The optional ReShade lifecycle fixture compares automatic and exported D3D11
 runtimes, single effect execution, effects-off GUI completion, shared input and

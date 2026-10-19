@@ -28,6 +28,19 @@ void Feedback()
 void Generation()
 {
     using namespace SourceDLSSG;
+    {
+        CSimpleIniA ini;
+        Require(LoadPreferences(ini).vsync==VSyncMode::Auto,"existing settings default to Auto VSync");
+        for (auto mode : {VSyncMode::Auto,VSyncMode::Off,VSyncMode::On}) {
+            Preferences preferences;preferences.vsync=mode;StorePreferences(ini,preferences);
+            Require(LoadPreferences(ini).vsync==mode,"VSync Save/restart round trip");
+        }
+        ini.SetLongValue("FrameGeneration","VSync",99);
+        Require(LoadPreferences(ini).vsync==VSyncMode::Auto,"invalid saved VSync recovers to Auto");
+        RendererSettingsDraft current;current.valid=true;
+        auto draft=current;draft.sourceDLSSG.vsync=VSyncMode::Off;
+        Require(CountRendererSettingsChanges(draft,current)==1,"VSync participates in Apply/Discard");
+    }
     for (const unsigned count : {1u, 3u, 5u}) for (const bool dynamic : {false, true}) {
         for (const unsigned target : {0u, 1u, 60u, 61u, 165u, 1000u, 1001u}) {
             GenerationRequest request{count, target, dynamic};
@@ -66,9 +79,32 @@ void Generation()
         Preferences preferences; preferences.xefgFrameTime = false;
         StorePreferences(ini, preferences);
         Require(!LoadPreferences(ini).xefgFrameTime, "a saved XeFG frame-time opt-out round trips");
+        Require(!LoadPreferences(ini).xefgTensorCores, "existing INIs leave the optional tensor backend off");
+        preferences.xefgTensorCores = true;
+        StorePreferences(ini, preferences);
+        Require(LoadPreferences(ini).xefgTensorCores, "the explicit tensor opt-in survives save and restart");
         RendererSettingsDraft current; current.valid = true;
         auto draft = current; draft.sourceDLSSG.xefgFrameTime = false;
         Require(CountRendererSettingsChanges(draft, current) == 1, "XeFG frame time participates in Apply/Discard");
+    }
+    {
+        using TheosRenderPipeline::XeFGDefaultSceneChangeThreshold;
+        CSimpleIniA ini;
+        Require(LoadPreferences(ini).xefgSceneChangeThreshold == XeFGDefaultSceneChangeThreshold,
+            "existing INIs without the key keep Intel's 0.7");
+        Preferences preferences; preferences.xefgSceneChangeThreshold = 0.35f;
+        StorePreferences(ini, preferences);
+        Require(LoadPreferences(ini).xefgSceneChangeThreshold == 0.35f, "a saved scene-change threshold round trips");
+        const std::pair<const char*, float> cases[]{{"3", 1.0f}, {"-1", 0.0f}, {"nan", XeFGDefaultSceneChangeThreshold},
+            {"0.333", 0.33f}, {"garbage", XeFGDefaultSceneChangeThreshold}};
+        for (const auto& [text, expected] : cases) {
+            ini.SetValue("FrameGeneration", "XeFGSceneChangeThreshold", text);
+            Require(LoadPreferences(ini).xefgSceneChangeThreshold == expected,
+                "scene-change thresholds clamp to 0-1 in hundredths; invalid text is Intel's default");
+        }
+        RendererSettingsDraft current; current.valid = true;
+        auto draft = current; draft.sourceDLSSG.xefgSceneChangeThreshold = 0.5f;
+        Require(CountRendererSettingsChanges(draft, current) == 1, "the scene-change threshold participates in Apply/Discard");
     }
 }
 void MenuKey()

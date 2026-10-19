@@ -74,6 +74,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 	// screen-space layer at UI brightness and fold it into the UI colour/alpha.
 	// The original world stays HUD-less, and all three outputs remain consistent.
 	// Actual late-draw alpha is unavailable; coverage is inferred from SDR colour.
+	// In SDR mode, Compose retains the finished SDR pixels and unencoded world,
+	// converting their storage to RGB10A2 with a matching UI residual. This keeps
+	// FG usable when a retained 10-bit swapchain is no longer signalling HDR.
 	// Encode handles frames without separate UI: it writes the whole
 	// frame at UI brightness, or passes SDR through when HDR is not displayable.
 	//

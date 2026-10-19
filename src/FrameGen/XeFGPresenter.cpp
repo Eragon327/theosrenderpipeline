@@ -76,6 +76,8 @@ namespace TheosRenderPipeline
         RESOLVE(llModule_, xellAddMarkerData)
         RESOLVE(llModule_, xellDestroyContext)
 #undef RESOLVE
+        xefgSwapChainSetSceneChangeThreshold_ = reinterpret_cast<decltype(xefgSwapChainSetSceneChangeThreshold_)>(
+            GetProcAddress(fgModule_, "xefgSwapChainSetSceneChangeThreshold"));
         xefg_swapchain_version_t fgVersion{}; xell_version_t llVersion{};
         auto hr = FG(xefgSwapChainGetVersion_(&fgVersion), "version");
         if (FAILED(hr)) { return hr; }
@@ -86,10 +88,23 @@ namespace TheosRenderPipeline
         apiReady_ = true;
         return S_OK;
     }
-    HRESULT XeFGPresenter::Probe(ID3D12Device* device, const std::filesystem::path& directory)
+    HRESULT XeFGPresenter::Probe(ID3D12Device* device, const std::filesystem::path& directory, bool tensorRequested)
     {
-        auto hr = Load(directory);
+        if (!tensorChoiceMade_) {
+            snapshot_.tensorRequested = tensorRequested;
+            tensor_.Select(device, directory, tensorRequested);
+            tensorChoiceMade_ = true;
+            if (tensorRequested && log_) log_(tensor_.Status().c_str());
+        }
+        auto hr = Load(tensor_.Selected() ? tensor_.Directory() : directory);
         if (FAILED(hr) || !device) { return FAILED(hr) ? hr : E_POINTER; }
+        if (tensor_.Selected()) {
+            hr = tensor_.Start(device, fgModule_, llModule_);
+            if (log_) log_(tensor_.Status().c_str());
+            if (FAILED(hr) && tensor_.Unsafe()) { status_ = tensor_.Status(); return E_UNEXPECTED; }
+            // A safely refused model leaves this exact 1.3.4 SDK at official x2.
+            // Dispatch-only refusal keeps the ported model's HLSL fallback.
+        }
         // Admission does not change within a session; skip another SDK context.
         if (device == admittedDevice_) { return S_OK; }
         D3D12_FEATURE_DATA_SHADER_MODEL sm{D3D_SHADER_MODEL_6_4};
@@ -114,12 +129,22 @@ namespace TheosRenderPipeline
         *swapchain = nullptr;
         if (!apiReady_ || initialized_ || fg_ || ll_ || !device || !queue || !factory || !SupportsFormat(desc.BufferDesc.Format)) { return E_INVALIDARG; }
         options = SanitizeXeFG(options);
-        snapshot_.experimentalMFG = options.experimentalMFG;
+        if (tensor_.Selected()) {
+            const auto started = tensor_.Start(device, fgModule_, llModule_);
+            if (FAILED(started) && tensor_.Unsafe()) { status_ = tensor_.Status(); return E_UNEXPECTED; }
+        }
+        snapshot_.experimentalMFG = options.experimentalMFG || tensor_.Selected();
         snapshot_.unlockReady = false;
         snapshot_.maxGeneratedFrames = 1;
         snapshot_.generatedFrames = 1;
         unlockStatus_="Experimental MFG off; official x2";
-        if (options.experimentalMFG) {
+        snapshot_.tensorModel = tensor_.ModelReady();
+        snapshot_.tensorActive = (tensor_.Snapshot().flags & XeFGTensor::TensorReady) != 0;
+        if (tensor_.Selected()) {
+            snapshot_.unlockReady = snapshot_.tensorModel;
+            unlockStatus_ = tensor_.Status();
+            if (log_) log_(unlockStatus_.c_str());
+        } else if (options.experimentalMFG) {
             std::string reason;
             const auto patched = XeFGUnlock::EnsureInstalled(fgModule_, reason);
             unlockStatus_ = std::string(patched == XeFGUnlock::PatchResult::Applied ? "Experimental MFG ready: "
@@ -188,10 +213,14 @@ namespace TheosRenderPipeline
         // A new context starts with Intel's debug features off and no frame history.
         debugOnlyGenerated_ = debugTagGenerated_ = false;
         snapshot_.onlyGenerated = snapshot_.tagGenerated = false;
+        sceneChangeThreshold_.reset(); snapshot_.sceneChangeThreshold = -1;
         lastFrameBegin_ = {}; frameIntervalMs_ = 0; snapshot_.frameTimeMs = 0;
         snapshot_.frameId = (std::max)(snapshot_.frameId, lastApplicationFrame);
         if (FAILED(hr = FG(xefgSwapChainSetNumInterpolatedFrames_(fg_, snapshot_.generatedFrames), "select multiplier")) ||
             FAILED(hr = FG(xefgSwapChainSetEnabled_(fg_, 0), "initial passthrough"))) { return hr; }
+        const auto paced = tensor_.RegisterPacing(fg_, device, log_);
+        if (log_ && tensor_.Selected()) log_(tensor_.PacingStatus().c_str());
+        if (FAILED(paced) && tensor_.Unsafe()) { status_ = tensor_.PacingStatus(); return paced; }
         status_ = "XeFG x"+std::to_string(snapshot_.generatedFrames+1)+" ready; waiting for world inputs";
         return BeginFrame();
     }
@@ -225,6 +254,30 @@ namespace TheosRenderPipeline
             debugTagGenerated_ = snapshot_.tagGenerated = tagGenerated;
         }
         return hr;
+    }
+    void XeFGPresenter::SetSceneChangeThreshold(float threshold)
+    {
+        if (!initialized_ || sceneChangeThreshold_ == threshold) { return; }
+        // Recorded before the call so a refused value is reported once, not every frame.
+        sceneChangeThreshold_ = threshold;
+        if (!xefgSwapChainSetSceneChangeThreshold_) {
+            if (log_) { log_("scene change threshold unavailable in this runtime; Intel's default retained"); }
+            return;
+        }
+        const auto result = xefgSwapChainSetSceneChangeThreshold_(fg_, threshold);
+        if (result < 0) {
+            if (log_) {
+                const auto text = "scene change threshold " + std::to_string(threshold) + " refused result=" + std::to_string(result);
+                log_(text.c_str());
+            }
+            return;
+        }
+        (void)FG(result, "scene change threshold");
+        snapshot_.sceneChangeThreshold = threshold;
+        if (log_) {
+            const auto text = "scene change threshold=" + std::to_string(threshold);
+            log_(text.c_str());
+        }
     }
     HRESULT XeFGPresenter::Prepare(const sl::Constants& c, bool frameTime)
     {
@@ -268,6 +321,7 @@ namespace TheosRenderPipeline
             const auto result = FG(xefgSwapChainSetNumInterpolatedFrames_(fg_, count), "live multiplier");
             if (FAILED(result)) return result;
             snapshot_.generatedFrames = count;
+            tensor_.ResetPacing(fg_);
         }
         auto hr = LL(xellAddMarkerData_(ll_, snapshot_.frameId, XELL_SIMULATION_END), "simulation end");
         if (FAILED(hr) || FAILED(hr = LL(xellAddMarkerData_(ll_, snapshot_.frameId, XELL_RENDERSUBMIT_START), "render start"))) { return hr; }
@@ -278,6 +332,7 @@ namespace TheosRenderPipeline
         if (sleep.minimumIntervalUs != snapshot_.frameLimitUs &&
             FAILED(hr = LL(xellSetSleepMode_(ll_, &sleep), "output cap"))) { return hr; }
         if (FAILED(hr = FG(xefgSwapChainSetEnabled_(fg_, generate), "generation options"))) { return hr; }
+        if (generate != snapshot_.enabled) tensor_.ResetPacing(fg_);
         snapshot_.frameLimitUs = sleep.minimumIntervalUs;
         if (generate) {
             if (!list) { return E_POINTER; }
@@ -327,12 +382,26 @@ namespace TheosRenderPipeline
         ++snapshot_.presents; snapshot_.totalOutputs += status.framesPresented;
         if (status.framesPresented > 1) { ++snapshot_.generatedPresents; }
         status_ = snapshot_.enabled ? "XeFG x"+std::to_string(snapshot_.generatedFrames+1)+" active" : "XeFG passthrough";
+        if (tensor_.Selected()) {
+            const auto state = tensor_.Snapshot();
+            snapshot_.tensorLaunches = state.launches; snapshot_.tensorFallbacks = state.fallbacks;
+            snapshot_.pacing = tensor_.PacingStats();
+            if (snapshot_.pacing.flags & XeFGPacing::Unsafe) {
+                status_ = "XeFG driver metering state uncertain; provider stopped; restart required";
+                return E_UNEXPECTED;
+            }
+        }
         if (log_ && (snapshot_.presents <= 3 || snapshot_.presents % 600 == 0)) {
             const auto pacing = XeFGUnlock::Snapshot();
             const auto text="present frame="+std::to_string(snapshot_.frameId)+" outputs="+std::to_string(snapshot_.framesPresented)+
                 " requestedMultiplier="+std::to_string(snapshot_.generatedFrames+1)+" capacity="+std::to_string(snapshot_.maxGeneratedFrames+1)+
                 " intervalUs="+std::to_string(snapshot_.frameLimitUs)+" processPacingCounters: presents="+std::to_string(pacing.presents)+
-                " refused="+std::to_string(pacing.refused)+" wallWaits="+std::to_string(pacing.wallWaits);
+                " refused="+std::to_string(pacing.refused)+" wallWaits="+std::to_string(pacing.wallWaits)+
+                " tensor="+std::to_string(snapshot_.tensorActive)+" tensorLaunches="+std::to_string(snapshot_.tensorLaunches)+
+                " tensorFallbacks="+std::to_string(snapshot_.tensorFallbacks)+
+                " pacingFlags="+std::to_string(snapshot_.pacing.flags)+" flipCalls="+std::to_string(snapshot_.pacing.flipCalls)+
+                " meteredCalls="+std::to_string(snapshot_.pacing.meteredCalls)+" driverFailures="+std::to_string(snapshot_.pacing.driverFailures)+
+                " pacedDeadlines="+std::to_string(snapshot_.pacing.deadlines);
             log_(text.c_str());
         }
         return S_OK;
@@ -341,7 +410,7 @@ namespace TheosRenderPipeline
     {
         if (!initialized_) { return S_OK; }
         auto hr = FG(xefgSwapChainSetEnabled_(fg_, 0), "disable before retirement");
-        if (SUCCEEDED(hr)) { snapshot_.enabled = false; }
+        if (SUCCEEDED(hr)) { snapshot_.enabled = false; tensor_.ResetPacing(fg_); }
         return hr;
     }
     HRESULT XeFGPresenter::Destroy()
@@ -349,13 +418,23 @@ namespace TheosRenderPipeline
         if (fg_) {
             const auto hr = FG(xefgSwapChainDestroy_(fg_), "destroy presenter and internal work");
             if (FAILED(hr)) { return hr; }
+            retiredPacingContext_ = fg_;
             fg_ = nullptr; initialized_ = false; frameBegun_ = presentPending_ = false;
+        }
+        if (retiredPacingContext_) {
+            const auto hr = tensor_.UnregisterPacing(retiredPacingContext_);
+            if (FAILED(hr)) { status_ = tensor_.PacingStatus(); return hr; }
+            retiredPacingContext_ = nullptr;
         }
         if (ll_) {
             const auto hr = LL(xellDestroyContext_(ll_), "destroy latency context");
             if (FAILED(hr)) { return hr; }
             ll_ = nullptr;
         }
+        const auto retired = tensor_.Retire();
+        if (FAILED(retired)) { status_ = tensor_.Status(); return retired; }
+        snapshot_.tensorModel = snapshot_.tensorActive = false;
+        snapshot_.pacing = tensor_.PacingStats();
         snapshot_.prepared = snapshot_.enabled = false; needsReset_ = true;
         return S_OK;
     }

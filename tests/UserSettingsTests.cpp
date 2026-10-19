@@ -109,6 +109,36 @@ int main(int argc, char** argv)
         Require(UserSettings::Migrate(Defaults, paths, &imported) == UserSettings::Migration::NotNeeded && imported.empty(),
             "migration runs once: an existing user file is never replaced");
     }
+    {   // Returning to a built-in default must override a still-customized base INI.
+        const auto previousBase = Read(paths.defaults), previousUser = Read(paths.user);
+        const char* customized = "[Settings]\nUpscaleType=4\nQualityLevel=2\nSharpness=0.8\n"
+                                 "[FrameGeneration]\nProvider=1\nEnabled=true\n";
+        Write(paths.defaults, customized);
+        Write(paths.user, "[FrameGeneration]\nProvider=1\n");
+        CSimpleIniA selected; load(selected);
+        selected.SetLongValue("FrameGeneration", "Provider", 0);
+        selected.SetDoubleValue("Settings", "Sharpness", 0.3);
+        Require(UserSettings::Save(selected, paths, Defaults), "save selected built-in defaults over a customized base");
+        CSimpleIniA restarted; load(restarted);
+        Require(restarted.GetLongValue("FrameGeneration", "Provider", -1) == 0 &&
+                    restarted.GetDoubleValue("Settings", "Sharpness", -1) == 0.3,
+            "saved built-in defaults survive restart while customized base remains");
+        Require(restarted.GetLongValue("Settings", "UpscaleType", -1) == 4 && Read(paths.defaults) == customized,
+            "unrelated customizations and installed base remain unchanged");
+        Write(paths.defaults, Defaults);
+        CSimpleIniA updated; load(updated);
+        Require(updated.GetLongValue("FrameGeneration", "Provider", -1) == 0 &&
+                    updated.GetDoubleValue("Settings", "Sharpness", -1) == 0.3 &&
+                    updated.GetLongValue("Settings", "UpscaleType", -1) == 4,
+            "choices survive a later base-INI update");
+        Require(UserSettings::Save(updated, paths, Defaults), "save after base-INI update");
+        CSimpleIniA saved; saved.SetUnicode(); saved.LoadFile(paths.user.c_str());
+        Require(saved.GetValue("FrameGeneration", "Provider", nullptr) == nullptr &&
+                    saved.GetValue("Settings", "Sharpness", nullptr) == nullptr,
+            "redundant default overrides disappear once the installed base matches");
+        Write(paths.defaults, previousBase.c_str());
+        Write(paths.user, previousUser.c_str());
+    }
     {   // An unreadable user file is reported and leaves the defaults.
         std::filesystem::remove(paths.user);
         std::filesystem::create_directory(paths.user);  // A directory cannot be opened as a file.
