@@ -302,6 +302,8 @@ const ImVec4 kPassBehind{0.058f, 0.063f, 0.066f, 1.0f};
 struct PassPanelGeometry
 {
     float tabLeft{}, tabRight{};
+    // The reset tab at the strip's right end, open into the panel too; 0 width when absent.
+    float resetLeft{}, resetRight{};
 };
 PassPanelGeometry g_passGeometry;
 
@@ -313,9 +315,12 @@ void FillRect(ImDrawList* draw, float x0, float y0, float x1, float y1, ImU32 co
 // Pass tabs, then + to add Pass 2. note is drawn at the right, muted.
 // changed[pass] tints a tab's name amber: it differs from Base in a preset, or
 // Pass 2 differs from Pass 1.
-// offerReset shows "Reset all to Pass 1" at the strip's right end.
+// How the strip's right end offers "Reset all to Pass 1": not at all (Pass 1),
+// greyed while Pass 2 follows Pass 1, or usable.
+enum class PassReset { None, Nothing, Available };
+
 PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int passes, bool editable, const std::string& note,
-    const bool (&changed)[2], bool offerReset)
+    const bool (&changed)[2], PassReset reset)
 {
     auto* draw = ImGui::GetWindowDrawList();
     const auto& style = ImGui::GetStyle();
@@ -331,6 +336,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
     PassAction action = PassAction::None;
 
     ImGui::PushID("passTabs");
+    g_passGeometry = {};
     // Register the strip's space first; the tabs are drawn over it.
     ImGui::Dummy(ImVec2(available, height));
     float x = origin.x;
@@ -389,7 +395,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
             const float badgeWidth = ImGui::CalcTextSize(badge).x;
             draw->AddText(ImVec2(right - badgeWidth, textY), ImGui::GetColorU32(badgeColor), badge);
         }
-        if (active) { g_passGeometry = {x, x + tabWidth}; }
+        if (active) { g_passGeometry.tabLeft = x; g_passGeometry.tabRight = x + tabWidth; }
         ImGui::PopID();
         x += tabWidth - line;
     }
@@ -412,15 +418,35 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
                       ImGui::GetColorU32(editable ? (hovered ? kAmber : kIvory) : kMuted), "+");
     }
     float right = origin.x + available;
-    if (offerReset)
+    if (reset != PassReset::None)
     {
+        // A tab on the page's own background at the strip's right end, open into
+        // the panel like the selected tab, so it reads as part of Pass 2's page.
         const char* label = "Reset all to Pass 1";
-        const float width = ImGui::CalcTextSize(label).x + style.FramePadding.x * 2;
-        right -= width;
-        ImGui::SetCursorScreenPos(ImVec2(right, origin.y + height - ImGui::GetFrameHeight() - Px(3.0f)));
-        if (ImGui::Button(label)) { action = PassAction::FollowPass1; }
-        DrawSettingsHelp("Pass 2 follows Pass 1 again. Its own settings are kept for later.");
-        right -= style.ItemSpacing.x;
+        const float width = ImGui::CalcTextSize(label).x + style.FramePadding.x * 3;
+        const float left = right - width;
+        const float top = origin.y + lift, bottom = origin.y + height;
+        const bool usable = editable && reset == PassReset::Available;
+        ImGui::SetCursorScreenPos(ImVec2(left, top));
+        ImGui::BeginDisabled(!usable);
+        if (ImGui::InvisibleButton("resetAll", ImVec2(width, bottom - top))) { action = PassAction::FollowPass1; }
+        ImGui::EndDisabled();
+        const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+        if (hovered)
+        {
+            ImGui::SetTooltip("%s", usable ? "Pass 2 follows Pass 1 again. Its own settings are kept for later."
+                                           : "Pass 2 already follows Pass 1; nothing to reset.");
+        }
+        FillRect(draw, left, top, right, bottom + line, ImGui::GetColorU32(kPassPanel));
+        FillRect(draw, left, top, left + line, bottom, border);
+        FillRect(draw, left, top, right, top + line, border);
+        FillRect(draw, right - line, top, right, bottom, border);
+        const auto size = ImGui::CalcTextSize(label);
+        draw->AddText(ImVec2(left + (width - size.x) * 0.5f, top + ((bottom - top) - size.y) * 0.5f),
+                      ImGui::GetColorU32(!usable ? kMuted : hovered ? kAmber : kIvory), label);
+        g_passGeometry.resetLeft = left;
+        g_passGeometry.resetRight = right;
+        right = left - style.ItemSpacing.x;
     }
     if (!note.empty())
     {
@@ -462,7 +488,9 @@ void EndPassPanel(const PassPanel& panel)
     FillRect(draw, max.x - line, min.y, max.x, max.y, border);
     FillRect(draw, min.x, max.y - line, max.x, max.y, border);
     FillRect(draw, min.x, min.y, (std::max)(min.x, panel.tab.tabLeft + line), min.y + line, border);
-    FillRect(draw, (std::min)(max.x, panel.tab.tabRight - line), min.y, max.x, min.y + line, border);
+    // Open under the reset tab too, when there is one.
+    const float end = panel.tab.resetRight > panel.tab.resetLeft ? panel.tab.resetLeft + line : max.x;
+    FillRect(draw, (std::min)(max.x, panel.tab.tabRight - line), min.y, (std::min)(max.x, end), min.y + line, border);
 }
 
 bool DrawNeuralRuntimeCombo(const OverlayUI::FrameView& view, TheosRenderPipeline::SourceDLSSG::Preferences& draft,
@@ -545,10 +573,13 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         tabChanged[1] = passDecor.Differences() > 0;
     }
     const bool showingPass2 = selected == 1 && twoPasses;
-    const bool offerReset = showingPass2 && !second.linked && (decor || passDecor.Differences() > 0);
+    // Pass 2 always shows the reset tab; it is greyed while nothing differs.
+    const auto reset = !showingPass2 ? PassReset::None
+                       : !second.linked && (decor || passDecor.Differences() > 0) ? PassReset::Available
+                                                                                   : PassReset::Nothing;
     const auto action = DrawPassTabs(view, selected, draft.neuralPasses, !unavailable,
         decor && decor->EditingTime() ? std::format("editing {}", decor->EditingTime()) : std::string(), tabChanged,
-        offerReset);
+        reset);
     if (action == PassAction::Add) { draft.neuralPasses = 2; selected = 1; }
     if (action == PassAction::Remove) { draft.neuralPasses = 1; selected = 0; }
     const bool pass2 = selected == 1 && draft.neuralPasses == 2;
