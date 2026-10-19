@@ -53,7 +53,7 @@ inline ImU32 ChangedTint() { return ImGui::GetColorU32(ImVec4(kAmber.x, kAmber.y
 namespace Rows
 {
 // Widths in 1x units; callers multiply by the zoom.
-inline constexpr float MaxControl = 520, MinControl = 140, StateColumn = 70;
+inline constexpr float MaxControl = 520, MinControl = 140, StateColumn = 28;
 // One control column shared by every row table drawn while it is active, so
 // controls start and end at the same x inside and outside the pass panel.
 struct Grid
@@ -109,8 +109,37 @@ inline bool AnyChanged(std::initializer_list<const char*> keys)
     const auto* decor = ActivePresetDecor();
     return decor && std::ranges::any_of(keys, [&](const char* key) { return key && decor->Changed(key); });
 }
-// The state cell for one row: empty, or Reset when it differs. The tooltip gives
-// the value Reset restores.
+// A square button with an undo arrow, a frame high. Returns true when clicked.
+inline bool UndoButton(const char* id)
+{
+    const float size = ImGui::GetFrameHeight();
+    const bool clicked = ImGui::InvisibleButton(id, ImVec2(size, size));
+    const bool hovered = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
+    const auto min = ImGui::GetItemRectMin();
+    auto* draw = ImGui::GetWindowDrawList();
+    const auto& style = ImGui::GetStyle();
+    draw->AddRectFilled(min, ImVec2(min.x + size, min.y + size),
+        ImGui::GetColorU32(held ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button), style.FrameRounding);
+    draw->AddRect(min, ImVec2(min.x + size, min.y + size), ImGui::GetColorU32(ImGuiCol_Border), style.FrameRounding);
+    // The arrow in 16-unit space: a hook running right, round and back, with its head at the top left.
+    const float icon = size * 0.56f, unit = icon / 16.0f;
+    const ImVec2 origin(min.x + (size - icon) * 0.5f, min.y + (size - icon) * 0.5f);
+    const auto at = [&](float x, float y) { return ImVec2(origin.x + x * unit, origin.y + y * unit); };
+    const auto colour = ImGui::GetColorU32(hovered ? kIvory : kAmber);
+    const float stroke = (std::max)(1.0f, Px(1.6f));
+    draw->PathLineTo(at(5.2f, 4.2f));
+    draw->PathLineTo(at(10.0f, 4.2f));
+    draw->PathArcTo(at(10.0f, 7.8f), 3.6f * unit, -1.5707964f, 1.5707964f);
+    draw->PathLineTo(at(5.0f, 11.4f));
+    draw->PathStroke(colour, 0, stroke);
+    draw->PathLineTo(at(7.4f, 1.6f));
+    draw->PathLineTo(at(4.6f, 4.2f));
+    draw->PathLineTo(at(7.4f, 6.8f));
+    draw->PathStroke(colour, 0, stroke);
+    return clicked;
+}
+// The state cell for one row: empty, or an undo button when it differs. The
+// tooltip gives the value it restores.
 inline void StateCell(std::initializer_list<const char*> keys)
 {
     auto* decor = ActivePresetDecor();
@@ -122,13 +151,12 @@ inline void StateCell(std::initializer_list<const char*> keys)
     }
     if (base.empty()) { return; }
     // Rows disable only their label and control, so Reset stays usable.
-    ImGui::AlignTextToFramePadding();
     ImGui::PushID(*keys.begin());
-    if (ImGui::SmallButton("Reset")) {
+    if (UndoButton("##reset")) {
         for (const auto* key : keys) { if (key && decor->Changed(key)) { decor->Reset(key); } }
     }
     ImGui::PopID();
-    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Was %s in %s. Reset returns to it.", base.c_str(), decor->Reference()); }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Was %s in %s. Click to reset.", base.c_str(), decor->Reference()); }
 }
 // One row for the settings in keys; Reset restores all of them that differ.
 // disabled greys the label and control that cannot apply now; the state cell stays usable.
