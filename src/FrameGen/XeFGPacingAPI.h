@@ -1,0 +1,29 @@
+#pragma once
+#include <Windows.h>
+#include <d3d12.h>
+#include <cstdint>
+
+// Optional companion to the private tensor ABI; older tensor helpers remain usable.
+// Context values are opaque identities. Register after successful SDK initialization;
+// unregister only after successful SDK destruction has joined its presentation threads.
+namespace TheosRenderPipeline::XeFGPacing
+{
+    inline constexpr std::uint32_t Version = 1;
+    enum Flags : std::uint32_t { Installed=1, Registered=2, DriverAvailable=4, Requested=8, QueueReady=16, Metered=32, Unsafe=64 };
+    struct Stats {
+        std::uint32_t size{sizeof(Stats)}, flags{};
+        std::uint64_t deadlines{}, extraPaces{}, flipCalls{}, meteredCalls{}, driverFailures{}, resets{};
+        std::uint32_t feedback{};
+        std::int32_t driverStatus{};
+    };
+    struct API {
+        std::uint32_t size{sizeof(API)}, version{Version};
+        HRESULT (__cdecl* registerContext)(void*, ID3D12Device*, char*, std::uint32_t){};
+        HRESULT (__cdecl* unregisterContext)(void*, char*, std::uint32_t){};
+        void (__cdecl* reset)(void*){};
+        void (__cdecl* setMetering)(bool){};
+        void (__cdecl* snapshot)(Stats*){};
+        void (__cdecl* setLogger)(void (*)(const char*)){};
+    };
+    using GetAPI = HRESULT (__cdecl*)(API*);
+}

@@ -9,6 +9,7 @@
 #include "WeatherAppearanceController.h"
 #include "FrameGen/DlssgLiteBlending.h"
 #include "FrameGen/FrameGenerationProvider.h"
+#include "FrameGen/PresentationVSync.h"
 #include "FrameGen/SourceDLSSGHDROutput.h"
 #include "FrameGen/SourceDLSSGMFG.h"
 #include "FrameGen/SourceDLSSGNeuralState.h"
@@ -65,6 +66,11 @@ struct OverlayUI::FrameView
     std::string xefgUnlockStatus;
     bool xefgUnlockAvailable{};
     TheosRenderPipeline::SourceDLSSG::LiteBlending::Snapshot liteBlending{};
+    // Presentation VSync: what the game asked for, what the presenter requested, and the applied mode.
+    bool vsyncObserved{}, vsyncIncoming{}, vsyncRequested{}, vsyncFailed{};
+    TheosRenderPipeline::SourceDLSSG::VSyncMode vsyncConfigured{};
+    bool xefgTensorRequested{}, xefgFlipMetering{};
+    std::string xefgTensorStatus, xefgPacingStatus;
     TheosRenderPipeline::SourceDLSSG::SessionSnapshot session{};
     TheosRenderPipeline::SourceDLSSG::MFGSnapshot mfg{};
     TheosRenderPipeline::SourceDLSSG::NeuralOptions neuralApplied{};

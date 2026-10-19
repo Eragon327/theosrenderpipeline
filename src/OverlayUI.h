@@ -54,6 +54,7 @@ private:
     int CountStagedChanges() const;
     void ApplySettingsDraft(bool a_saveAsDefault);
     void RequestFrameGeneration(bool enabled);
+    void SetXeFGFlipMetering(bool enabled);
     void PausePresets(bool paused);
     void RefreshWeatherList();
     void ResetSessionFallbacks();

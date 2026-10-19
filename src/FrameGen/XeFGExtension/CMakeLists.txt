@@ -1,0 +1,92 @@
+cmake_minimum_required(VERSION 3.24)
+
+# Also usable as a standalone build, without the Skyrim renderer dependencies.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(TRPXeFGTensor LANGUAGES C CXX RC)
+else()
+    enable_language(RC)
+endif()
+if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "The XeFG tensor helper requires Windows x64 and MSVC")
+endif()
+
+get_filename_component(TRP_XEFG_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+set(TRP_XEFG_HELPER_ASSET_DIR "" CACHE PATH "Verified XeFG helper dependency bundle; see README.md")
+set(TRP_XEFG_NVAPI_SDK_DIR "" CACHE PATH "NVAPI SDK root containing nvapi.h")
+set(TRP_XEFG_MINHOOK_DIR "" CACHE PATH "MinHook source root containing CMakeLists.txt and include/MinHook.h")
+option(TRP_XEFG_HELPER_BUILD_FAULT_TARGET "Build the test-only fault-injection helper" OFF)
+
+foreach(setting IN ITEMS TRP_XEFG_HELPER_ASSET_DIR TRP_XEFG_NVAPI_SDK_DIR TRP_XEFG_MINHOOK_DIR)
+    if(NOT IS_DIRECTORY "${${setting}}")
+        message(FATAL_ERROR "Set ${setting} to an existing dependency directory; see src/FrameGen/XeFGExtension/README.md")
+    endif()
+    file(REAL_PATH "${${setting}}" ${setting})
+endforeach()
+if(NOT EXISTS "${TRP_XEFG_NVAPI_SDK_DIR}/nvapi.h")
+    message(FATAL_ERROR "TRP_XEFG_NVAPI_SDK_DIR must contain nvapi.h")
+endif()
+if(NOT EXISTS "${TRP_XEFG_MINHOOK_DIR}/CMakeLists.txt" OR
+   NOT EXISTS "${TRP_XEFG_MINHOOK_DIR}/include/MinHook.h")
+    message(FATAL_ERROR "TRP_XEFG_MINHOOK_DIR must contain the MinHook source tree")
+endif()
+
+# Check both generated profiles and binary resources before compiling. A changed
+# dependency triggers reconfiguration and cannot silently enter another build.
+set(asset_manifest "${CMAKE_CURRENT_SOURCE_DIR}/AssetManifest.json")
+file(READ "${asset_manifest}" asset_json)
+string(JSON asset_count LENGTH "${asset_json}" files)
+math(EXPR asset_last "${asset_count} - 1")
+set(verified_assets)
+foreach(index RANGE 0 ${asset_last})
+    string(JSON relative GET "${asset_json}" files ${index} path)
+    string(JSON expected GET "${asset_json}" files ${index} sha256)
+    string(JSON expected_size GET "${asset_json}" files ${index} size)
+    set(asset "${TRP_XEFG_HELPER_ASSET_DIR}/${relative}")
+    if(NOT EXISTS "${asset}" OR IS_DIRECTORY "${asset}")
+        message(FATAL_ERROR "XeFG dependency missing: ${relative}. Prepare the bundle using tools/prepare_xefg_helper_assets.py")
+    endif()
+    file(SHA256 "${asset}" actual)
+    file(SIZE "${asset}" actual_size)
+    if(NOT actual STREQUAL expected OR NOT actual_size EQUAL expected_size)
+        message(FATAL_ERROR "XeFG dependency hash/size mismatch: ${relative}")
+    endif()
+    list(APPEND verified_assets "${asset}")
+endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${asset_manifest}" ${verified_assets})
+configure_file(portable/payload.rc.in "${CMAKE_CURRENT_BINARY_DIR}/payload.rc" @ONLY)
+set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/payload.rc" PROPERTIES OBJECT_DEPENDS "${verified_assets}")
+
+if(TARGET minhook)
+    message(FATAL_ERROR "The XeFG helper requires its own static MinHook target; configure it standalone if minhook already exists")
+endif()
+# Keep this setting local to the dependency instead of changing the parent build.
+function(trp_xefg_add_minhook)
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory("${TRP_XEFG_MINHOOK_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/minhook" EXCLUDE_FROM_ALL)
+endfunction()
+trp_xefg_add_minhook()
+set_target_properties(minhook PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+
+function(trp_xefg_add_helper target)
+    add_library(${target} SHARED Extension.cpp portable/runtime_payload.cpp portable/host_unlock.cpp
+        pacing/sdk_pacing.cpp PacingBridge.cpp "${CMAKE_CURRENT_BINARY_DIR}/payload.rc")
+    target_compile_features(${target} PRIVATE cxx_std_23)
+    target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /O2 /Zi)
+    target_include_directories(${target} PRIVATE "${TRP_XEFG_SOURCE_ROOT}/src"
+        "${TRP_XEFG_NVAPI_SDK_DIR}" "${TRP_XEFG_HELPER_ASSET_DIR}/generated")
+    target_link_libraries(${target} PRIVATE minhook d3d12 dxgi bcrypt user32)
+    # Preserve the accepted helper's build settings even when the parent enables IPO.
+    set_target_properties(${target} PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+    target_link_options(${target} PRIVATE /DEBUG:FULL)
+endfunction()
+trp_xefg_add_helper(trp_xefg_tensor)
+if(TRP_XEFG_HELPER_BUILD_FAULT_TARGET)
+    trp_xefg_add_helper(trp_xefg_tensor_fault)
+    target_compile_definitions(trp_xefg_tensor_fault PRIVATE TRP_XEFG_EXTENSION_TESTING)
+    set_target_properties(trp_xefg_tensor_fault PROPERTIES OUTPUT_NAME trp_xefg_tensor
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fault"
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fault"
+        PDB_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fault")
+endif()
+# No deployment or automatic GPU execution. tensor.fatbin remains a runtime input.

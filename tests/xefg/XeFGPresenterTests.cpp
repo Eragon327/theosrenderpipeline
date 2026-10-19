@@ -1,6 +1,8 @@
 #include "XeFGTestSupport.h"
 #include "FrameGen/XeFGPresenter.h"
+#include "FrameGen/PresentationVSync.h"
 #include "NvidiaPresenterFixture.h"
+#include "FrameGen/PipelineCache.h"
 #include <dbghelp.h>
 #include <chrono>
 #include <algorithm>
@@ -33,11 +35,16 @@ int wmain(int argc, wchar_t** argv)
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     Require(argc == 2 || argc == 3, "Intel runtime directory, optional NVIDIA runtime directory");
     const bool profile = GetEnvironmentVariableW(L"TRP_XEFG_PROFILE", nullptr, 0) != 0;
-    const unsigned width = profile ? 5120 : 640, height = profile ? 1440 : 360;
+    const bool tensorRequested = GetEnvironmentVariableW(L"TRP_XEFG_TENSOR_TEST", nullptr, 0) != 0;
+    const bool fullscreen = GetEnvironmentVariableW(L"TRP_XEFG_METER_FULLSCREEN", nullptr, 0) != 0;
+    MONITORINFO monitor{sizeof(monitor)};
+    Require(GetMonitorInfoW(MonitorFromPoint(POINT{0,0}, MONITOR_DEFAULTTOPRIMARY), &monitor) != 0, "primary monitor");
+    const unsigned width = fullscreen ? monitor.rcMonitor.right-monitor.rcMonitor.left : profile ? 5120 : 640;
+    const unsigned height = fullscreen ? monitor.rcMonitor.bottom-monitor.rcMonitor.top : profile ? 1440 : 360;
     std::vector<double> presentTimes, retirementTimes, sleepTimes;
     ComPtr<ID3D12Debug> debug;
     Check(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)), "debug");
-    debug->EnableDebugLayer();
+    if (!tensorRequested) debug->EnableDebugLayer();
     ComPtr<IDXGIFactory4> factory;
     ComPtr<IDXGIAdapter1> adapter;
     Check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "factory");
@@ -50,7 +57,7 @@ int wmain(int argc, wchar_t** argv)
         "D3D11");
     Check(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d12)), "D3D12");
     ComPtr<ID3D12InfoQueue> messages;
-    Check(d12.As(&messages), "debug messages");
+    if (!tensorRequested) Check(d12.As(&messages), "debug messages");
     D3D12_COMMAND_QUEUE_DESC qd{};
     ComPtr<ID3D12CommandQueue> queue;
     Check(d12->CreateCommandQueue(&qd, IID_PPV_ARGS(&queue)), "queue");
@@ -66,11 +73,13 @@ int wmain(int argc, wchar_t** argv)
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpszClassName = L"TRPXeFGPresenterTests";
     Require(RegisterClassW(&wc) != 0, "register window");
-    HWND window = CreateWindowW(wc.lpszClassName, L"TRP production XeFG presenter test", WS_OVERLAPPEDWINDOW,
+    HWND window = CreateWindowW(wc.lpszClassName, L"TRP production XeFG presenter test", fullscreen ? WS_POPUP : WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 700, 440, nullptr, nullptr, wc.hInstance, nullptr);
     Require(window != nullptr, "window");
-    ShowWindow(window, SW_SHOWNOACTIVATE);
-    SetWindowPos(window, HWND_TOPMOST, 20, 20, 700, 440, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    ShowWindow(window, fullscreen ? SW_SHOW : SW_SHOWNOACTIVATE);
+    SetWindowPos(window, HWND_TOPMOST, fullscreen ? monitor.rcMonitor.left : 20, fullscreen ? monitor.rcMonitor.top : 20,
+        fullscreen ? width : 700, fullscreen ? height : 440, fullscreen ? SWP_SHOWWINDOW : SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (fullscreen) SetForegroundWindow(window);
     DXGI_SWAP_CHAIN_DESC desc{};
     desc.BufferDesc.Width = width;
     desc.BufferDesc.Height = height;
@@ -87,7 +96,13 @@ int wmain(int argc, wchar_t** argv)
     desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
     TheosRenderPipeline::XeFGPresenter presenter;
     presenter.SetLogger([](const char* text) { std::printf("[Owner] %s\n", text); });
-    Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1])), "production admission");
+    Check(presenter.Probe(d12.Get(), std::filesystem::absolute(argv[1]), tensorRequested), "production admission");
+    const bool meteringOff = GetEnvironmentVariableW(L"TRP_XEFG_METERING_OFF",nullptr,0)!=0;
+    const bool meteringToggle = GetEnvironmentVariableW(L"TRP_XEFG_METERING_TOGGLE",nullptr,0)!=0;
+    const bool vsyncPolicy = GetEnvironmentVariableW(L"TRP_XEFG_VSYNC_POLICY",nullptr,0)!=0;
+    const bool expectedDriverRefusal = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_REFUSAL",nullptr,0)!=0;
+    const bool expectedUnsafeMetering = GetEnvironmentVariableW(L"TRP_XEFG_EXPECT_METER_UNSAFE",nullptr,0)!=0;
+    presenter.SetFlipMetering(!meteringOff);
     Inputs input;
     input.Create(interop, d11.Get(), width, height, colorFormat);
     auto* stable = input.color.texture11.Get();
@@ -99,6 +114,8 @@ int wmain(int argc, wchar_t** argv)
     constexpr unsigned maximum = TheosRenderPipeline::XeFGMaxGeneratedFrames;
     std::array<unsigned, maximum + 1> generatedCounts{};
     constexpr unsigned frameCount = 120;
+    TheosRenderPipeline::PipelineCache pipelines;
+    pipelines.Open(d12.Get(), {}); // Exercise cached loads on subsequent presenters.
     const bool nativeOnly = GetEnvironmentVariableW(L"TRP_XEFG_NATIVE_ONLY", nullptr, 0) != 0;
     const bool releaseNvidia = GetEnvironmentVariableW(L"TRP_XEFG_RELEASE_NV", nullptr, 0) != 0;
     wchar_t cyclesText[8]{};
@@ -134,11 +151,20 @@ int wmain(int argc, wchar_t** argv)
         if (!nativeOnly) {
             ComPtr<IDXGISwapChain> proxy;
             Check(presenter.Create(d12.Get(), queue.Get(), factory.Get(), desc, round == 1, &proxy,
-                      nvidia ? nvidia->session.Snapshot().frameIndex : 0, {experimental && round < 2, maximum}),
+                      nvidia ? nvidia->session.Snapshot().frameIndex : 0, {experimental && round < 2, maximum}, pipelines.Library()),
                 "production Intel presenter");
             ComPtr<IDXGISwapChain3> proxy3;
             Check(proxy.As(&proxy3), "proxy3");
+            ComPtr<IDXGISwapChain1> proxy1;
+            Check(proxy.As(&proxy1), "proxy1");
+            const auto tensorBefore = presenter.TensorStats();
             for (unsigned frame = 0; frame < frameCount; ++frame) {
+                const auto vsyncMode = frame >= 32 && frame < 64 ? VSyncMode::On : VSyncMode::Auto;
+                if (vsyncPolicy) presenter.SetFlipMetering(vsyncMode != VSyncMode::On);
+                if (meteringToggle && (frame==32 || frame==64)) {
+                    presenter.SetFlipMetering(frame==64);
+                    std::printf("metering_test round=%u frame=%u enabled=%u\n",round,frame,frame==64);
+                }
                 MSG message{};
                 while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
                     TranslateMessage(&message);
@@ -186,6 +212,13 @@ int wmain(int argc, wchar_t** argv)
                 Require(presenter.Snapshot().onlyGenerated == onlyGenerated &&
                         presenter.Snapshot().tagGenerated == tagGenerated,
                     "debug view state");
+                // Round 0 changes Intel's scene-change sensitivity live; a new context
+                // has Intel's default until the threshold is sent again.
+                if (round == 1 && frame == 0)
+                    Require(presenter.Snapshot().sceneChangeThreshold < 0, "scene-change threshold resets with the context");
+                const float sceneChange = round == 0 && frame >= 50 ? 0.25f : TheosRenderPipeline::XeFGDefaultSceneChangeThreshold;
+                presenter.SetSceneChangeThreshold(sceneChange);
+                Require(presenter.Snapshot().sceneChangeThreshold == sceneChange, "Intel accepts the scene-change threshold");
                 ID3D12GraphicsCommandList* list{};
                 Check(interop.SignalD3D11(Work::SwapChain), "signal source");
                 Check(interop.Begin(Work::SwapChain, &list), "begin output");
@@ -214,14 +247,36 @@ int wmain(int argc, wchar_t** argv)
                 if (round == 0 && ((stallMode == 1 || stallMode == 3) ? frame >= 9 && frame < 15 : stallMode == 2 && frame >= 2 && frame < 8))
                     Sleep(500);
                 const auto presentStart = std::chrono::steady_clock::now();
-                const auto result = proxy->Present(0, 0);
+                const auto presentation = ResolveVSync({vsyncMode,true,true},1,0,true);
+                DXGI_PRESENT_PARAMETERS parameters{};
+                const auto result = vsyncPolicy ? (frame % 2 ? proxy1->Present1(presentation.sync,presentation.flags,&parameters) :
+                    proxy->Present(presentation.sync,presentation.flags)) : proxy->Present(0, 0);
                 const auto presentEnd = std::chrono::steady_clock::now();
                 if (stallMode && round == 0 && frame < 60)
                     std::printf("stall-test frame=%u present=%.1f ms\n", frame,
                         std::chrono::duration<double, std::milli>(presentEnd - presentStart).count());
                 Check(result, "Intel present");
                 Require(result == S_OK, "visible present");
-                Check(presenter.AfterPresent(result), "production completion");
+                const auto completedPresent=presenter.AfterPresent(result);
+                if (vsyncPolicy && vsyncMode == VSyncMode::On)
+                    Require(!(presenter.PacingStats().flags & TheosRenderPipeline::XeFGPacing::Metered),"VSync On disables metering");
+                if (vsyncPolicy && (frame==31 || frame==32 || frame==63 || frame==64)) {
+                    const auto state=presenter.PacingStats();
+                    std::printf("vsync_policy round=%u frame=%u mode=%s incoming=1 submitted=%u flags=0x%X pacingFlags=%u metered=%llu\n",
+                        round,frame,VSyncName(vsyncMode),presentation.sync,presentation.flags,state.flags,state.meteredCalls);
+                }
+                if (expectedUnsafeMetering && FAILED(completedPresent)) {
+                    const auto failed=presenter.PacingStats();
+                    Require((failed.flags&TheosRenderPipeline::XeFGPacing::Unsafe)&&failed.driverFailures>0,"failed driver off call retains uncertain state");
+                    Check(interop.Drain(),"host retirement after injected metering fault");
+                    proxy1.Reset();proxy3.Reset();proxy.Reset();
+                    Require(FAILED(presenter.Destroy()),"uncertain driver configuration prevents successful provider retirement");
+                    Require(presenter.PacingStats().flags&TheosRenderPipeline::XeFGPacing::Registered,"unsafe pacing owner is retained");
+                    Require(presenter.TensorStats().flags&TheosRenderPipeline::XeFGTensor::ModelReady,"model resources retained after metering retirement fault");
+                    std::puts("PASS injected driver-off failure: owner/model retained, replacement blocked; restart required");
+                    return 0;
+                }
+                Check(completedPresent, "production completion");
                 const auto retirementStart = std::chrono::steady_clock::now();
                 Check(gpuInputWait ? interop.WaitD3D11(Work::SwapChain) : interop.Drain(),
                     gpuInputWait ? "ONLY_NOW input reuse GPU wait" : "retire ONLY_NOW copies");
@@ -237,7 +292,7 @@ int wmain(int argc, wchar_t** argv)
                     "selected count bounds");
                 if (!enable) Require(state.framesPresented == 1, "off passthrough");
                 Require(state.frameLimitUs == (profile ? 0 : 16667), "output cap remains independent of ratio");
-                Require(state.maxGeneratedFrames == (experimental && !expectRefusal && round < 2 ? maximum : 1u),
+                Require(state.maxGeneratedFrames == (state.tensorModel || (experimental && !expectRefusal && round < 2) ? maximum : 1u),
                     "opt-in capacity, including disable after resident unlock");
                 if (expectRefusal)
                     Require(!state.unlockReady && state.generatedFrames == 1, "refused unlock retains official x2");
@@ -263,10 +318,29 @@ int wmain(int argc, wchar_t** argv)
                 }
             }
             Check(presenter.Disable(), "disable");
+            const auto completed = presenter.Snapshot();
+            const auto tensorAfter = presenter.TensorStats();
+            const auto paced = presenter.PacingStats();
+            std::printf("pacing_complete round=%u flags=%u deadlines=%llu extra=%llu calls=%llu metered=%llu failures=%llu feedback=%u status=%d\n",
+                round,paced.flags,paced.deadlines,paced.extraPaces,paced.flipCalls,paced.meteredCalls,paced.driverFailures,paced.feedback,paced.driverStatus);
+            if (GetEnvironmentVariableW(L"TRP_XEFG_PACING_TEST",nullptr,0)) {
+                Require((paced.flags & TheosRenderPipeline::XeFGPacing::Registered)!=0,"private pacing context registration");
+                Require(paced.deadlines>0&&paced.extraPaces>0,"actual SDK deadlines and intermediate output pacing");
+                Require(meteringOff ? paced.flipCalls==0 : paced.flipCalls>0,"driver metering requests observed");
+                Require(expectedDriverRefusal ? paced.driverFailures>0&&paced.meteredCalls==0 : paced.driverFailures==0,"driver refusal uses software pacing; normal configuration stays clean");
+                if (fullscreen&&!meteringOff&&!expectedDriverRefusal) Require(paced.meteredCalls>0,"independent-flip driver metering actually accepted");
+            }
+            std::printf("tensor_complete round=%u model=%u active=%u launches=%llu fallbacks=%llu cachedPSOs=%llu libraryBytes=%zu\n", round,
+                completed.tensorModel, completed.tensorActive, completed.tensorLaunches, completed.tensorFallbacks,
+                tensorAfter.cachedPSOs, pipelines.Library() ? pipelines.Library()->GetSerializedSize() : 0);
+            if (completed.tensorActive) Require(completed.tensorLaunches > tensorBefore.launches && completed.tensorFallbacks == 0,
+                "actual tensor dispatch and no unexpected fallback");
             Check(interop.Drain(), "retire shared resources");
+            proxy1.Reset();
             proxy3.Reset();
             proxy.Reset();
             Check(presenter.Destroy(), "SDK private retirement");
+            Require(!(presenter.PacingStats().flags & TheosRenderPipeline::XeFGPacing::Registered),"no retained pacing owner after successful SDK retirement");
         }
         Require(input.color.texture11.Get() == stable, "stable host resource");
         Check(presentingFactory->CreateSwapChain(queue.Get(), &desc, &native), "native restored on HWND");
@@ -281,6 +355,7 @@ int wmain(int argc, wchar_t** argv)
         Check(interop.Drain(), "restored native queue retirement");
         native.Reset();
     }
+    Require(!expectedUnsafeMetering, "injected driver-off failure must be observed");
     Require(nativeOnly || generated > 100, "sustained generation both depth conventions");
     Require(presenter.Snapshot().uiTexturePresents == uiTagged && (nativeOnly || uiTagged > 0), "UI layer tag count");
     std::printf("frame time sent=%u skipped=%u\n", frameTimeSent, frameTimeSkipped);
@@ -301,7 +376,7 @@ int wmain(int argc, wchar_t** argv)
         for (unsigned count = 2; count <= maximum; ++count)
             Require(generatedCounts[count] == 0, "refusal never enables experimental counts");
     }
-    for (UINT64 n = 0; n < messages->GetNumStoredMessagesAllowedByRetrievalFilter(); ++n) {
+    for (UINT64 n = 0; messages && n < messages->GetNumStoredMessagesAllowedByRetrievalFilter(); ++n) {
         SIZE_T size{};
         messages->GetMessage(n, nullptr, &size);
         std::vector<unsigned char> storage(size);

@@ -147,7 +147,7 @@ bool RenderPipeline::SaveINI(const TheosRenderPipeline::Overlay::Layout* layout)
 		logger::error("Could not save Data\\SKSE\\Plugins\\TheosRenderPipeline.User.ini");
 		return false;
 	}
-	logger::info("Settings saved to TheosRenderPipeline.User.ini ({} values differ from the packaged defaults)", changed.size());
+	logger::info("Settings saved to TheosRenderPipeline.User.ini ({} saved overrides)", changed.size());
 	if (sourceHost->StartupConfigured()) { sourceHost->SourceUpscalerSettingsSaved(); }
 	return presetsSaved;
 }

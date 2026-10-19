@@ -132,6 +132,9 @@ inline const char* ValidateRendererSettings(const RendererSettingsDraft& draft,
     if (!TheosRenderPipeline::ValidProvider(static_cast<int>(draft.sourceDLSSG.provider))) {
         return "Choose NVIDIA DLSS-G or Intel XeFG.";
     }
+    if (!SourceDLSSG::ValidVSync(static_cast<int>(draft.sourceDLSSG.vsync))) {
+        return "Choose Auto, Off or On for VSync.";
+    }
 #if !defined(TRP_NO_NEURAL_RENDERING)
     if (draft.sourceDLSSG.neuralEnabled)
     {

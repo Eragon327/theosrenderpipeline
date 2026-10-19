@@ -16,7 +16,8 @@
 // Packaged defaults and user settings are separate files.
 //
 // TheosRenderPipeline.ini ships in both ZIPs and holds defaults only; TRP no
-// longer writes it. Save as default writes the keys that differ from it to
+// longer writes it. Save as default writes differing keys and explicit values
+// needed to override a customized installed base to
 // TheosRenderPipeline.User.ini, which no package ships: MO2 places the new file
 // in Overwrite and manual installs keep it, so updates replace the defaults
 // without touching user choices. Every reader loads the defaults and then
@@ -102,10 +103,11 @@ inline bool ValuesEqual(const char* left, const char* right)
     return p >= 0 && p == q;
 }
 
-// Keys of full that are absent from or differ from defaults. A key deleted from
-// full but present in defaults cannot be expressed and falls back to the default.
+// Keys of full that are absent from or differ from defaults, plus explicit
+// overrides needed when the installed base still differs from those defaults.
+// A key deleted from full falls back to the installed base on the next load.
 inline void Difference(const CSimpleIniA& defaults, const CSimpleIniA& full, CSimpleIniA& out,
-    std::vector<std::string>* changed = nullptr)
+    std::vector<std::string>* changed = nullptr, const CSimpleIniA* installedDefaults = nullptr)
 {
     CSimpleIniA::TNamesDepend sections;
     full.GetAllSections(sections);
@@ -117,7 +119,8 @@ inline void Difference(const CSimpleIniA& defaults, const CSimpleIniA& full, CSi
         for (const auto& key : keys) {
             const auto* value = full.GetValue(section.pItem, key.pItem, "");
             const auto* base = defaults.GetValue(section.pItem, key.pItem, nullptr);
-            if (base && ValuesEqual(base, value)) { continue; }
+            const auto* installed = installedDefaults ? installedDefaults->GetValue(section.pItem, key.pItem, nullptr) : nullptr;
+            if (base && ValuesEqual(base, value) && (!installed || ValuesEqual(installed, value))) { continue; }
             out.SetValue(section.pItem, key.pItem, value);
             if (changed) { changed->push_back(std::string(section.pItem) + "/" + key.pItem); }
         }
@@ -169,26 +172,30 @@ inline bool WriteText(const std::filesystem::path& path, const std::string& text
 
 inline constexpr std::string_view Header =
     "; Theo's Render Pipeline user settings, written by Save as default.\n"
-    "; Holds only values that differ from TheosRenderPipeline.ini, which updates replace.\n"
-    "; Delete a line to return that setting to its packaged default; delete the file to\n"
-    "; return to all defaults. No TRP package contains this file.\n\n";
+    "; Holds changed values and explicit overrides for a customized TheosRenderPipeline.ini.\n"
+    "; Delete a line to inherit that setting from the installed base INI; delete the file\n"
+    "; to inherit all base settings. No TRP package contains this file.\n\n";
 
 // Writes differences from this build's packaged defaults when supplied. The
 // installed INI may still contain legacy customizations after migration; using
 // it as the comparison would erase those customizations on the next save.
+// When a selected value equals the built-in default but differs from the
+// installed base, retain it explicitly so that base cannot undo it on restart.
 // Without embedded defaults, compare against the installed INI.
 inline bool Save(const CSimpleIniA& full, const Paths& paths = GamePaths(), const char* packagedDefaults = nullptr,
     std::vector<std::string>* changed = nullptr)
 {
-    CSimpleIniA defaults, out;
+    CSimpleIniA defaults, installed, out;
     defaults.SetUnicode();
+    installed.SetUnicode();
     out.SetUnicode();
     if (packagedDefaults) {
         if (defaults.LoadData(packagedDefaults) < 0) { return false; }
     } else if (defaults.LoadFile(paths.defaults.c_str()) < 0) {
         defaults.Reset();
     }
-    Difference(defaults, full, out, changed);
+    const bool installedLoaded = packagedDefaults && installed.LoadFile(paths.defaults.c_str()) >= 0;
+    Difference(defaults, full, out, changed, installedLoaded ? &installed : nullptr);
     std::string text;
     if (out.Save(text) < 0) { return false; }
     return WriteText(paths.user, std::string(Header) + text);

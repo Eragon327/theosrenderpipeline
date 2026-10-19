@@ -114,6 +114,7 @@ void OverlayUI::ApplySettingsDraft(bool saveAsDefault)
 }
 
 void OverlayUI::RequestFrameGeneration(bool) {}
+void OverlayUI::SetXeFGFlipMetering(bool) {}
 void OverlayUI::PausePresets(bool) {}
 void OverlayUI::RefreshWeatherList() {}
 void OverlayUI::ResetSessionFallbacks() {}

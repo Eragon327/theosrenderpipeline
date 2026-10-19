@@ -107,6 +107,16 @@ OverlayUI::FrameView OverlayUI::CaptureFrameView()
     view.xefgUnlockStatus = backend.XeFGUnlockStatus();
     view.xefgUnlockAvailable = TheosRenderPipeline::XeFGUnlock::Available();
     view.liteBlending = TheosRenderPipeline::SourceDLSSG::LiteBlending::State();
+    const auto vsync = backend.VSyncState();
+    view.vsyncObserved = vsync.observed;
+    view.vsyncIncoming = vsync.submission.incomingSync;
+    view.vsyncRequested = vsync.submission.sync;
+    view.vsyncFailed = FAILED(vsync.result);
+    view.vsyncConfigured = backend.VSyncConfigurationMode();
+    view.xefgTensorRequested = backend.XeFGTensorRequested();
+    view.xefgTensorStatus = backend.XeFGTensorStatus();
+    view.xefgPacingStatus = backend.XeFGPacingStatus();
+    view.xefgFlipMetering = backend.XeFGFlipMetering();
     view.session = backend.Snapshot();
     view.mfg = backend.MFGState();
     view.neuralApplied = backend.NeuralConfiguration();

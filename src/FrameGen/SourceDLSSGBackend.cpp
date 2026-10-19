@@ -375,9 +375,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (xeSSStartup &&
 			!Check(xess_.Open(device12_.Get(), PluginPaths::IntelDirectory()), "XeSS context", "XeSS")) { return fault_; }
 		if (intelStartup) {
-			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory())) ||
+			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_)) ||
 				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, true, &native, 0,
-					XeFGConfiguration(), IntelPipelines(xefgPipelines_, "xefg", xefg_.RuntimeModule())))) { return fault_; }
+					XeFGConfiguration(), IntelPipelines(xefgPipelines_, xefg_.Snapshot().tensorModel ? "xefg-tensor-v1" : "xefg", xefg_.RuntimeModule())))) { return fault_; }
 			providerStatus_ = "Intel XeFG presenter; latency owner=XeLL";
 		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), "Streamline swapchain")) { return fault_; }
 		retainedNative_ = native;
@@ -536,8 +536,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (a_ui) { guides.ui = tag(ui_); }
 		if (a_hudless) { guides.hudless = tag(hudless_); }
 		hdrFrameTagged_ = false;
-		if (HDRSignalled()) {
-			// DLSS-G needs HUD-less and UI in the backbuffer's HDR10 encoding.
+		if (hdrNative_) {
+			// FG needs layers in the backbuffer format even when this retained
+			// RGB10A2 swapchain carries SDR (Windows HDR off or disabled live).
 			// BeforePresent writes these targets; without both layers, tag neither.
 			const bool layers = a_ui && a_hudless && HDROutputEligibleFormat(hudless_.desc.Format) &&
 				hudless_.desc.Width == a_width && hudless_.desc.Height == a_height &&
@@ -631,6 +632,31 @@ namespace TheosRenderPipeline::SourceDLSSG
 			screenshotPath_.clear();
 			return S_OK;
 		});
+	}
+	VSyncConfiguration Backend::PresentationConfiguration() const
+	{
+		constexpr auto required = XeFGPacing::Installed | XeFGPacing::Registered | XeFGPacing::DriverAvailable | XeFGPacing::QueueReady;
+		bool meter = false;
+		if (provider_ == FrameGenerationProvider::XeFG && XeFGFlipMetering()) {
+			const auto flags = xefg_.PacingStats().flags;
+			meter = (flags & required) == required && !(flags & XeFGPacing::Unsafe);
+		}
+		return {VSyncConfigurationMode(), meter, (presenterDesc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0};
+	}
+	void Backend::ObserveVSync(VSyncSubmission submission, HRESULT result)
+	{
+		VSyncObservation previous;
+		{
+			std::scoped_lock lock(vsyncMutex_);
+			previous = vsyncState_;
+			vsyncState_ = {true, submission, result, provider_};
+		}
+		if (!previous.observed || previous.submission != submission || previous.provider != provider_ || previous.result != result) {
+			logger::info("[Presentation] VSync policy={} provider={} incomingSync={} incomingFlags=0x{:X} submittedSync={} submittedFlags=0x{:X} autoMetering={} result=0x{:08X}",
+				VSyncName(submission.mode), provider_ == FrameGenerationProvider::XeFG ? "XeFG" : "NVIDIA",
+				submission.incomingSync, submission.incomingFlags, submission.sync, submission.flags,
+				submission.autoMetering, static_cast<unsigned>(result));
+		}
 	}
 	HRESULT Backend::BeforePresent(ID3D12Resource* a_source, ID3D12Resource* a_destination, DXGI_COLOR_SPACE_TYPE a_colorSpace)
 	{
@@ -749,20 +775,29 @@ namespace TheosRenderPipeline::SourceDLSSG
 			// The same premultiplied UI layer DLSS-G recomposes. The HDR targets are
 			// current only when HDR output composed this prepared frame; otherwise
 			// XeFG holds generation rather than interpolate an older world image.
-			const auto layers = SelectXeFGLayers(HDRSignalled(), hdrOutputPass_ != nullptr, prepared && hdrLayersComposed, uiSource_ != nullptr);
+			const auto destination = a_destination->GetDesc();
+			const auto layers = SelectXeFGLayers(destination.Format, hudless_.desc.Format,
+				hdrOutputPass_ != nullptr, prepared && hdrLayersComposed, uiSource_ != nullptr);
 			auto pick = [&](XeFGLayer layer, ID3D12Resource* hdr, ID3D12Resource* standard) {
-				return layer == XeFGLayer::HDR ? hdr : layer == XeFGLayer::Standard ? standard : nullptr;
+				return layer == XeFGLayer::Converted ? hdr : layer == XeFGLayer::Standard ? standard : nullptr;
 			};
 			auto* intelHudless = pick(layers.hudless, hdrOutputPass_ ? hdrOutputPass_->HudlessTarget() : nullptr, hudless_.texture12.Get());
 			auto* intelUI = pick(layers.ui, hdrOutputPass_ ? hdrOutputPass_->UITarget() : nullptr, ui_.texture12.Get());
 			// No FP16/scRGB reinterpretation. XeFG copies matching native-format layers.
-			const auto destination = a_destination->GetDesc();
 			const bool compatible = intelHudless && intelHudless->GetDesc().Format == destination.Format;
 			if (intelUI) {
 				const auto ui = intelUI->GetDesc();
 				if (ui.Format != destination.Format || ui.Width != destination.Width || ui.Height != destination.Height) { intelUI = nullptr; }
 			}
 			if (!CheckXeFG(xefg_.SetDebugView(XeFGOnlyGenerated(), XeFGTagGenerated()))) { return fault_; }
+			const bool meter = XeFGFlipMetering() && VSyncConfigurationMode() != VSyncMode::On;
+			if (xefg_.FlipMeteringRequested() != meter) xefg_.SetFlipMetering(meter);
+			xefg_.SetSceneChangeThreshold(XeFGSceneChangeThresholdConfiguration());
+			if (enabled_ && (!generationAllowed || !prepared || !compatible) && xefg_.Snapshot().presents % 600 == 0) {
+				logger::info("[XeFG] generation held gate={} prepared={} compatible={} sourceFormat={} outputFormat={} convertedThisFrame={}",
+					generationAllowed, prepared, compatible, static_cast<unsigned>(hudless_.desc.Format),
+					static_cast<unsigned>(destination.Format), hdrLayersComposed);
+			}
 			marks.Begin(D3D12Stage::kXeFGInputs);
 			if (!CheckXeFG(xefg_.BeforePresent(list, motion_.texture12.Get(), depth_.texture12.Get(), intelHudless, intelUI,
 				generationAllowed && prepared && compatible, UIRecompositionConfiguration(),
@@ -1197,7 +1232,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Display state changes only between frames (AfterPresent), so tags,
 		// encoding and colour space agree within a frame.
 		const bool compose = a_prepared && hdrFrameTagged_;
-		const bool hdr = compose || HDRSignalled();
+		const bool hdr = HDRSignalled();
 		// A prepared world frame without both layers (for example native UI off)
 		// still expands; menus and loading without generation stay at UI brightness.
 		const bool expandWholeFrame = hdr && !compose && a_prepared;
@@ -1260,7 +1295,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (request == FrameGenerationProvider::XeFG) {
 			const bool compatible = XeFGPresenter::SupportsFormat(presenterDesc_.BufferDesc.Format) &&
 				hudless_.texture12 && XeFGPresenter::SupportsFormat(hudless_.desc.Format);
-			const auto result = compatible ? xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory()) : DXGI_ERROR_UNSUPPORTED;
+			const auto result = compatible ? xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_) : DXGI_ERROR_UNSUPPORTED;
 			if (FAILED(result)) {
 				providerStatus_ = std::format("XeFG unavailable: {} (0x{:08X}); current presenter retained",
 					compatible ? xefg_.Status() : "requires compatible SDR/HDR10 inputs", static_cast<unsigned>(result));
@@ -1282,7 +1317,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return provider == FrameGenerationProvider::XeFG ?
 			xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), presenterDesc_,
 				frameConstants_.depthInverted == sl::eTrue, result, session_.Snapshot().frameIndex, XeFGConfiguration(),
-				IntelPipelines(xefgPipelines_, "xefg", xefg_.RuntimeModule())) :
+				IntelPipelines(xefgPipelines_, xefg_.Snapshot().tensorModel ? "xefg-tensor-v1" : "xefg", xefg_.RuntimeModule())) :
 			streamlineFactory_->CreateSwapChain(queue_.Get(), &presenterDesc_, result);
 	}
 	bool Backend::ApplyProviderSwitch(SwapChain& wrapper)

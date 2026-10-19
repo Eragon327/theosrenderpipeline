@@ -366,6 +366,11 @@ void OverlayUI::RequestFrameGeneration(bool enabled)
     SourceFrameGeneration::GetSingleton()->RequestRuntimeInterpolation(enabled);
 }
 
+void OverlayUI::SetXeFGFlipMetering(bool enabled)
+{
+    TheosRenderPipeline::SourceDLSSG::Backend::Get().ConfigureXeFGFlipMetering(enabled);
+}
+
 void OverlayUI::PausePresets(bool paused)
 {
     TheosRenderPipeline::Appearance::Runtime::Get().Pause(paused);
