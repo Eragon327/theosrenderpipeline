@@ -375,7 +375,12 @@ namespace TheosRenderPipeline::SourceDLSSG
 		input.reset = reset; input.depthInverted = depthInverted; input.tuning = options.tuning;
 		input.reset |= controlReset;
 		input.controlMask=controls[0];
-		if(input.controlMask){input.tuning.useAutoSkinMask=false;}
+		if (input.controlMask) {
+			// The provider multiplies mask RGB by these global controls. Absolute
+			// pass/group values already live in the mask; do not apply them twice.
+			input.tuning.useAutoSkinMask = false;
+			input.tuning.intensity = input.tuning.localToneStrength = input.tuning.localStructureStrength = 1;
+		}
 		const bool gpuTiming = timestampHeap_ && timestampReadback_ && mappedTimestamps_ && timestampFrequency_;
 		const auto query = static_cast<UINT>(slot * 2);
 		marks.End(D3D12Stage::kNeuralPrepare);

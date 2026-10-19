@@ -196,9 +196,9 @@ int main(){
             };
             for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x){
                 const auto qx=coordinate(x,w,gw,offset[0]),qy=coordinate(y,h,gh,offset[1]);
-                const unsigned group=qx%6;std::array<float,4> expected{.8f,.6f,.4f,1};
+                const unsigned group=qx%6;std::array<float,4> expected{.8f,.4f,.6f,1};
                 if(qy%3==0&&group>=1&&group<=4&&rules.groups[group-1].enabled)
-                    expected={.8f,rules.groups[group-1].structure,rules.groups[group-1].tone,1};
+                    expected={.8f,rules.groups[group-1].tone,rules.groups[group-1].structure,1};
                 for(unsigned c=0;c<4;++c)Require(pixels[(y*w+x)*4+c]==expected[c],"RGBA control contract, defaults and mapped groups");
             }
         }

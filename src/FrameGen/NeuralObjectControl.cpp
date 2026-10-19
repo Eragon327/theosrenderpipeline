@@ -36,7 +36,7 @@ Texture2D<float> Objects:register(t0);Texture2D<float> Depth:register(t1);RWText
 [numthreads(8,8,1)]void main(uint3 p:SV_DispatchThreadID){
     if(p.x>=Width||p.y>=Height)return;
     uint group=ClassifiedObject(p.xy+0.5,uint2(Width,Height),uint2(GuideWidth,GuideHeight),Offset,Peripheral);
-    // Vendor channel contract: intensity, structure, tone, coverage.
+    // Vendor channel contract: intensity, tone, structure, coverage.
     float4 value=Defaults;
     if(group!=0&&(Enabled&(1u<<(group-1)))!=0)value=Rules[group-1];
     Result[p.xy]=value;
@@ -70,8 +70,8 @@ Texture2D<float> Objects:register(t0);Texture2D<float> Depth:register(t1);RWText
             if(FAILED(hr=device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&output))))return hr;
         }
         Constants c{width,height,static_cast<UINT>(d.Width),d.Height,offset,static_cast<UINT>(peripheral),0,
-            {tuning.intensity,tuning.localStructureStrength,tuning.localToneStrength,1},{}};
-        for(unsigned i=0;i<4;++i){const auto& g=settings.groups[i];if(g.enabled)c.enabled|=1u<<i;c.rules[i]={tuning.intensity,g.structure,g.tone,1};}
+            {tuning.intensity,tuning.localToneStrength,tuning.localStructureStrength,1},{}};
+        for(unsigned i=0;i<4;++i){const auto& g=settings.groups[i];if(g.enabled)c.enabled|=1u<<i;c.rules[i]={tuning.intensity,g.tone,g.structure,1};}
         auto* heap=heaps_[slot][pass].Get();auto cpu=heap->GetCPUDescriptorHandleForHeapStart();
         const auto stride=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         for(auto* r:{objects,depth}){
