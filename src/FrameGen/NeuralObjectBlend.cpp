@@ -33,7 +33,7 @@ namespace TheosRenderPipeline::NeuralRendering
     }
     HRESULT ObjectBlend::Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
         const ObjectMaskSettings& settings, ID3D12Resource* original, ID3D12Resource* neural,
-        ID3D12Resource* objects, ID3D12Resource* depth, ID3D12Resource* output, std::array<float,2> guideOffset)
+        ID3D12Resource* objects, ID3D12Resource* depth, ID3D12Resource* output, std::array<float,2> guideOffset, bool peripheral)
     {
         if (!std::isfinite(guideOffset[0]) || !std::isfinite(guideOffset[1]) || !device || !list || slot>=heaps_.size() || !settings.enabled || !original || !neural || !objects || !depth || !output ||
             output==original || output==neural || output==objects || output==depth) { return E_INVALIDARG; }
@@ -68,7 +68,7 @@ namespace TheosRenderPipeline::NeuralRendering
         device->CreateUnorderedAccessView(output,nullptr,&uav,handle);
         transition(output,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         ObjectBlendConstants constants{static_cast<UINT>(d.Width),d.Height,static_cast<UINT>(g.Width),g.Height,
-            SanitizeObjectMask(settings).strength,guideOffset,{},static_cast<UINT>(settings.preview),settings.previewGroup,{}};
+            SanitizeObjectMask(settings).strength,guideOffset,{},static_cast<UINT>(settings.preview),settings.previewGroup,static_cast<UINT>(peripheral),0};
         list->SetDescriptorHeaps(1,&heap); list->SetComputeRootSignature(root_.Get()); list->SetPipelineState(pipeline_.Get());
         list->SetComputeRoot32BitConstants(0,sizeof(constants)/4,&constants,0);
         list->SetComputeRootDescriptorTable(1,heap->GetGPUDescriptorHandleForHeapStart());

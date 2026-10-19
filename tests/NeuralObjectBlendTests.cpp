@@ -132,8 +132,9 @@ int main(){
     Require(SanitizeObjectMask(sanitized).strength==std::array<float,4>{0,1,1,0.75f},"sanitize invalid tuning");
     Require(ObjectStrength(settings,ObjectGroup::World)==1,"world unchanged");
     ObjectBlend blend;
-    for(unsigned iteration=0;iteration<36;++iteration){
-        settings.preview=static_cast<ObjectPreview>(iteration/12);settings.previewGroup=iteration%2?2:0;
+    for(unsigned iteration=0;iteration<72;++iteration){
+        const bool peripheral=iteration>=36;
+        settings.preview=static_cast<ObjectPreview>((iteration%36)/12);settings.previewGroup=iteration%2?2:0;
         const UINT gw=iteration%2 ? W/2:W, gh=iteration%2 ? H/2:H;
         const std::array<float,2> offset{iteration%3==0?0.0f:iteration%3==1?0.75f:-0.75f,iteration%2?0.375f:-0.375f};
         std::vector<float> original(W*H*4),neural(W*H*4),objects(gw*gh),depth(gw*gh,0.5f);
@@ -150,11 +151,20 @@ int main(){
         auto output=gpu.Texture(DXGI_FORMAT_R32G32B32A32_FLOAT,true);
         gpu.Upload(a.Get(),original,4);gpu.Upload(b.Get(),neural,4);gpu.Upload(m.Get(),objects,1);gpu.Upload(d.Get(),depth,1);gpu.Submit();
         Check(blend.Record(gpu.device.Get(),gpu.list.Get(),iteration%TheosRenderPipeline::SourceDLSSG::kCommandSlots,
-            settings,a.Get(),b.Get(),m.Get(),d.Get(),output.Get(),offset),"production object blend");
+            settings,a.Get(),b.Get(),m.Get(),d.Get(),output.Get(),offset,peripheral),"production object blend");
         auto bytes=gpu.Read(output.Get(),16);std::vector<float> pixels(W*H*4);std::memcpy(pixels.data(),bytes.data(),bytes.size());
         for(UINT y=0;y<H;++y)for(UINT x=0;x<W;++x){
-            unsigned qx=unsigned(std::clamp(int(std::floor((x+0.5f)*gw/W+offset[0])),0,int(gw)-1)),
-                qy=unsigned(std::clamp(int(std::floor((y+0.5f)*gh/H+offset[1])),0,int(gh)-1)),i=y*W+x;
+            auto coordinate=[&](unsigned pixel,unsigned extent,unsigned guide,float jitter) {
+                double uv=(pixel+.5)/extent;
+                if(peripheral) {
+                    const double r=(2*uv-1)*.9, radius=std::abs(r);
+                    const double t=(radius-.8)/.1;
+                    const double unpacked=radius<=.8?radius:.8+.2*(.5*t/(1-.5*t));
+                    uv=(std::copysign(unpacked,r)+1)*.5;
+                }
+                return unsigned(std::clamp(int(std::floor(uv*guide+jitter)),0,int(guide)-1));
+            };
+            unsigned qx=coordinate(x,W,gw,offset[0]),qy=coordinate(y,H,gh,offset[1]),i=y*W+x;
             unsigned group=qx%8;if(qy%4!=0||group>4)group=0;
             float amount=group?settings.strength[group-1]:1;
             for(unsigned c=0;c<4;++c){float expected=amount==0?original[i*4+c]:amount==1?neural[i*4+c]:c==3?original[i*4+c]:original[i*4+c]+(neural[i*4+c]-original[i*4+c])*amount;

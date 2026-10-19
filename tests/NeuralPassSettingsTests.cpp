@@ -22,10 +22,23 @@ int main()
         StorePreferences(saved,values);
         Require(LoadPreferences(saved).neuralObjectMasks == values.neuralObjectMasks, "all four object mask rules round trip");
         for(unsigned pass=0;pass<2;++pass)for(unsigned group=0;group<4;++group){
-            values.neuralObjectMasks.passes[pass].groups[group]={group%2==0,float(pass+group)/5,float(group)/4};
+            values.neuralObjectMasks.passes[pass].groups[group]={group%2==0,float(pass+group)/5,float(group)/4,float(pass+group)/6};
         }
         StorePreferences(saved,values);
         Require(LoadPreferences(saved).neuralObjectMasks==values.neuralObjectMasks,"both passes' group controls round trip independently");
+        CSimpleIniA old;
+        old.SetBoolValue("SourceDLSSG", "NRObjectMasks", true);
+        old.SetBoolValue("SourceDLSSG", "NRObjectPass1Group1Enabled", true);
+        const auto migrated=LoadPreferences(old).neuralObjectMasks;
+        Require(migrated.enabled && migrated.passes[0].groups[0].enabled && migrated.strength==std::array<float,4>{0,0,0,0} && migrated.passes[0].groups[0].strength==1,
+            "old final protection survives and a missing per-pass strength keeps the full pass");
+        auto malformed=migrated;
+        malformed.passes[0].groups[0].strength=std::numeric_limits<float>::quiet_NaN();
+        malformed.passes[1].groups[0]={true,1,1,-3};
+        malformed.passes[1].groups[1]={false,1,1,3};
+        malformed=NeuralRendering::SanitizeObjectMask(malformed);
+        Require(malformed.passes[0].groups[0].strength==1 && malformed.passes[1].Strengths()==std::array<float,4>{0,1,1,1},
+            "invalid strengths sanitize and disabled groups retain full NR");
         values.neuralObjectMasks.preview=NeuralRendering::ObjectPreview::Classes;
         values.neuralObjectMasks.previewGroup=3;
         StorePreferences(saved,values);
@@ -39,6 +52,8 @@ int main()
         Require(!history.ResetFor(options,true,false),"preview edits do not invalidate inference history");
         options.objectMasks.passes[1].groups[1].tone=.125f;
         Require(history.ResetFor(options,true,false),"per-pass object controls invalidate history");
+        options.objectMasks.passes[1].groups[1].strength=.875f;
+        Require(history.ResetFor(options,true,false),"per-pass strength edits invalidate history");
         options.objectMasks.strength[2]=0.75f;
         Require(history.ResetFor(options,true,false),"object policy edit resets NR history");
     }

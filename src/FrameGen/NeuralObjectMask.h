@@ -14,12 +14,19 @@ namespace TheosRenderPipeline::NeuralRendering
     {
         bool enabled{};
         float tone{1}, structure{1};
+        float strength{1}; // Blend this pass's result with its own input, not the original scene.
         bool operator==(const ObjectGroupTuning&) const = default;
     };
     struct ObjectPassTuning
     {
         std::array<ObjectGroupTuning,4> groups{};
         bool Active() const { return std::any_of(groups.begin(),groups.end(),[](const auto& g){return g.enabled;}); }
+        std::array<float,4> Strengths() const
+        {
+            std::array<float,4> result{1,1,1,1};
+            for (unsigned i=0;i<groups.size();++i) { if (groups[i].enabled) { result[i]=groups[i].strength; } }
+            return result;
+        }
         bool operator==(const ObjectPassTuning&) const = default;
     };
 
@@ -40,6 +47,7 @@ namespace TheosRenderPipeline::NeuralRendering
             strength = std::isfinite(strength) ? std::clamp(strength, 0.0f, 1.0f) : 1.0f;
         }
         for (auto& pass : value.passes) for (auto& group : pass.groups) {
+            group.strength = std::isfinite(group.strength) ? std::clamp(group.strength,0.0f,1.0f) : 1.0f;
             group.tone = std::isfinite(group.tone) ? std::clamp(group.tone,0.0f,1.0f) : 1.0f;
             group.structure = std::isfinite(group.structure) ? std::clamp(group.structure,0.0f,1.0f) : 1.0f;
         }
@@ -78,6 +86,7 @@ namespace TheosRenderPipeline::NeuralRendering
             auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
             auto& rule=value.passes[pass].groups[group];
             rule.enabled=ini.GetBoolValue(section,(prefix+"Enabled").c_str(),false);
+            rule.strength=static_cast<float>(ini.GetDoubleValue(section,(prefix+"Strength").c_str(),1));
             rule.tone=static_cast<float>(ini.GetDoubleValue(section,(prefix+"Tone").c_str(),1));
             rule.structure=static_cast<float>(ini.GetDoubleValue(section,(prefix+"Structure").c_str(),1));
         }
@@ -93,6 +102,7 @@ namespace TheosRenderPipeline::NeuralRendering
             auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
             const auto& rule=value.passes[pass].groups[group];
             ini.SetBoolValue(section,(prefix+"Enabled").c_str(),rule.enabled);
+            ini.SetDoubleValue(section,(prefix+"Strength").c_str(),rule.strength);
             ini.SetDoubleValue(section,(prefix+"Tone").c_str(),rule.tone);
             ini.SetDoubleValue(section,(prefix+"Structure").c_str(),rule.structure);
         }

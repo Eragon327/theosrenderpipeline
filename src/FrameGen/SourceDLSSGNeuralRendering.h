@@ -102,6 +102,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralResolveKernels resolve_;
         NeuralRendering::ObjectBlend objectBlend_;
         Microsoft::WRL::ComPtr<ID3D12Resource> objectResult_;
+        std::array<NeuralRendering::ObjectBlend,2> passObjectBlend_;
+        std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,2> passObjectResult_;
         NeuralRendering::ObjectControl objectControl_;
         std::array<bool,2> objectControlActive_{};
         ID3D12Resource* secondControlMask_{}; // frame-only, owned by objectControl_

@@ -64,3 +64,73 @@ static void ObjectMaskCases(GPU& gpu)
     Fixture::objectControls=false;
     std::puts("PASS object masks inside production NR recorder: both placements, one/two independent passes, scaled/peripheral grids, UI and FG tags");
 }
+
+static void PassObjectStrengthCases(GPU& gpu)
+{
+    using namespace TheosRenderPipeline::NeuralRendering;
+    constexpr unsigned w=64,h=32,gw=32,gh=16;
+    const std::vector<Pixel> pixels(w*h,{.25f,.5f,.75f,.625f});
+    for (bool world:{false,true}) for (bool peripheral:{false,true}) for (bool resized:{false,true}) {
+        NeuralOptions options; options.enabled=true; options.beforeUpscaling=world; options.passes=2;
+        options.runtimePath="fixture.dll"; options.tuning.intensity=.8f;
+        options.reconstruction.inputScale=peripheral?.75f:1; options.reconstruction.peripheralCompression=peripheral;
+        options.secondPass.linked=false; options.secondPass.inputScale=resized?.5f:options.reconstruction.inputScale;
+        options.secondPass.tuning.intensity=.6f; options.secondPass.preset=1;
+        options.objectMasks.enabled=true; options.objectMasks.strength.fill(1);
+        for (auto& pass:options.objectMasks.passes) { pass.groups[0].enabled=true; }
+        Fixture::peripheral=peripheral; Fixture::worldOnly=world; Fixture::sourceWidth=w; Fixture::sourceHeight=h;
+        Fixture::guideWidth=gw; Fixture::guideHeight=gh; Fixture::transform=true;
+        Fixture::workWidth=ModelExtent(w,options.reconstruction); Fixture::workHeight=ModelExtent(h,options.reconstruction);
+        auto reconstruction=options.reconstruction; reconstruction.inputScale=options.secondPass.inputScale;
+        Fixture::secondWidth=ModelExtent(w,reconstruction); Fixture::secondHeight=ModelExtent(h,reconstruction);
+        auto motion=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{}),DXGI_FORMAT_R32G32_FLOAT);
+        auto depth=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{.4f,0,0,0}),DXGI_FORMAT_R32_FLOAT);
+        auto mask=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{PackObjectPixel(ObjectGroup::FirstPerson,.4f),0,0,0}),DXGI_FORMAT_R32_FLOAT);
+        auto occluded=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{PackObjectPixel(ObjectGroup::FirstPerson,.9f),0,0,0}),DXGI_FORMAT_R32_FLOAT);
+        auto ui=gpu.Texture(w,h,std::vector<Pixel>(w*h,{.05f,.025f,0,.25f})),composed=gpu.Texture(w,h);
+        std::vector<Pixel> firstOnly;
+        // One-pass reference, full chain, each exact bypass, fractional strengths,
+        // then final protection overriding the otherwise active per-pass result.
+        for (unsigned scenario=0;scenario<10;++scenario) {
+            const float s1=scenario>=7||scenario==3||scenario==4?0:scenario==5?.5f:1;
+            const float s2=scenario>=7||scenario==2||scenario==4?0:scenario==5?.25f:1;
+            options.passes=scenario==0?1:2;
+            options.objectMasks.passes[0].groups[0].strength=s1;
+            options.objectMasks.passes[1].groups[0].strength=s2;
+            for (auto& rule:options.objectMasks.passes) { rule.groups[0].enabled=scenario!=9; }
+            options.objectMasks.strength.fill(scenario>=6&&scenario!=9?0.f:1.f);
+            Fixture::creations=Fixture::evaluations=Fixture::resets=0;
+            Fixture::objectControls=scenario!=7&&scenario!=9; Fixture::controlEvaluations=0;
+            NeuralPass pass;
+            // Reuse the owner and all retired-slot descriptor tables across frames.
+            std::vector<Pixel> actual;
+            for (unsigned frame=0;frame<4;++frame) {
+                auto scene=gpu.Texture(w,h,pixels);
+                gpu.Begin(); Require(pass.Record(gpu.device.Get(),gpu.list.Get(),frame%kCommandSlots,options,frame==0,true,
+                    float(gw),float(gh),motion.Get(),depth.Get(),world?nullptr:ui.Get(),scene.Get(),world?nullptr:composed.Get(),
+                    0,{},scenario==7?nullptr:scenario==8?occluded.Get():mask.Get(),{.75f,-.375f}),pass.Status().c_str()); gpu.End();
+                actual=gpu.Read(pass.Corrected());
+                for (unsigned i=0;i<w*h;++i) for (unsigned c=0;c<4;++c) {
+                    const float original=pixels[i][c];
+                    const float first=c<3?original+(scenario>=7?1:s1)*(original*.8f+.01f-original):original;
+                    const float expected=scenario==6?original:scenario==0?first:
+                        c<3?first+(scenario>=7?1:s2)*(first*.6f+.02f-first):original;
+                    Near(actual[i][c],expected,.0004,"independent per-pass strengths blend the input of their own pass");
+                    if(scenario==2) Near(actual[i][c],firstOnly[i][c],.000001,"zero second-pass strength retains the first pass including alpha");
+                    if(scenario==4||scenario==6) Near(actual[i][c],original,.000001,"zero pass strengths or final protection retain original values");
+                }
+                if(!world) {
+                    const auto real=gpu.Read(pass.Composed()),tag=gpu.Read(scene.Get());
+                    for(unsigned i=0;i<w*h;++i)for(unsigned c=0;c<4;++c) {
+                        Near(tag[i][c],actual[i][c],0,"per-pass strength feeds the same real and FG scene");
+                        if(c<3)Near(real[i][c],actual[i][c]*.75f+std::array<float,3>{.05f,.025f,0}[c],.000001,"native UI follows per-pass composition");
+                    }
+                }
+            }
+            if(scenario==0)firstOnly=actual;
+            Require(Fixture::evaluations==unsigned(options.passes)*4,"strength zero still evaluates every requested NR pass");
+        }
+    }
+    Fixture::secondWidth=Fixture::secondHeight=0; Fixture::transform=false; Fixture::objectControls=false;
+    std::puts("PASS per-pass object strength endpoints, fractions, second-pass preservation, final protection, resized/peripheral grids and UI/FG agreement");
+}
