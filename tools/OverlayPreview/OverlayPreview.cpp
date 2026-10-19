@@ -48,7 +48,9 @@ struct Options
     std::optional<float> zoom; // Percent; empty selects automatic zoom.
     std::optional<Size> menu;  // Menu window in 100% units.
     std::filesystem::path ini;
-    bool full{}, warp{}, list{};
+    bool full{}, warp{}, list{}, live{};
+    std::vector<LivePreviewOptions::Step> script;
+    std::filesystem::path save;
 };
 
 // Enough frames for the window, tab selection and table widths to settle.
@@ -89,7 +91,13 @@ void PrintUsage()
         "  --ini PATH          Read the [Overlay] layout from a TheosRenderPipeline.ini\n"
         "  --full              Keep the whole output instead of cropping to the menu\n"
         "  --warp              Draw with the WARP software rasterizer\n"
-        "  --list              List scenarios and exit");
+        "  --list              List scenarios and exit\n"
+        "  --live              Open an interactive window instead of writing PNGs. It starts\n"
+        "                      with the first --scenario and --size given\n"
+        "  --click X,Y         With --live: click at X,Y from the menu window's top-left\n"
+        "                      (repeatable, in order)\n"
+        "  --hover X,Y         With --live: then rest the mouse at X,Y, for tooltips\n"
+        "  --save PATH         With --live: after the clicks and hover, save the menu and exit");
 }
 
 std::optional<Options> ParseOptions(int argc, char** argv)
@@ -109,12 +117,24 @@ std::optional<Options> ParseOptions(int argc, char** argv)
             options.warp = true;
         else if (arg == "--list")
             options.list = true;
+        else if (arg == "--live")
+            options.live = true;
         else if (arg == "--help" || arg == "-h")
             return std::nullopt;
         else if (const auto text = value(); !text)
             return std::nullopt;
         else if (arg == "--out")
             options.out = *text;
+        else if (arg == "--save")
+            options.save = *text;
+        else if (arg == "--click" || arg == "--hover")
+        {
+            LivePreviewOptions::Step step;
+            if (std::sscanf(text->c_str(), "%f,%f", &step.x, &step.y) != 2)
+                return std::nullopt;
+            step.click = arg == "--click";
+            options.script.push_back(step);
+        }
         else if (arg == "--scenario")
             options.scenarios = SplitList(*text);
         else if (arg == "--tab")
@@ -164,9 +184,11 @@ HRESULT CreateDevice(bool warp, ComPtr<ID3D11Device>& device, ComPtr<ID3D11Devic
     return result;
 }
 
-// The scenario as it would run at this output size, keeping its render scale.
-PreviewScenario AtOutputSize(PreviewScenario scenario, Size size)
+} // namespace
+
+PreviewScenario AtOutputSize(PreviewScenario scenario, UINT width, UINT height)
 {
+    const Size size{width, height};
     auto& view = scenario.view;
     const auto scale = [](auto value, auto from, UINT to) {
         return from > 0 ? static_cast<decltype(value)>(std::lround(static_cast<double>(value) * to / from)) : value;
@@ -182,14 +204,53 @@ PreviewScenario AtOutputSize(PreviewScenario scenario, Size size)
     return scenario;
 }
 
-struct Image
+std::optional<PreviewImage> ReadPreviewTexture(ID3D11Device* device, ID3D11DeviceContext* context,
+    ID3D11Texture2D* texture, const ImRect& rect)
 {
-    UINT width{}, height{};
-    std::vector<std::uint8_t> bgr;
-};
+    D3D11_TEXTURE2D_DESC desc{};
+    texture->GetDesc(&desc);
+    desc.BindFlags = 0;
+    desc.MiscFlags = 0;
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    ComPtr<ID3D11Texture2D> staging;
+    if (FAILED(device->CreateTexture2D(&desc, nullptr, &staging)))
+        return std::nullopt;
+    context->CopyResource(staging.Get(), texture);
 
+    UINT left = 0, top = 0, right = desc.Width, bottom = desc.Height;
+    if (rect.GetWidth() > 0 && rect.GetHeight() > 0)
+    {
+        const auto width = static_cast<float>(desc.Width), height = static_cast<float>(desc.Height);
+        left = static_cast<UINT>(std::clamp(rect.Min.x, 0.0f, width));
+        top = static_cast<UINT>(std::clamp(rect.Min.y, 0.0f, height));
+        right = static_cast<UINT>(std::clamp(std::ceil(rect.Max.x), static_cast<float>(left + 1), width));
+        bottom = static_cast<UINT>(std::clamp(std::ceil(rect.Max.y), static_cast<float>(top + 1), height));
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)))
+        return std::nullopt;
+    PreviewImage image{right - left, bottom - top};
+    image.bgr.resize(static_cast<std::size_t>(image.width) * image.height * 3);
+    for (UINT y = 0; y < image.height; ++y)
+    {
+        const auto* source = static_cast<const std::uint8_t*>(mapped.pData) + (top + y) * mapped.RowPitch + left * 4;
+        auto* destination = image.bgr.data() + static_cast<std::size_t>(y) * image.width * 3;
+        for (UINT x = 0; x < image.width; ++x, source += 4, destination += 3)
+        {
+            destination[0] = source[2];
+            destination[1] = source[1];
+            destination[2] = source[0];
+        }
+    }
+    context->Unmap(staging.Get(), 0);
+    return image;
+}
+
+namespace
+{
 // Draws kFrames frames of the menu at the given output size and returns the last.
-std::optional<Image> DrawMenu(ID3D11Device* device, ID3D11DeviceContext* context, const PreviewScenario& scenario,
+std::optional<PreviewImage> DrawMenu(ID3D11Device* device, ID3D11DeviceContext* context, PreviewScenario& scenario,
     const Layout& layout, SettingsPage page, Size size, bool crop)
 {
     D3D11_TEXTURE2D_DESC desc{};
@@ -200,15 +261,10 @@ std::optional<Image> DrawMenu(ID3D11Device* device, ID3D11DeviceContext* context
     desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-    ComPtr<ID3D11Texture2D> target, staging;
+    ComPtr<ID3D11Texture2D> target;
     ComPtr<ID3D11RenderTargetView> view;
     if (FAILED(device->CreateTexture2D(&desc, nullptr, &target)) ||
         FAILED(device->CreateRenderTargetView(target.Get(), nullptr, &view)))
-        return std::nullopt;
-    desc.BindFlags = 0;
-    desc.Usage = D3D11_USAGE_STAGING;
-    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    if (FAILED(device->CreateTexture2D(&desc, nullptr, &staging)))
         return std::nullopt;
 
     ImGui::CreateContext();
@@ -242,34 +298,7 @@ std::optional<Image> DrawMenu(ID3D11Device* device, ID3D11DeviceContext* context
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     ImGui_ImplDX11_Shutdown();
     ImGui::DestroyContext();
-    context->CopyResource(staging.Get(), target.Get());
-
-    UINT left = 0, top = 0, right = size.width, bottom = size.height;
-    if (crop && window.GetWidth() > 0 && window.GetHeight() > 0)
-    {
-        left = static_cast<UINT>(std::clamp(window.Min.x, 0.0f, static_cast<float>(size.width)));
-        top = static_cast<UINT>(std::clamp(window.Min.y, 0.0f, static_cast<float>(size.height)));
-        right = static_cast<UINT>(std::clamp(std::ceil(window.Max.x), static_cast<float>(left + 1), static_cast<float>(size.width)));
-        bottom = static_cast<UINT>(std::clamp(std::ceil(window.Max.y), static_cast<float>(top + 1), static_cast<float>(size.height)));
-    }
-    D3D11_MAPPED_SUBRESOURCE mapped{};
-    if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)))
-        return std::nullopt;
-    Image image{right - left, bottom - top};
-    image.bgr.resize(static_cast<std::size_t>(image.width) * image.height * 3);
-    for (UINT y = 0; y < image.height; ++y)
-    {
-        const auto* source = static_cast<const std::uint8_t*>(mapped.pData) + (top + y) * mapped.RowPitch + left * 4;
-        auto* destination = image.bgr.data() + static_cast<std::size_t>(y) * image.width * 3;
-        for (UINT x = 0; x < image.width; ++x, source += 4, destination += 3)
-        {
-            destination[0] = source[2];
-            destination[1] = source[1];
-            destination[2] = source[0];
-        }
-    }
-    context->Unmap(staging.Get(), 0);
-    return image;
+    return ReadPreviewTexture(device, context, target.Get(), crop ? window : ImRect());
 }
 } // namespace
 
@@ -325,6 +354,22 @@ int main(int argc, char** argv)
     if (options->zoom)
         layout.uiScale = SanitizeUIScale(*options->zoom / 100.0f);
 
+    if (options->live)
+    {
+        LivePreviewOptions live;
+        live.scenario = options->scenarios.empty() ? scenarios.front().name : *options->scenarios.begin();
+        live.width = options->sizes.front().width;
+        live.height = options->sizes.front().height;
+        if (!options->ini.empty() || options->menu || options->zoom)
+            live.layout = layout;
+        live.out = options->out;
+        live.warp = options->warp;
+        live.script = options->script;
+        live.save = options->save;
+        live.full = options->full;
+        return RunLivePreview(live);
+    }
+
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
     if (FAILED(CreateDevice(options->warp, device, context)))
@@ -350,7 +395,7 @@ int main(int argc, char** argv)
                 if (options->zoom)
                     name += std::format("-zoom{:.0f}", *options->zoom);
                 const auto path = std::filesystem::absolute(options->out / (name + ".png"));
-                const auto sized = AtOutputSize(scenario, size);
+                auto sized = AtOutputSize(scenario, size.width, size.height);
                 const auto image = DrawMenu(device.Get(), context.Get(), sized, layout, tab.page, size, !options->full);
                 const auto result = image ? TheosRenderPipeline::ScreenshotFile::Replace(path, image->width,
                                                 image->height, image->bgr, 0)

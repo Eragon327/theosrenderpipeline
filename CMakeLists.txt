@@ -309,13 +309,13 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_link_libraries(TRPOverlayTextInputTests PRIVATE imgui::imgui)
     add_test(NAME OverlayTextInput COMMAND TRPOverlayTextInputTests)
     set_tests_properties(OverlayTextInput PROPERTIES TIMEOUT 15)
-    # Draws the production menu offline to PNGs; see tools/OverlayPreview/README.md.
+    # Draws the production menu offline to PNGs, or live in a window; see tools/OverlayPreview/README.md.
     set(TRP_OVERLAY_PREVIEW_MENU_SOURCES ${ARP_OVERLAY_MENU_SOURCES})
     if(TRP_ENABLE_NEURAL_RENDERING)
         list(APPEND TRP_OVERLAY_PREVIEW_MENU_SOURCES src/OverlayNeuralPanel.cpp)
     endif()
     add_executable(TRPOverlayPreview tools/OverlayPreview/OverlayPreview.cpp tools/OverlayPreview/PreviewHost.cpp
-        tools/OverlayPreview/PreviewScenarios.cpp src/ScreenshotFile.cpp ${TRP_OVERLAY_PREVIEW_MENU_SOURCES}
+        tools/OverlayPreview/PreviewScenarios.cpp tools/OverlayPreview/LivePreview.cpp src/ScreenshotFile.cpp ${TRP_OVERLAY_PREVIEW_MENU_SOURCES}
         ${CMAKE_CURRENT_BINARY_DIR}/cmake/Resources.rc)
     set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/cmake/Resources.rc TARGET_DIRECTORY TRPOverlayPreview
         PROPERTIES OBJECT_DEPENDS "${TRP_OVERLAY_FONT}")

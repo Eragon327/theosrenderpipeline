@@ -1,8 +1,9 @@
 # Overlay preview
 
-`TRPOverlayPreview` draws the in-game menu offline and writes PNGs, so menu
-changes can be reviewed without launching Skyrim. It compiles the production
-menu sources (`ARP_OVERLAY_MENU_SOURCES` and `OverlayNeuralPanel.cpp`) with
+`TRPOverlayPreview` draws the in-game menu offline, either to PNGs or live in
+a window, so menu changes can be reviewed without launching Skyrim. It
+compiles the production menu sources (`ARP_OVERLAY_MENU_SOURCES` and
+`OverlayNeuralPanel.cpp`) with
 the same style, embedded font, layout and zoom rules as the plugin. Only the
 renderer state is invented: each scenario fills `OverlayUI::FrameView` and the
 settings draft in `PreviewScenarios.cpp`.
@@ -30,6 +31,31 @@ cropped to the menu window. Options:
 | `--warp` | Use the WARP software rasterizer |
 | `--out DIR` | Output folder |
 
+## Live window
+
+`--live` opens a window with the menu on the right and a sidebar on the left.
+The menu works as in game: tabs, combos, sliders, tooltips, popups, presets,
+zoom, and Apply, which in the preview updates the scenario's applied settings
+so the pending-change flow can be tried. The sidebar switches scenarios,
+the game output size (fitted to the window or pixel for pixel) and the
+renderer state the menu reads (Lab mode, Community Shaders, NVIDIA GPU, NR
+runtime, NR state, frame generation and provider), and saves a PNG of the
+menu. Renderer state does not follow Apply as it would in game.
+
+```powershell
+out/build/base/Release/TRPOverlayPreview.exe --live --scenario presets --size 2560x1440
+```
+
+A scripted run clicks and hovers without a mouse, then saves and exits. The
+positions are output pixels from the menu window's top-left, as in the cropped
+PNGs; the hover rests long enough for tooltips, and `--full` keeps tooltips
+that extend past the menu:
+
+```powershell
+out/build/base/Release/TRPOverlayPreview.exe --live --scenario healthy `
+    --click 132,144 --click 975,373 --hover 920,270 --save out/overlay-preview/pass2-off.png
+```
+
 The `OverlayPreview` CTest renders every scenario and tab with WARP, so a
 menu change that no longer builds or draws offline fails the suite.
 
@@ -47,6 +73,7 @@ draws a note in their place.
 ## Limits
 
 A preview is not game acceptance. It does not show the game frame behind the
-menu, Skyrim's input routing, hover tooltips, popups, collapsed sections or
-scrolled content, and the scenario values are illustrative rather than
-measured. Check menu behaviour that depends on input or the renderer in game.
+menu or Skyrim's input routing, and the scenario values are illustrative
+rather than measured. Offline PNGs also omit tooltips, popups and scrolled
+content; use the live window or a scripted run for those. Check menu
+behaviour that depends on input or the renderer in game.

@@ -1,10 +1,12 @@
 #include "OverlayPreview.h"
 
+#include <imgui_impl_dx11.h>
+
 #include <algorithm>
 
 using namespace TheosRenderPipeline::Overlay;
 
-OverlayPreview::OverlayPreview(const PreviewScenario& scenario, const Layout& layout, SettingsPage page)
+OverlayPreview::OverlayPreview(PreviewScenario& scenario, const Layout& layout, SettingsPage page)
     : menu_(new OverlayUI()), page_(page)
 {
     current_ = &scenario;
@@ -35,15 +37,41 @@ OverlayPreview::OverlayPreview(const PreviewScenario& scenario, const Layout& la
 OverlayPreview::~OverlayPreview()
 {
     current_ = nullptr;
+    currentLive_ = false;
 }
 
 void OverlayPreview::BuildFrame()
 {
-    // As OnPresent does, around the shared menu code.
-    menu_->requestedPage = page_;
+    // As OnPresent does, around the shared menu code. Offline frames keep
+    // requesting the tab while the window settles; live frames request it once.
+    currentLive_ = live_;
+    if (!live_ || pagePending_)
+        menu_->requestedPage = page_;
+    pagePending_ = false;
     menu_->menuKeyControlDrawn = false;
     menu_->BuildUI();
+    if (!menu_->menuKeyControlDrawn)
+        menu_->hotkeys.CancelCapture();
 }
+
+void OverlayPreview::UpdateScale()
+{
+    const auto display = ImGui::GetIO().DisplaySize;
+    const float scale = ResolveUIScale(menu_->layout.uiScale, display.x, display.y);
+    if (std::abs(scale - UIScale()) < 0.001f)
+        return;
+    ApplyRendererStyle(scale);
+    BuildRendererFont(scale);
+    ImGui_ImplDX11_InvalidateDeviceObjects();
+    ImGui_ImplDX11_CreateDeviceObjects();
+    menu_->layoutPending = true;
+}
+
+bool OverlayPreview::LabMode() const { return menu_->showDeveloperControls; }
+void OverlayPreview::SetLabMode(bool enabled) { menu_->showDeveloperControls = enabled; }
+bool OverlayPreview::RuntimePresent() const { return menu_->nrRuntimePresent; }
+void OverlayPreview::SetRuntimePresent(bool present) { menu_->nrRuntimePresent = present; }
+Layout OverlayPreview::CurrentLayout() const { return menu_->layout; }
 
 // The renderer-facing OverlayUI members. In the plugin they read or change the
 // renderer (OverlayUI.cpp, OverlayFrameCapture.cpp and OverlayLabPanel.cpp);
@@ -71,9 +99,17 @@ int OverlayUI::CountStagedChanges() const
     return TheosRenderPipeline::CountRendererSettingsChanges(settingsDraft, applied);
 }
 
-void OverlayUI::ApplySettingsDraft(bool)
+void OverlayUI::ApplySettingsDraft(bool saveAsDefault)
 {
-    actionMessage = "Preview only: settings are not applied.";
+    // Live previews treat the draft as applied so the pending-change flow can be
+    // tried; the renderer state the menu reads does not follow it.
+    if (OverlayPreview::Live())
+    {
+        OverlayPreview::Scenario().applied = settingsDraft;
+        actionMessage = saveAsDefault ? "Preview: saved as the scenario's defaults." : "Preview: applied to the scenario.";
+    }
+    else
+        actionMessage = "Preview only: settings are not applied.";
     actionMessageIsError = false;
 }
 
