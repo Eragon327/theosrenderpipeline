@@ -96,8 +96,11 @@ namespace TheosRenderPipeline::NeuralRendering
         else { state.DepthEnable = TRUE; state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL; state.DepthFunc = D3D11_COMPARISON_LESS; }
         // Replaying a constant PS cannot reproduce alpha discard, pixel-depth
         // output or transparency. The game adapter excludes alpha-test passes;
-        // here require an ordinary depth-writing draw and no stencil mutation.
-        if (!state.DepthEnable || state.DepthWriteMask != D3D11_DEPTH_WRITE_MASK_ALL) { lastSkip_ = Skip::DepthState; return S_FALSE; }
+        // here require a depth-tested draw. Skyrim lays opaque depth down before
+        // its lighting draws, which then test against it without writing. The
+        // read-only EQUAL replay marks the same visible pixels either way, and a
+        // draw whose depth was never written marks none.
+        if (!state.DepthEnable) { lastSkip_ = Skip::DepthState; return S_FALSE; }
         ComPtr<ID3D11BlendState> blend; float factors[4]{}; UINT sampleMask{};
         context->OMGetBlendState(&blend, factors, &sampleMask);
         if (blend) {

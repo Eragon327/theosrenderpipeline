@@ -86,6 +86,20 @@ float4 ps():SV_Target {return float4(0.25,0.5,0.75,1);})";
     D3D11_VIEWPORT oneOff{0,0,17,16,0,1};context->RSSetViewports(1,&oneOff);
     Require(capture.Record(context.Get(),ObjectGroup::Player,21,{16,16},depth.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws,"a whole-pixel difference is rejected");
     D3D11_VIEWPORT exact{0,0,16,16,0,1};context->RSSetViewports(1,&exact);
+    // Lighting draws after a depth prepass test without writing; they are captured.
+    // A draw that does not depth-test at all cannot be matched to its pixels.
+    D3D11_DEPTH_STENCIL_DESC tested{};tested.DepthEnable=TRUE;tested.DepthWriteMask=D3D11_DEPTH_WRITE_MASK_ZERO;tested.DepthFunc=D3D11_COMPARISON_LESS_EQUAL;
+    ComPtr<ID3D11DepthStencilState> testedState;Check(device->CreateDepthStencilState(&tested,&testedState),"prepass depth state");
+    context->OMSetDepthStencilState(testedState.Get(),0);draws=0;
+    Require(capture.Record(context.Get(),ObjectGroup::Creature,22,{16,16},depth.Get(),nullptr,[&]{++draws;})==S_OK&&draws==1,"depth-tested draw without depth writes is captured");
+    ComPtr<ID3D11DepthStencilState> restored;UINT ref{};context->OMGetDepthStencilState(&restored,&ref);
+    Require(restored.Get()==testedState.Get(),"prepass depth state restored after replay");
+    D3D11_DEPTH_STENCIL_DESC untested{};untested.DepthEnable=FALSE;untested.DepthWriteMask=D3D11_DEPTH_WRITE_MASK_ZERO;untested.DepthFunc=D3D11_COMPARISON_ALWAYS;
+    ComPtr<ID3D11DepthStencilState> untestedState;Check(device->CreateDepthStencilState(&untested,&untestedState),"no-depth state");
+    context->OMSetDepthStencilState(untestedState.Get(),0);draws=0;
+    Require(capture.Record(context.Get(),ObjectGroup::Creature,22,{16,16},depth.Get(),nullptr,[&]{++draws;})==S_FALSE&&!draws&&
+        capture.LastSkip()==ObjectCapture::Skip::DepthState,"a draw without depth testing is rejected");
+    context->OMSetDepthStencilState(nullptr,0);
     D3D11_BLEND_DESC blendDesc{};blendDesc.RenderTarget[0].BlendEnable=TRUE;blendDesc.RenderTarget[0].SrcBlend=blendDesc.RenderTarget[0].SrcBlendAlpha=D3D11_BLEND_ONE;
     blendDesc.RenderTarget[0].DestBlend=blendDesc.RenderTarget[0].DestBlendAlpha=D3D11_BLEND_ZERO;blendDesc.RenderTarget[0].BlendOp=blendDesc.RenderTarget[0].BlendOpAlpha=D3D11_BLEND_OP_ADD;
     blendDesc.RenderTarget[0].RenderTargetWriteMask=D3D11_COLOR_WRITE_ENABLE_ALL;ComPtr<ID3D11BlendState> blend;Check(device->CreateBlendState(&blendDesc,&blend),"blend");
