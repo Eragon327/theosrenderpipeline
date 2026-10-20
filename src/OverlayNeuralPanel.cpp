@@ -676,8 +676,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 {"Natural", true, "Style 1."},
                 {"Cinematic", true, "Style 2."},
                 {customLabel.c_str(), !legacy, legacy ? "310.8 runs styles 0 to 2 only."
-                    : "Click to type a style number, 3 to 255. On 310.8 and 310.9.16 every number from 2 up looks "
-                      "exactly like Cinematic; a later NVIDIA runtime may add styles."}}, &layout);
+                    : "Click to type a style number, 3 to 255."}}, &layout);
             if (changed) { tuning.style = index == 3 ? (std::max)(tuning.style, 3) : index; }
             if (layout.clicked == 3 && !legacy) {
                 editing = 1;

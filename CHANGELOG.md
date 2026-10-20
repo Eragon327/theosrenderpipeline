@@ -11,9 +11,7 @@
   first. While Base is selected, a cloud marks settings the current override
   replaces. Files, the `Presets` folder and INI keys are unchanged.
 - NR Style is Default, Natural, Cinematic or Custom; clicking Custom edits any
-  number from 3 to 255 in place. On 310.8 and 310.9.16 every number from 2 up gives
-  Cinematic's output; Custom is kept for later runtimes. Saved styles load within
-  0 to 255.
+  number from 3 to 255 in place. Saved styles load within 0 to 255.
 - NR Network is Small (310.9.16's faster model, the default) or Old (the model 310.8
   runs). 310.9.16's Old output matches 310.8 exactly.
 - Object rules can be switched on before the capture hook installs; the menu
