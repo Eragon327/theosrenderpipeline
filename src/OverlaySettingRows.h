@@ -72,7 +72,12 @@ inline void TintRowFullWidth(ImU32 colour)
     const float top = ImGui::GetCursorScreenPos().y;
     const float bottom = top + ImGui::GetFrameHeight() + style.CellPadding.y * 2;
     auto* draw = ImGui::GetWindowDrawList();
-    draw->PushClipRect(ImVec2(left, top), ImVec2(right, bottom), false);
+    // The strips sit outside the table's columns, so widen the clip sideways only:
+    // its top and bottom still follow the window, which hides rows scrolled out of view.
+    const float clipTop = (std::max)(top, draw->GetClipRectMin().y);
+    const float clipBottom = (std::min)(bottom, draw->GetClipRectMax().y);
+    if (clipTop >= clipBottom) { return; }
+    draw->PushClipRect(ImVec2(left, clipTop), ImVec2(right, clipBottom), false);
     if (TableLeft() > left) { draw->AddRectFilled(ImVec2(left, top), ImVec2(TableLeft(), bottom), colour); }
     if (TableRight() < right) { draw->AddRectFilled(ImVec2(TableRight(), top), ImVec2(right, bottom), colour); }
     draw->PopClipRect();
