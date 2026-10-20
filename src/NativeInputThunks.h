@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CodePages.h"
 #include <cstdint>
 #include <xbyak/xbyak.h>
 
@@ -14,7 +15,7 @@ namespace TheosRenderPipeline::NativeInput
     {
     public:
         Thunk(Target target, const std::uint64_t* extent, std::uintptr_t original) :
-            CodeGenerator(128)
+            CodeGenerator(128, nullptr, &CodePageAllocator())
         {
             Xbyak::Label forward, destination;
             mov(rax, reinterpret_cast<std::uintptr_t>(extent));
@@ -45,7 +46,7 @@ namespace TheosRenderPipeline::NativeInput
     {
     public:
         EngineDimensionsThunk(const std::uint64_t* extent, void* dimensions,
-            std::uintptr_t original) : CodeGenerator(128)
+            std::uintptr_t original) : CodeGenerator(128, nullptr, &CodePageAllocator())
         {
             Xbyak::Label forward, destination;
             mov(rax, reinterpret_cast<std::uintptr_t>(extent));

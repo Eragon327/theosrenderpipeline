@@ -1,4 +1,12 @@
-# Theo's Render Pipeline — Standard, 0.4.5
+# Theo's Render Pipeline — Standard, 0.5.0
+
+Version 0.5.0 redesigns the settings menu. Neural Rendering passes are folder
+tabs with object rules inside each pass, short choices are segmented controls,
+and presets are now called weather overrides (their files and settings are
+unchanged). Object rules give each group its own strength, tone and structure in
+each pass; object settings from 0.4.5 are not carried over. Frame generation adds
+VSync Auto/Off/On and XeFG scene change sensitivity; Universal adds an optional
+XeFG tensor model on NVIDIA. See CHANGELOG.md.
 
 Version 0.4.5 fixes NR before upscaling when the interface is hidden, checks
 RTX 20/30 driver prerequisites, stops repeated failed FG creation attempts,
@@ -204,7 +212,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. Combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.5 package has not been tested with ReShade.
+development builds; the exact 0.5.0 package has not been tested with ReShade.
 
 MartysMods ReGrade+ (ReShade 6.6 or newer) used to crash the game while TRP
 started ReShade: it prepares itself only in a device event that ReShade does not
@@ -265,7 +273,7 @@ rendering dimensions.
 ## With the Universal edition
 
 For the RTX 40 MFG unlock or experimental RTX 20/30 support, install the matching
-0.4.5 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
+0.5.0 Universal ZIP after Standard in MO2's left pane. Let Universal win file conflicts. Universal uses
 the NVIDIA runtimes included here, including NR.
 
 Both editions contain settings files; the later mod's files win. Switching

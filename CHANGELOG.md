@@ -1,4 +1,7 @@
-# Unreleased
+# 0.5.0
+
+Settings note: object rules from 0.4.5 (`NRObjectMasks` and the `NR*Strength`
+keys) are not carried over. Set them again in each NR pass.
 
 - Rework the settings menu. Neural Rendering shows passes as folder tabs over one
   pass's settings, with Reset all to Pass 1 on the Pass 2 tab, a small undo arrow
@@ -19,6 +22,21 @@
 - Fix a colour-stack imbalance when ticking a weather type another override uses.
 - Add `TRPOverlayPreview`, which draws the menu offline to PNGs or in a live window
   with scripted clicks, typing and saves; a CTest renders every scenario and tab.
+- Add an optional XeFG tensor model for NVIDIA GPUs in Universal: Frame generation
+  > Tensor model, off by default; Save as default and restart to change it.
+  Universal includes the helper and the Intel XeFG runtime it uses in
+  `SKSE/Plugins/TheosRenderPipeline/Intel/XeFG-Tensor/`, with their notices. When
+  the bundle or the model is unavailable, XeFG uses its normal path.
+- Add session-only NVIDIA flip metering for XeFG with the tensor model. It
+  compares driver and software timing; the driver must accept it.
+- Add VSync Auto, Off and On under Frame generation. Auto turns VSync off for
+  available XeFG driver metering and otherwise follows the game; On prevents
+  metering. Apply changes it live; Save as default keeps it.
+- Add XeFG scene change sensitivity: how readily a sudden change, such as a camera
+  cut or a fast turn, counts as a new scene. Intel's default is 0.70.
+- Save as default keeps explicitly selected settings when the installed base INI
+  was customized; NVIDIA could previously be dropped from the saved provider.
+- XeFG receives SDR inputs in a compatible format after HDR output is turned off.
 
 - Give every object group independent Strength, Tone and Structure controls in
   Pass 1 and Pass 2. Strength blends with that pass's input; zero on Pass 2

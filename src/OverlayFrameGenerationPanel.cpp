@@ -346,8 +346,8 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 ImGui::EndDisabled();
                 DrawSettingsHelp(!editIntel ? xefgOnly
                     : !view.xefgUnlockAvailable ? "Universal only."
-                    : "Uses the private NVIDIA tensor backend when its runtime bundle is installed. Save as default and "
-                      "restart Skyrim to change it.");
+                    : "Uses the optional XeFG tensor helper on NVIDIA when its bundle is installed; otherwise XeFG "
+                      "uses its normal path. Save as default and restart Skyrim to change it.");
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
                 if (editIntel && draft.xefgTensorCores != view.xefgTensorRequested)

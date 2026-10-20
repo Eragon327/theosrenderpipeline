@@ -63,8 +63,14 @@ private:
         const auto& before = restore ? e.after : e.before;
         const auto& after = restore ? e.before : e.after;
         MEMORY_BASIC_INFORMATION m{};
+        // The catalog lives on the process heap. Code generators that keep small
+        // stubs there (Xbyak's default allocator, used by SKSE plugins) mark whole
+        // heap pages executable, so a record can sit on a PAGE_EXECUTE_READWRITE
+        // page. That is still private writable memory; the exact-bytes, compare-
+        // exchange and readback checks below decide ownership.
         if (VirtualQuery(reinterpret_cast<void*>(e.address), &m, sizeof(m)) != sizeof(m) ||
-            m.State != MEM_COMMIT || m.Protect != PAGE_READWRITE || m.Type != MEM_PRIVATE ||
+            m.State != MEM_COMMIT || (m.Protect != PAGE_READWRITE && m.Protect != PAGE_EXECUTE_READWRITE) ||
+            m.Type != MEM_PRIVATE ||
             e.address + after.size() > reinterpret_cast<uintptr_t>(m.BaseAddress) + m.RegionSize ||
             read(e.address, before.size()) != before) throw std::runtime_error("port_write_ownership");
         if (after.size()==8 && e.address%8==0) {
