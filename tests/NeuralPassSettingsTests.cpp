@@ -128,9 +128,14 @@ int main()
 	old.neuralSecondPass.linked = false;
 	old.neuralSecondPass.inputScale = .25f;
 	old.neuralSecondPass.preset = 0;
-	old.neuralSecondPass.tuning = { 7, .25f, 1.5f, .3f, -1, true, true };
+	old.neuralSecondPass.tuning = { 2, .25f, 1.5f, .3f, -1, true, true };
 	StorePreferences(ini, old);
 	Require(LoadPreferences(ini) == old, "all pass 2 settings round trip independently");
+	// Styles above 2 look exactly like 2 on every runtime, so they load as 2.
+	ini.SetLongValue("SourceDLSSG", "NRStyle", 7);
+	ini.SetLongValue("SourceDLSSG", "NRPass2Style", 255);
+	const auto clamped = LoadPreferences(ini);
+	Require(clamped.neuralTuning.style == 2 && clamped.neuralSecondPass.tuning.style == 2, "saved styles above 2 load as Cinematic");
 	old.neuralSecondPass.linked = true;
 	StorePreferences(ini, old);
 	auto linked = LoadPreferences(ini);

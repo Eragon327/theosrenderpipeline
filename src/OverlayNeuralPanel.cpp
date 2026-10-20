@@ -653,29 +653,14 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     if (BeginSettingRows("passLook", passLabel))
     {
         SettingRow("Style", key("Style").c_str(), false, unavailable, [&] {
-            // Named styles as in OptiScaler; Custom takes any number the runtime accepts.
-            const bool legacy = LegacyNeuralRuntime(view);
-            const float box = Px(48.0f);
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - box - ImGui::GetStyle().ItemSpacing.x);
-            int index = std::clamp(tuning.style, 0, 3);
-            bool changed = Segmented("style", index, {
+            // The runtimes accept other numbers, but they all look exactly like Cinematic.
+            int index = std::clamp(tuning.style, 0, 2);
+            const bool changed = Segmented("style", index, {
                 {"Default", true, "Style 0."},
                 {"Natural", true, "Style 1."},
-                {"Cinematic", true, "Style 2."},
-                {"Custom", !legacy, legacy ? "310.8 accepts Default, Natural and Cinematic only."
-                                           : "Choose another style number, 3 to 7. Their looks are not documented."}});
-            if (changed) { tuning.style = index == 3 ? (std::max)(tuning.style, 3) : index; }
-            ImGui::SameLine();
-            ImGui::BeginDisabled(tuning.style < 3);
-            int custom = tuning.style < 3 ? 3 : tuning.style;
-            ImGui::SetNextItemWidth(box);
-            if (ImGui::InputInt("##customStyle", &custom, 0, 0, ImGuiInputTextFlags_AutoSelectAll))
-            {
-                tuning.style = std::clamp(custom, 3, 7);
-                changed = true;
-            }
-            ImGui::EndDisabled();
-            DrawSettingsHelp(tuning.style < 3 ? "Choose Custom to enter a style number." : "Style number, 3 to 7.");
+                {"Cinematic", true, "Style 2."}});
+            if (changed) { tuning.style = index; }
+            DrawSettingsHelp("NR look, named as in OptiScaler forks.");
             return changed;
         });
         SettingRow("Intensity", key("Intensity").c_str(), false, unavailable,

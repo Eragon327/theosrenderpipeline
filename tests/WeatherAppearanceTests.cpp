@@ -125,9 +125,9 @@ static void Resolution()
 
     scene = Scene();
     SetChange(settings.presets[0].profile, "Passes", 2);
-    SetChange(settings.presets[0].profile, "Pass1Style", 3);
+    SetChange(settings.presets[0].profile, "Pass1Style", 2);
     const auto layered = Evaluate(settings, scene, base).setup;
-    Require(layered.passes == 2 && layered.tuning.style == 3 && Near(layered.tuning.intensity, 1.2f), "presets layer per setting");
+    Require(layered.passes == 2 && layered.tuning.style == 2 && Near(layered.tuning.intensity, 1.2f), "presets layer per setting");
     Require(Evaluate(settings, scene, base).incoming == "weather.esp + Clear + Exterior", "the applied presets are named most specific first");
     for (auto& preset : settings.presets) { preset.weathers.clear(); }
     SetChange(settings.presets[2].profile, "Pass1Network", 1);
@@ -223,7 +223,7 @@ static void FrameHistory()
     GroupPreset(settings, 3, Look(1.7f, .9f));
     Controller controller; controller.Configure(settings);
     SourceDLSSG::NeuralOptions base; base.enabled = true; base.passes = 2;
-    base.tuning.skinStructureStrength = -1; base.tuning.style = 4;
+    base.tuning.skinStructureStrength = -1; base.tuning.style = 1;
     base.secondPass.linked = false;
     const auto manual = base;
     SourceDLSSG::NeuralHistory history;
@@ -231,7 +231,7 @@ static void FrameHistory()
     auto first = base;
     ApplyFrame(controller, scene, first, 1.0f / 60);
     Require(history.ResetFor(first, true, false), "first automated frame resets");
-    Require(first.tuning.skinStructureStrength == -1 && first.tuning.style == 4, "sentinel and discrete style preserved");
+    Require(first.tuning.skinStructureStrength == -1 && first.tuning.style == 1, "sentinel and discrete style preserved");
     scene.outgoing = scene.incoming;
     scene.incoming = {Normalize({"rain.esp", 0x812}), Group::Rain};
     float lastIntensity = first.tuning.intensity;
@@ -410,14 +410,14 @@ static void PresetPasses()
     Settings styled;
     FindPreset(styled, AddPreset(styled, "Rain"))->groups[3] = true;
     SetChange(styled.presets[0].profile, "Pass2SameAsPass1", 0);
-    SetChange(styled.presets[0].profile, "Pass2Style", 7);
+    SetChange(styled.presets[0].profile, "Pass2Style", 2);
     Controller styledController; styledController.Configure(styled);
     SourceDLSSG::NeuralOptions linked; linked.enabled = true; linked.passes = 2;
-    linked.tuning.style = 3; linked.tuning.intensity = 1.4f;
+    linked.tuning.style = 1; linked.tuning.intensity = 1.4f;
     linked.secondPass.tuning.intensity = .2f; // Stale values kept while linked.
     frame = linked; ApplyFrame(styledController, rain, frame, .016f);
     const auto second = frame.EffectiveSecond();
-    Require(!frame.secondPass.linked && second.tuning.style == 7 && Near(second.tuning.intensity, 1.4f),
+    Require(!frame.secondPass.linked && second.tuning.style == 2 && Near(second.tuning.intensity, 1.4f),
         "unlinking Pass 2 in a preset starts from Base's Pass 1, not stale Pass 2 values");
     frame = linked; ApplyFrame(styledController, clear, frame, .016f);
     Require(frame.secondPass.linked && frame.EffectiveSecond().tuning == frame.tuning, "outside the preset Pass 2 stays linked");
@@ -521,7 +521,7 @@ static void PresetFileOrder()
         "a preset's name is its file name, not a Name line");
     Require(!saved.files[0].second->GetValue("Preset", "Name", nullptr), "preset files do not store a name");
     Require(withPack.presets.size() == 4 && added.name == "Added pack" && added.groups[0] && added.groups[3] &&
-        added.weathers == std::vector<Record>{{"weather.esp", 0xABC}} && FindChange(added.profile, "Pass2Style")->points[0] == 7 &&
+        added.weathers == std::vector<Record>{{"weather.esp", 0xABC}} && FindChange(added.profile, "Pass2Style")->points[0] == 2 &&
         added.file == "Added pack.ini", "preset files from packs load after the saved order; other INI files are ignored");
     auto edited = withPack;
     RemovePreset(edited, added.id);

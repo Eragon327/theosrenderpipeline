@@ -193,16 +193,10 @@ inline bool UndoButton(const char* id)
     draw->PathStroke(colour, 0, stroke);
     return clicked;
 }
-// NR styles by name, as OptiScaler labels 0 to 2; others are custom numbers.
+// NR styles by name, as OptiScaler forks label them. Higher numbers look exactly like Cinematic.
 inline std::string NeuralStyleName(int style)
 {
-    switch (style)
-    {
-    case 0: return "Default";
-    case 1: return "Natural";
-    case 2: return "Cinematic";
-    default: return std::format("Custom {}", style);
-    }
+    return style <= 0 ? "Default" : style == 1 ? "Natural" : "Cinematic";
 }
 // NR network presets: 0 is 310.9.16's small FP8 model, 1 the older model 310.8 also runs.
 inline const char* NeuralNetworkName(int preset) { return preset != 0 ? "Old" : "Small"; }

@@ -32,7 +32,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		value.inputScale = static_cast<float>(ini.GetDoubleValue(section, "NRPass2InputScale", first.inputScale));
 		value.preset = static_cast<int>(ini.GetLongValue(section, "NRPass2Preset", first.preset));
 		auto& t = value.tuning;
-		t.style = static_cast<int>(ini.GetLongValue(section, "NRPass2Style", tuning.style));
+		t.style = std::clamp(static_cast<int>(ini.GetLongValue(section, "NRPass2Style", tuning.style)), 0, 2);
 		t.intensity = static_cast<float>(ini.GetDoubleValue(section, "NRPass2Intensity", tuning.intensity));
 		t.localToneStrength = static_cast<float>(ini.GetDoubleValue(section, "NRPass2LocalTone", tuning.localToneStrength));
 		t.localStructureStrength = static_cast<float>(ini.GetDoubleValue(section, "NRPass2LocalStructure", tuning.localStructureStrength));
