@@ -17,6 +17,11 @@ runtimes retain the license files accompanying their downloads.
   [Intel program-data notice](src/FrameGen/XeFGExtension/portable/XEFG-PROGRAMS-NOTICE.txt).
   Compiled GPU payloads and generated runtime profiles are separate dependency
   inputs; they are not covered solely by the upstream C++ source license.
+  Universal release packages include the built helper, its compiled GPU payload
+  and the Intel XeFG runtime it uses under
+  `SKSE/Plugins/TheosRenderPipeline/Intel/XeFG-Tensor/`, with the upstream
+  license, the Intel program-data notice and the MinHook, NVAPI and Intel XeSS
+  licenses in its `notices` folder.
   https://github.com/dashdogy/MFG-Unlocker
 
 - **ReShade public add-on API** — Patrick Mours, BSD-3-Clause. Unmodified

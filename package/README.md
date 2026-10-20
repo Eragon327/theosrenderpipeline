@@ -1,4 +1,12 @@
-# Theo's Render Pipeline — Universal, 0.4.5
+# Theo's Render Pipeline — Universal, 0.5.0
+
+Version 0.5.0 redesigns the settings menu. Neural Rendering passes are folder
+tabs with object rules inside each pass, short choices are segmented controls,
+and presets are now called weather overrides (their files and settings are
+unchanged). Object rules give each group its own strength, tone and structure in
+each pass; object settings from 0.4.5 are not carried over. Frame generation adds
+VSync Auto/Off/On, XeFG scene change sensitivity and, on NVIDIA, an optional XeFG
+tensor model with flip metering. See CHANGELOG.md.
 
 Version 0.4.5 fixes NR before upscaling when the interface is hidden, checks
 RTX 20/30 driver prerequisites, stops repeated failed FG creation attempts,
@@ -81,7 +89,7 @@ This package includes the full renderer, configuration and sharpening shader.
 It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
-0.4.5 supplies the complete NVIDIA and Intel runtime bundles, including the
+0.5.0 supplies the complete NVIDIA and Intel runtime bundles, including the
 original NR 310.9.16 and the retained older NR runtime. Universal adds the
 compatibility pack and legacy INT8 alternative. In that setup,
 skip the runtime downloads below.
@@ -225,6 +233,11 @@ the same placement, and two passes can substantially increase inference cost. Se
   input scale, DLAA gives both placements the same resolution; changing their
   order alone does not reduce inference resolution.
 - Reflex and GPU measurements are enabled.
+- On NVIDIA, XeFG can use the optional tensor model: Frame generation > Tensor
+  model, then Save as default and restart. It is off by default and falls back to
+  the normal XeFG path when unavailable. Universal installs it in
+  `SKSE/Plugins/TheosRenderPipeline/Intel/XeFG-Tensor/` with its notices. Flip
+  metering compares driver and software timing for that session only.
 - **Advanced → Request loading-screen artwork** defaults on. It asks Skyrim
   to select artwork on eligible cell transitions; startup loading is unchanged.
 
@@ -297,7 +310,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. Combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.4.5 package has not been tested with ReShade.
+development builds; the exact 0.5.0 package has not been tested with ReShade.
 
 MartysMods ReGrade+ (ReShade 6.6 or newer) used to crash the game while TRP
 started ReShade: it prepares itself only in a device event that ReShade does not
