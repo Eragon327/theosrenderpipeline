@@ -217,10 +217,17 @@ struct Segment
     // Green text when not selected, as the current time of day is marked.
     bool now{false};
 };
+// Where a segmented control was drawn this frame, for controls drawn over a segment.
+struct SegmentedLayout
+{
+    int clicked{-1};      // The segment clicked this frame, selected or not.
+    bool combo{false};    // Fell back to a combo; no segment rectangles.
+    ImVec2 lastMin{}, lastMax{};
+};
 // A row of joined buttons for a short, fixed set of options; the selected one is
 // amber. Fills the next item width. When the labels do not fit it falls back to
 // a combo with the same options. Returns true when the selection changes.
-inline bool Segmented(const char* id, int& selected, std::initializer_list<Segment> segments)
+inline bool Segmented(const char* id, int& selected, std::initializer_list<Segment> segments, SegmentedLayout* layout = nullptr)
 {
     const auto& style = ImGui::GetStyle();
     const float width = ImGui::CalcItemWidth();
@@ -235,6 +242,7 @@ inline bool Segmented(const char* id, int& selected, std::initializer_list<Segme
         // Too narrow: the same choice as a combo.
         const auto* current = selected >= 0 && selected < count ? (segments.begin() + selected)->label : "";
         ImGui::SetNextItemWidth(width);
+        if (layout) { layout->combo = true; }
         if (ImGui::BeginCombo("##segments", current))
         {
             int index = 0;
@@ -265,7 +273,14 @@ inline bool Segmented(const char* id, int& selected, std::initializer_list<Segme
         ImGui::SetCursorScreenPos(ImVec2(x, origin.y));
         ImGui::PushID(index);
         ImGui::BeginDisabled(!segment.enabled);
-        if (ImGui::InvisibleButton("##segment", ImVec2(w, height)) && index != selected) { selected = index; changed = true; }
+        // A control drawn over a segment later, such as an edit field, takes its clicks.
+        ImGui::SetNextItemAllowOverlap();
+        if (ImGui::InvisibleButton("##segment", ImVec2(w, height)))
+        {
+            if (layout) { layout->clicked = index; }
+            if (index != selected) { selected = index; changed = true; }
+        }
+        if (layout && index + 1 == count) { layout->lastMin = ImVec2(x, origin.y); layout->lastMax = ImVec2(x + w, origin.y + height); }
         ImGui::EndDisabled();
         const bool hovered = ImGui::IsItemHovered();
         if (segment.reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", segment.reason); }

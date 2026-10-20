@@ -653,33 +653,59 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     if (BeginSettingRows("passLook", passLabel))
     {
         SettingRow("Style", key("Style").c_str(), false, unavailable, [&] {
-            // Named styles as in OptiScaler forks. Custom opens a field for any
-            // other number, kept for runtimes that may add styles.
+            // Named styles as in OptiScaler forks. Custom keeps any other number for
+            // users and for runtimes that may add styles: clicking it edits the
+            // number in place, and it then reads "Custom 7".
             const bool legacy = LegacyNeuralRuntime(view);
-            const bool custom = tuning.style > 2;
-            const float box = Px(56.0f);
-            if (custom) { ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - box - ImGui::GetStyle().ItemSpacing.x); }
+            auto* storage = ImGui::GetStateStorage();
+            const ImGuiID editId = ImGui::GetID("customEdit"), draftId = ImGui::GetID("customDraft");
+            int editing = storage->GetInt(editId, 0); // 0 closed, 1 focus on this draw, 2 open
+            const auto customLabel = tuning.style > 2 ? std::format("Custom {}", tuning.style) : std::string("Custom");
             int index = (std::min)(tuning.style, 3);
+            SegmentedLayout layout;
             bool changed = Segmented("style", index, {
                 {"Default", true, "Style 0."},
                 {"Natural", true, "Style 1."},
                 {"Cinematic", true, "Style 2."},
-                {"Custom", !legacy, legacy ? "310.8 runs styles 0 to 2 only."
-                    : "Type any other style number, 3 to 255. On 310.8 and 310.9.16 every number from 2 up looks "
-                      "exactly like Cinematic; a later NVIDIA runtime may add styles."}});
-            if (changed) { tuning.style = index == 3 ? 3 : index; }
-            if (custom || index == 3)
-            {
-                ImGui::SameLine();
-                int number = (std::max)(tuning.style, 3);
-                ImGui::SetNextItemWidth(box);
-                if (ImGui::InputInt("##customStyle", &number, 0, 0, ImGuiInputTextFlags_AutoSelectAll))
-                {
-                    tuning.style = std::clamp(number, 3, 255);
-                    changed = true;
-                }
-                DrawSettingsHelp("Style number, 3 to 255. On current runtimes these look like Cinematic.");
+                {customLabel.c_str(), !legacy, legacy ? "310.8 runs styles 0 to 2 only."
+                    : "Click to type a style number, 3 to 255. On 310.8 and 310.9.16 every number from 2 up looks "
+                      "exactly like Cinematic; a later NVIDIA runtime may add styles."}}, &layout);
+            if (changed) { tuning.style = index == 3 ? (std::max)(tuning.style, 3) : index; }
+            if (layout.clicked == 3 && !legacy) {
+                editing = 1;
+                storage->SetInt(draftId, (std::max)(tuning.style, 3));
             }
+            if (index != 3) { editing = 0; }
+            if (editing) {
+                // Over the Custom segment, or beside the combo in a narrow menu.
+                if (layout.combo) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(Px(56.0f));
+                } else {
+                    ImGui::SetCursorScreenPos(layout.lastMin);
+                    ImGui::SetNextItemWidth(layout.lastMax.x - layout.lastMin.x);
+                }
+                if (editing == 1) { ImGui::SetKeyboardFocusHere(); editing = 2; }
+                int number = storage->GetInt(draftId, 3);
+                // Coloured as the selected segment it replaces.
+                const ImVec4 selectedFill(0.23f, 0.18f, 0.08f, 1.0f);
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, selectedFill);
+                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, selectedFill);
+                ImGui::PushStyleColor(ImGuiCol_FrameBgActive, selectedFill);
+                ImGui::PushStyleColor(ImGuiCol_Text, kAmber);
+                ImGui::InputInt("##customStyle", &number, 0, 0, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsDecimal);
+                ImGui::PopStyleColor(4);
+                storage->SetInt(draftId, number);
+                DrawSettingsHelp("Style number, 3 to 255. Press Enter or click away to set it.");
+                // Enter or clicking elsewhere sets the number.
+                if (ImGui::IsItemDeactivated()) {
+                    const int value = std::clamp(number, 3, 255);
+                    changed |= value != tuning.style;
+                    tuning.style = value;
+                    editing = 0;
+                }
+            }
+            storage->SetInt(editId, editing);
             return changed;
         });
         SettingRow("Intensity", key("Intensity").c_str(), false, unavailable,
