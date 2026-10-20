@@ -24,6 +24,19 @@ inline PresetDecor*& ActivePresetDecor()
     static PresetDecor* decor{};
     return decor;
 }
-inline constexpr const char* RestartsNRHelp = "Changing this restarts NR briefly. A preset that changes it can hitch "
-                                              "when the weather changes.";
+// While Base is edited, says which weather override replaces a setting now, or
+// returns an empty string when Base's value is the one in use.
+class OverrideNotes
+{
+public:
+    virtual ~OverrideNotes() = default;
+    virtual std::string Note(const char* key) const = 0;
+};
+inline const OverrideNotes*& ActiveOverrideNotes()
+{
+    static const OverrideNotes* notes{};
+    return notes;
+}
+inline constexpr const char* RestartsNRHelp = "Changing this restarts NR briefly. A weather override that changes it "
+                                              "can hitch when the weather changes.";
 }

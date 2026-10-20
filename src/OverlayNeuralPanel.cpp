@@ -143,7 +143,7 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     const float slider = (std::max)(Px(30.0f), (control - check - style.ItemSpacing.x * 3) / 3);
     const bool legacy = LegacyNeuralRuntime(view);
     const bool locked = unavailable || preset || !view.neuralObjectsAvailable;
-    const char* lockedReason = preset ? "Object rules are set in Base; presets do not change them."
+    const char* lockedReason = preset ? "Object rules are set in Base; weather overrides do not change them."
                              : !view.neuralObjectsAvailable ? view.neuralObjectStatus.c_str()
                                                             : "Neural Rendering is unavailable.";
     auto& rules = masks.passes[pass];
@@ -162,7 +162,7 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
         : "Tick a group to override it in this pass. Strength blends this pass's result with its input: 0 keeps "
           "the input, 1 the full result, so Pass 2 at 0 keeps Pass 1's work. Tone and structure replace this "
           "pass's values for the group and pause its automatic skin mask. Rules are independent of the other pass "
-          "and of weather presets. Inference still runs at any strength.");
+          "and of weather overrides. Inference still runs at any strength.");
     ImGui::TableNextColumn();
     const float left = ImGui::GetCursorPosX() + check + style.ItemSpacing.x;
     int column = 0;
@@ -399,7 +399,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         {
             ImGui::SetTooltip("%s", pass == 0 ? "Runs on the scene."
                                               : "Processes Pass 1's result with its own history. Adds GPU time and "
-                                                "memory; presets switch it on and off without restarting NR.");
+                                                "memory; weather overrides switch it on and off without restarting NR.");
         }
         FillRect(draw, x, top, x + tabWidth, bottom + (active ? line : 0.0f),
                  ImGui::GetColorU32(active ? kPassPanel : hovered ? ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered) : kPassBehind));
@@ -1006,7 +1006,12 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
                 DrawNeuralSettings(view, draft, sharpening, sharpness, unavailable);
             });
         }
-        else { DrawSourceNeuralControls(view, settingsDraft.sourceDLSSG, settingsDraft.sharpening, settingsDraft.sharpness, settingsDraft.upscaleType, nrRuntimePresent); }
+        else {
+            DrawBaseSettings(view, [&] {
+                DrawSourceNeuralControls(view, settingsDraft.sourceDLSSG, settingsDraft.sharpening, settingsDraft.sharpness,
+                                         settingsDraft.upscaleType, nrRuntimePresent);
+            });
+        }
         EndSettingsColumns();
     }
     ImGui::EndTabItem();

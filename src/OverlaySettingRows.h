@@ -52,6 +52,9 @@ inline ImU32 ChangedTint() { return ImGui::GetColorU32(ImVec4(kAmber.x, kAmber.y
 // The screen x range of the settings table being drawn, for full-width tints.
 inline float& TableLeft() { static float x{}; return x; }
 inline float& TableRight() { static float x{}; return x; }
+// Rows get a state column while a decor compares them, or while Base shows which
+// settings a weather override replaces.
+inline bool HasStateColumn() { return ActivePresetDecor() || ActiveOverrideNotes(); }
 // Tints the current table row across the whole window, edge to edge. The table's
 // own row background covers its width, under the cells; strips extend it to the
 // window's edges on either side. Call right after TableNextRow.
@@ -130,7 +133,7 @@ inline void Label(const char* label, bool changed, bool restarts)
 inline bool BeginSettingRows(const char* id, float labelWidth)
 {
     const float available = ImGui::GetContentRegionAvail().x;
-    const float state = ActivePresetDecor() ? Rows::StateColumn() : 0;
+    const float state = HasStateColumn() ? Rows::StateColumn() : 0;
     float control = std::clamp(available - labelWidth - state - ImGui::GetStyle().CellPadding.x * 6,
         Px(Rows::MinControl), Px(Rows::MaxControl));
     if (const auto* grid = Rows::ActiveGrid())
@@ -142,10 +145,10 @@ inline bool BeginSettingRows(const char* id, float labelWidth)
     }
     TableLeft() = ImGui::GetCursorScreenPos().x;
     TableRight() = TableLeft() + available;
-    if (!ImGui::BeginTable(id, ActivePresetDecor() ? 3 : 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return false; }
+    if (!ImGui::BeginTable(id, HasStateColumn() ? 3 : 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return false; }
     ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
     ImGui::TableSetupColumn("control", ImGuiTableColumnFlags_WidthFixed, control);
-    if (ActivePresetDecor()) { ImGui::TableSetupColumn("state", ImGuiTableColumnFlags_WidthStretch); }
+    if (HasStateColumn()) { ImGui::TableSetupColumn("state", ImGuiTableColumnFlags_WidthStretch); }
     return true;
 }
 // Whether any of keys is changed by the preset being edited.
@@ -204,6 +207,8 @@ struct Segment
     const char* label;
     bool enabled{true};
     const char* reason{nullptr};
+    // Green text when not selected, as the current time of day is marked.
+    bool now{false};
 };
 // A row of joined buttons for a short, fixed set of options; the selected one is
 // amber. Fills the next item width. When the labels do not fit it falls back to
@@ -267,7 +272,8 @@ inline bool Segmented(const char* id, int& selected, std::initializer_list<Segme
         const auto size = ImGui::CalcTextSize(segment.label);
         // A disabled row already dims everything drawn; a disabled option uses the disabled text colour.
         const auto colour = !segment.enabled ? ImGui::GetColorU32(ImVec4(kMuted.x * 0.7f, kMuted.y * 0.7f, kMuted.z * 0.7f, 1.0f))
-                          : on ? ImGui::GetColorU32(kAmber) : ImGui::GetColorU32(ImGuiCol_Text);
+                          : on ? ImGui::GetColorU32(kAmber) : segment.now ? ImGui::GetColorU32(kSage)
+                          : ImGui::GetColorU32(ImGuiCol_Text);
         draw->AddText(ImVec2(x + (w - size.x) * 0.5f, origin.y + (height - size.y) * 0.5f), colour, segment.label);
         ImGui::PopID();
         x += w;
@@ -281,18 +287,90 @@ inline bool Segmented(const char* id, int& selected, std::initializer_list<Segme
     return changed;
 }
 
-// The state cell for one row: empty, or an undo button when it differs. The
-// tooltip gives the value it restores.
+// A separate on/off button for choices that combine, such as weather types;
+// joined segments are kept for choosing one of several. A selected button is
+// amber; a muted one has greyed text. Returns true when clicked.
+inline bool ToggleButton(const char* label, bool& on, bool muted = false)
+{
+    const auto& style = ImGui::GetStyle();
+    const auto text = ImGui::CalcTextSize(label, nullptr, true);
+    const ImVec2 size(text.x + style.FramePadding.x * 2, ImGui::GetFrameHeight());
+    const bool clicked = ImGui::InvisibleButton(label, size);
+    if (clicked) { on = !on; }
+    const bool hovered = ImGui::IsItemHovered();
+    const auto topLeft = ImGui::GetItemRectMin();
+    const ImVec2 bottomRight(topLeft.x + size.x, topLeft.y + size.y);
+    auto* draw = ImGui::GetWindowDrawList();
+    const auto fill = on ? ImGui::GetColorU32(ImVec4(0.23f, 0.18f, 0.08f, 1.0f))
+                    : hovered ? ImGui::GetColorU32(ImGuiCol_FrameBgHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg);
+    draw->AddRectFilled(topLeft, bottomRight, fill, style.FrameRounding);
+    draw->AddRect(topLeft, bottomRight, on ? ImGui::GetColorU32(kAmberDim) : ImGui::GetColorU32(ImGuiCol_Border), style.FrameRounding);
+    const auto colour = muted ? ImGui::GetColorU32(kMuted) : on ? ImGui::GetColorU32(kAmber) : ImGui::GetColorU32(ImGuiCol_Text);
+    const char* end = label;
+    while (*end && !(end[0] == '#' && end[1] == '#')) { ++end; }
+    draw->AddText(ImVec2(topLeft.x + style.FramePadding.x, topLeft.y + (size.y - text.y) * 0.5f), colour, label, end);
+    return clicked;
+}
+// A row label with help; a dotted underline shows it has a tooltip.
+inline void HintLabel(const char* label, const char* help)
+{
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    const auto topLeft = ImGui::GetItemRectMin(), bottomRight = ImGui::GetItemRectMax();
+    auto* draw = ImGui::GetWindowDrawList();
+    const float dot = (std::max)(1.0f, std::round(Px(1.0f))), y = std::round(bottomRight.y);
+    for (float x = topLeft.x; x + dot <= bottomRight.x; x += dot * 3) {
+        draw->AddRectFilled(ImVec2(x, y), ImVec2(x + dot, y + dot), ImGui::GetColorU32(kMuted));
+    }
+    DrawSettingsHelp(help);
+}
+// A cloud outline filling a square of size, marking a setting a weather override replaces.
+inline void DrawCloud(ImDrawList* draw, ImVec2 min, float size, ImU32 colour)
+{
+    // Three lobes on a flat base in 16-unit space; each arc ends where its circle meets the next.
+    const float unit = size / 16.0f;
+    const ImVec2 origin(min.x, min.y + (size - 8.8f * unit) * 0.5f - 2.2f * unit);
+    const auto at = [&](float x, float y) { return ImVec2(origin.x + x * unit, origin.y + y * unit); };
+    draw->PathLineTo(at(4.0f, 11.0f));
+    draw->PathLineTo(at(12.2f, 11.0f));
+    draw->PathArcTo(at(12.2f, 7.7f), 3.3f * unit, 1.5707964f, -1.8371034f);
+    draw->PathArcTo(at(7.9f, 5.9f), 3.7f * unit, -0.3832812f, -3.1166692f);
+    draw->PathArcTo(at(4.0f, 8.4f), 2.6f * unit, -1.4933539f, -4.7123890f);
+    draw->PathStroke(colour, ImDrawFlags_Closed, (std::max)(1.0f, Px(1.3f)));
+}
+// The state cell for one row: an undo button when it differs from what the decor
+// compares with, a cloud when a weather override replaces it now, or nothing.
 inline void StateCell(std::initializer_list<const char*> keys)
 {
-    auto* decor = ActivePresetDecor();
-    if (!decor) { return; }
+    if (!HasStateColumn()) { return; }
     ImGui::TableNextColumn();
+    auto* decor = ActivePresetDecor();
     std::string base;
     for (const auto* key : keys) {
-        if (key && decor->Changed(key)) { base += std::format("{}{}", base.empty() ? "" : ", ", decor->BaseValue(key)); }
+        if (decor && key && decor->Changed(key)) { base += std::format("{}{}", base.empty() ? "" : ", ", decor->BaseValue(key)); }
     }
-    if (base.empty()) { return; }
+    if (base.empty())
+    {
+        const auto* notes = ActiveOverrideNotes();
+        std::string note;
+        for (const auto* key : keys) {
+            if (!notes || !key) { continue; }
+            if (auto text = notes->Note(key); !text.empty() && note.find(text) == std::string::npos) {
+                note += (note.empty() ? "" : "\n") + text;
+            }
+        }
+        if (note.empty()) { return; }
+        const float size = ImGui::GetFrameHeight();
+        const auto min = ImGui::GetCursorScreenPos();
+        ImGui::PushID(*keys.begin());
+        ImGui::Dummy(ImVec2(size, size));
+        ImGui::PopID();
+        const float icon = std::round(size * 0.72f);
+        DrawCloud(ImGui::GetWindowDrawList(), ImVec2(min.x + (size - icon) * 0.5f, min.y + (size - icon) * 0.5f), icon,
+                  ImGui::GetColorU32(kAmber));
+        DrawSettingsHelp(note.c_str());
+        return;
+    }
     // Rows disable only their label and control, so Reset stays usable.
     ImGui::PushID(*keys.begin());
     if (UndoButton("##reset")) {

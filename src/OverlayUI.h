@@ -72,6 +72,8 @@ private:
     void DrawPresetList(const FrameView& view);
     void DrawPresetEditor(const FrameView& view,
         const std::function<void(TheosRenderPipeline::SourceDLSSG::Preferences&, bool&, float&)>& drawSettings);
+    // Draws Base's settings, marking those the current weather override replaces.
+    void DrawBaseSettings(const FrameView& view, const std::function<void()>& drawSettings);
     void DrawPresetSharpeningStatus(const FrameView& view);
     void DrawHDROutputSettings(const FrameView& view);
     void DrawTextureMemoryPanel(const FrameView& view);
