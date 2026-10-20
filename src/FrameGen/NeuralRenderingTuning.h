@@ -38,7 +38,9 @@ namespace TheosRenderPipeline::NeuralRendering
 		const auto strength = [](float input, float minimum = 0.0f) {
 			return std::isfinite(input) ? std::clamp(input, minimum, 2.0f) : 1.0f;
 		};
-		value.style = std::clamp(value.style, 0, 7);
+		// The runtime takes any style. On 310.8 and 310.9.16 every value from 2
+		// up gives Cinematic's exact output, but a later runtime may add styles.
+		value.style = std::clamp(value.style, 0, 255);
 		value.intensity = strength(value.intensity);
 		value.localToneStrength = strength(value.localToneStrength);
 		value.localStructureStrength = strength(value.localStructureStrength);

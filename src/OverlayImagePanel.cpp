@@ -1,12 +1,8 @@
-#include "CommunityShaderIntegration.h"
 #include "DLSSPreset.h"
-#include "FrameGen/NvidiaHost.h"
-#include "FrameGen/SourceDLSSGBackend.h"
 #include "OverlayFrameView.h"
 #include "OverlayUI.h"
 #include "OverlayUIStyle.h"
-#include "RenderPipeline.h"
-#include "VideoMemoryTelemetry.h"
+#include "OverlaySettingRows.h"
 #include <PCH.h>
 
 using namespace TheosRenderPipeline::Overlay;
@@ -70,16 +66,32 @@ void ApplyTexturePreset(TextureProviderBridge::Settings& a_settings, int a_prese
 }
 } // namespace
 
-void OverlayUI::DrawHDROutputSettings()
+namespace
+{
+float ImageLabelWidth() { return LabelWidth({"Highlight strength", "Match Windows SDR", "Peak brightness", "Render scale"}); }
+}
+
+void OverlayUI::DrawHDROutputSettings(const FrameView& view)
 {
     namespace HDR = TheosRenderPipeline::HDROutput;
     auto& hdr = settingsDraft.sourceDLSSG.hdrOutput;
-    const auto state = TheosRenderPipeline::SourceDLSSG::Backend::Get().HDRState();
-    DrawSettingsHeading("HDR output (experimental)", "on/off: Apply");
-    ImGui::Checkbox("HDR output", &hdr.enabled);
-    DrawSettingsHelp("Expands the finished SDR image (including ENB) to HDR10 and shows the UI at its own "
-                     "brightness. Highlights the preset already clipped cannot be recovered. Requires Windows HDR. "
-                     "The first switch on in a session briefly pauses frame generation.");
+    const auto& state = view.hdr;
+    const float label = ImageLabelWidth();
+    if (BeginSettingRows("hdrSwitch", label))
+    {
+        SettingRow("HDR output", nullptr, false, false, [&] {
+            const bool changed = ImGui::Checkbox("##hdr", &hdr.enabled);
+            DrawSettingsHelp("Expands the finished SDR image (including ENB) to HDR10 and shows the UI at its own "
+                             "brightness. Highlights the preset already clipped cannot be recovered. Requires Windows "
+                             "HDR. The first switch on in a session briefly pauses frame generation.");
+            ImGui::SameLine();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("experimental | Apply");
+            return changed;
+        });
+        ImGui::EndTable();
+    }
+    // What HDR output is doing now.
     if (hdr.enabled != state.requested)
     {
         ImGui::TextColored(kAmber, "Apply to turn HDR output %s", hdr.enabled ? "on" : "off");
@@ -100,53 +112,84 @@ void OverlayUI::DrawHDROutputSettings()
                                 state.gpu.maxUs / 1000.0);
         }
     }
-    ImGui::BeginDisabled(!hdr.enabled);
-    ImGui::Checkbox("Match Windows SDR brightness##hdr", &hdr.matchWindowsSDR);
     const bool windowsKnown = state.windowsSDRWhiteNits >= HDR::kMinimumNits;
-    if (hdr.matchWindowsSDR)
-    {
-        if (windowsKnown) { ImGui::TextDisabled("Paper white and UI: %.0f nits from Windows", state.windowsSDRWhiteNits); }
-        else if (state.requested) { ImGui::TextColored(kAmber, "Windows SDR brightness unavailable; using the values below"); }
-    }
-    DrawSettingsHelp("Uses Windows' SDR content brightness (Settings > Display > HDR) for paper white and UI, "
-                     "so whites match the desktop. Untick to set them here.");
     const bool followsWindows = hdr.matchWindowsSDR && windowsKnown;
     // While following Windows, show the values in use; the manual values stay saved for unticking.
     auto effective = HDR::Effective(hdr, state.windowsSDRWhiteNits);
-    ImGui::BeginDisabled(followsWindows);
-    ImGui::SliderFloat("Paper white##hdr", followsWindows ? &effective.paperWhiteNits : &hdr.paperWhiteNits,
-                       HDR::kMinimumNits, 500.0f, "%.0f nits");
-    DrawSettingsHelp("Brightness of SDR white in the scene. Start near the Windows SDR content brightness.");
-    ImGui::EndDisabled();
-    ImGui::SliderFloat("Peak brightness##hdr", &hdr.peakNits, effective.paperWhiteNits, 4000.0f, "%.0f nits");
-    if (state.displayMaxNits > 0.0f && ImGui::SmallButton("Use display peak##hdr"))
+    const char* off = "Turn HDR output on to adjust it.";
+    if (BeginSettingRows("hdrRows", label))
     {
-        hdr.peakNits = state.displayMaxNits;
+        SettingRow("Match Windows SDR", nullptr, false, !hdr.enabled, [&] {
+            const bool changed = ImGui::Checkbox("##matchWindows", &hdr.matchWindowsSDR);
+            DrawSettingsHelp(!hdr.enabled ? off
+                : "Uses Windows' SDR content brightness (Settings > Display > HDR) for paper white and UI, so whites "
+                  "match the desktop. Untick to set them here.");
+            ImGui::SameLine();
+            ImGui::AlignTextToFramePadding();
+            if (hdr.matchWindowsSDR && windowsKnown) { ImGui::TextDisabled("%.0f nits from Windows", state.windowsSDRWhiteNits); }
+            else if (hdr.matchWindowsSDR && state.requested) { ImGui::TextColored(kAmber, "Windows brightness unavailable; using the values below"); }
+            return changed;
+        });
+        SettingRow("Paper white", nullptr, false, !hdr.enabled || followsWindows, [&] {
+            const bool changed = ImGui::SliderFloat("##paperWhite", followsWindows ? &effective.paperWhiteNits : &hdr.paperWhiteNits,
+                                                    HDR::kMinimumNits, 500.0f, "%.0f nits");
+            DrawSettingsHelp(!hdr.enabled ? off : followsWindows ? "Following Windows' SDR brightness."
+                             : "Brightness of SDR white in the scene. Start near the Windows SDR content brightness.");
+            return changed;
+        });
+        SettingRow("Peak brightness", nullptr, false, !hdr.enabled, [&] {
+            const char* useDisplay = "Display peak";
+            const bool offer = state.displayMaxNits > 0.0f;
+            if (offer)
+            {
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(useDisplay).x -
+                                        ImGui::GetStyle().FramePadding.x * 2 - ImGui::GetStyle().ItemSpacing.x);
+            }
+            bool changed = ImGui::SliderFloat("##peak", &hdr.peakNits, effective.paperWhiteNits, 4000.0f, "%.0f nits");
+            DrawSettingsHelp(!hdr.enabled ? off : "Brightest expanded highlight. Set to your display's peak.");
+            if (offer)
+            {
+                ImGui::SameLine();
+                if (ImGui::Button(useDisplay)) { hdr.peakNits = state.displayMaxNits; changed = true; }
+                DrawSettingsHelp(std::format("Use the {:.0f} nits your display reports.", state.displayMaxNits).c_str());
+            }
+            return changed;
+        });
+        SettingRow("UI brightness", nullptr, false, !hdr.enabled || followsWindows, [&] {
+            const bool changed = ImGui::SliderFloat("##ui", followsWindows ? &effective.uiNits : &hdr.uiNits,
+                                                    HDR::kMinimumNits, 500.0f, "%.0f nits");
+            DrawSettingsHelp(!hdr.enabled ? off : followsWindows ? "Following Windows' SDR brightness."
+                             : "Brightness of the menus and HUD.");
+            return changed;
+        });
+        SettingRow("Highlight strength", nullptr, false, !hdr.enabled, [&] {
+            const bool changed = ImGui::SliderFloat("##highlight", &hdr.highlightStrength, 0.0f, 1.0f, "%.2f");
+            DrawSettingsHelp(!hdr.enabled ? off : "0 keeps the SDR range at paper white; 1 expands the brightest pixels "
+                                                  "to peak brightness.");
+            return changed;
+        });
+        SettingRow("Expansion start", nullptr, false, !hdr.enabled, [&] {
+            const bool changed = ImGui::SliderFloat("##expansion", &hdr.expansionStart, 0.1f, 0.95f, "%.2f");
+            DrawSettingsHelp(!hdr.enabled ? off : "SDR brightness where expansion begins. Higher values boost only the "
+                                                  "brightest areas.");
+            return changed;
+        });
+        SettingRow("Transfer", nullptr, false, !hdr.enabled, [&] {
+            int transfer = static_cast<int>(hdr.transfer) != 0 ? 1 : 0;
+            const bool changed = Segmented("transfer", transfer, {
+                {"Gamma 2.2", true, "Matches most SDR monitors."},
+                {"sRGB", true, "Lifts shadows compared with Gamma 2.2."}});
+            if (changed) { hdr.transfer = static_cast<HDR::Transfer>(transfer); }
+            DrawSettingsHelp(!hdr.enabled ? off : "How the SDR image is decoded before expansion.");
+            return changed;
+        });
+        ImGui::EndTable();
     }
-    DrawSettingsHelp("Brightest expanded highlight. Set to your display's peak.");
-    ImGui::BeginDisabled(followsWindows);
-    ImGui::SliderFloat("UI brightness##hdr", followsWindows ? &effective.uiNits : &hdr.uiNits,
-                       HDR::kMinimumNits, 500.0f, "%.0f nits");
-    ImGui::EndDisabled();
-    ImGui::SliderFloat("Highlight strength##hdr", &hdr.highlightStrength, 0.0f, 1.0f, "%.2f");
-    DrawSettingsHelp("0 keeps the SDR range at paper white; 1 expands the brightest pixels to peak brightness.");
-    ImGui::SliderFloat("Expansion start##hdr", &hdr.expansionStart, 0.1f, 0.95f, "%.2f");
-    DrawSettingsHelp("SDR brightness where expansion begins. Higher values boost only the brightest areas.");
-    const char* transfers[]{"Gamma 2.2", "sRGB"};
-    int transfer = static_cast<int>(hdr.transfer);
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo("##hdrTransfer", &transfer, transfers, 2))
-    {
-        hdr.transfer = static_cast<HDR::Transfer>(transfer);
-    }
-    DrawSettingsHelp("How the SDR image is decoded. Gamma 2.2 matches most SDR monitors; sRGB lifts shadows.");
-    ImGui::EndDisabled();
     hdr = HDR::Sanitize(hdr);
 }
 
 void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
 {
-    auto* host = NvidiaHost::GetSingleton();
     if (!ImGui::BeginTabItem("Image", nullptr,
                              requestedPage == SettingsPage::Image ? ImGuiTabItemFlags_SetSelected : 0))
     {
@@ -159,7 +202,7 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
     }
     DrawImageMeasurements(view);
     NextSettingsColumn(tabCardHeight);
-    if (TheosRenderPipeline::CommunityShaders::Active())
+    if (view.communityShaders)
     {
         DrawSettingsHeading("Controlled by Community Shaders", "");
         ImGui::TextWrapped("Community Shaders controls upscaling, render scale, model preset, sharpening and camera "
@@ -172,65 +215,118 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
     }
     else
     {
-        const auto& switchConfiguration = host->SourceUpscalerSettings();
-        const bool warmSwitch = view.sourceDLSSGActive && (switchConfiguration.Startup().mode == DLSS ||
-            (switchConfiguration.Startup().mode == XeSS && TheosRenderPipeline::SourceDLSSG::Backend::Get().NvidiaServicesReady()));
-        ImGui::TextDisabled(warmSwitch ? "DLSS / XeSS: Apply; render scale: restart" : "Mode / scale: save and restart");
-        if (ImGui::BeginTable("##resolution", 2, ImGuiTableFlags_SizingStretchSame))
+        const bool warmSwitch = view.sourceDLSSGActive && (view.upscalerStartupMode == DLSS ||
+            (view.upscalerStartupMode == XeSS && view.nvidiaServicesReady));
+        const bool xess = settingsDraft.upscaleType == XeSS;
+        const bool native = settingsDraft.upscaleType == DLAA;
+        const float label = ImageLabelWidth();
+        if (BeginSettingRows("upscaling", label))
         {
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted("Mode");
-            const char* modes[]{"DLSS", "DLAA", "XeSS (experimental)"};
-            int mode = settingsDraft.upscaleType == XeSS ? 2 : settingsDraft.upscaleType == DLAA ? 1 : 0;
-            ImGui::SetNextItemWidth(-1);
-            if (ImGui::Combo("##mode", &mode, modes, 3))
             {
-                settingsDraft.upscaleType = mode == 2 ? XeSS : mode == 1 ? DLAA : DLSS;
+                const RestartHelpScope restart(warmSwitch
+                    ? "DLSS and XeSS can switch on Apply.\nDLAA needs Save as default and a restart."
+                    : "Changing the mode needs Save as default and a restart.");
+                SettingRow("Mode", nullptr, true, false, [&] {
+                    int mode = xess ? 2 : native ? 1 : 0;
+                    const bool changed = Segmented("mode", mode, {
+                        {"DLSS", true, "NVIDIA DLSS reconstruction at the render scale below."},
+                        {"DLAA", true, "NVIDIA DLAA at native resolution."},
+                        {"XeSS", true, "Intel XeSS (experimental). After restart it uses Intel's quality resolutions."}});
+                    if (changed) { settingsDraft.upscaleType = mode == 2 ? XeSS : mode == 1 ? DLAA : DLSS; }
+                    return changed;
+                });
             }
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted("Render scale");
-            const char* dlssScales[]{"50% | Performance", "58% | Balanced", "67% | Quality", "33% | Ultra Performance",
-                                 "78% | Ultra Quality"};
-            const char* xessScales[]{"Performance", "Balanced", "Quality", "Ultra Performance", "Ultra Quality"};
-            const bool xess = settingsDraft.upscaleType == XeSS;
-            const auto* scales = xess ? xessScales : dlssScales;
-            const bool native = settingsDraft.upscaleType == DLAA;
-            ImGui::BeginDisabled(native);
-            ImGui::SetNextItemWidth(-1);
-            if (ImGui::BeginCombo("##renderScale",
-                                  native ? "100% | Native" : scales[std::clamp(settingsDraft.qualityLevel, 0, 4)]))
             {
-                for (const int i : {3, 0, 1, 2, 4})
-                {
-                    if (ImGui::Selectable(scales[i], settingsDraft.qualityLevel == i))
+                const RestartHelpScope restart("Changing the render scale needs Save as default and a restart.");
+                SettingRow("Render scale", nullptr, true, native, [&] {
+                    const char* dlssScales[]{"50% | Performance", "58% | Balanced", "67% | Quality", "33% | Ultra Performance",
+                                             "78% | Ultra Quality"};
+                    const char* xessScales[]{"Performance", "Balanced", "Quality", "Ultra Performance", "Ultra Quality"};
+                    const auto* scales = xess ? xessScales : dlssScales;
+                    bool changed = false;
+                    if (ImGui::BeginCombo("##renderScale", native ? "100% | Native" : scales[std::clamp(settingsDraft.qualityLevel, 0, 4)]))
                     {
-                        settingsDraft.qualityLevel = i;
+                        for (const int i : {3, 0, 1, 2, 4})
+                        {
+                            if (ImGui::Selectable(scales[i], settingsDraft.qualityLevel == i) && settingsDraft.qualityLevel != i)
+                            {
+                                settingsDraft.qualityLevel = i;
+                                changed = true;
+                            }
+                        }
+                        ImGui::EndCombo();
                     }
-                }
-                ImGui::EndCombo();
+                    DrawSettingsHelp(native ? "DLAA renders at native resolution." : "Size of the rendered world before upscaling.");
+                    return changed;
+                });
             }
-            ImGui::EndDisabled();
+            SettingRow("Model preset", nullptr, false, xess, [&] {
+                bool changed = false;
+                if (ImGui::BeginCombo("##dlssPreset", TheosRenderPipeline::DLSSPreset::Label(settingsDraft.dlssPreset)))
+                {
+                    for (const auto& entry : TheosRenderPipeline::DLSSPreset::entries)
+                    {
+                        if (ImGui::Selectable(entry.label, entry.value == settingsDraft.dlssPreset) && entry.value != settingsDraft.dlssPreset)
+                        {
+                            settingsDraft.dlssPreset = entry.value;
+                            changed = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                DrawSettingsHelp(xess ? "DLSS and DLAA only."
+                    : std::format("{}\nRequested preset; NVIDIA chooses the actual model. L/M require a supporting runtime.",
+                                  TheosRenderPipeline::DLSSPreset::Description(settingsDraft.dlssPreset)).c_str());
+                return changed;
+            });
+            SettingRow("Auto exposure", nullptr, false, xess, [&] {
+                const bool changed = ImGui::Checkbox("##autoExposure", &settingsDraft.autoExposure);
+                DrawSettingsHelp(xess ? "XeSS preserves the SDR exposure supplied by the game and ENB."
+                                      : "Lets the upscaler estimate exposure.");
+                return changed;
+            });
+            SettingRow("Camera jitter", nullptr, false, false, [&] {
+                const bool changed = ImGui::Checkbox("##jitter", &settingsDraft.enableJitter);
+                DrawSettingsHelp("Sub-pixel camera offsets the upscaler needs to reconstruct detail.");
+                return changed;
+            });
+#if defined(TRP_NO_NEURAL_RENDERING)
+            // Without NR there is no Neural Rendering tab to hold sharpening.
+            SettingRow("Sharpening", nullptr, false, false, [&] {
+                bool changed = ImGui::Checkbox("##sharpening", &settingsDraft.sharpening);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::BeginDisabled(!settingsDraft.sharpening);
+                changed |= ImGui::SliderFloat("##sharpness", &settingsDraft.sharpness, 0, 1, "%.2f");
+                ImGui::EndDisabled();
+                return changed;
+            });
+#else
+            SettingRow("Sharpening", nullptr, false, false, [&] {
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%s | set in Neural Rendering",
+                    settingsDraft.sharpening ? std::format("{:.2f}", settingsDraft.sharpness).c_str() : "Off");
+                DrawSettingsHelp("Sharpening is set in the Neural Rendering tab and applies with or without NR.");
+                return false;
+            });
+#endif
             ImGui::EndTable();
         }
-        DrawSettingsHelp(
-            "Apply switches DLSS/XeSS at the current render size when the SDK accepts it and NVIDIA host services are ready. "
-            "Render scale and DLAA changes require restart. Other startup paths require restart to enter DLSS. "
-            "After restart, XeSS uses Intel's quality resolutions.");
+        // Upscaler state that follows Apply.
         if (view.sourceDLSSGActive)
         {
-            const auto& configuration = host->SourceUpscalerSettings();
-            if (configuration.LiveModeRejected()) {
+            if (view.upscalerLiveModeRejected) {
                 ImGui::TextColored(kAmber, "Live switch unavailable; selected mode requires restart");
             }
-            if (configuration.NeedsRestart())
+            if (view.upscalerNeedsRestart)
             {
                 ImGui::TextColored(kAmber, "Mode/render scale awaiting restart");
             }
-            if (configuration.Failed())
+            if (view.upscalerFailed)
             {
                 ImGui::TextColored(kRust, "Feature update failed; restart required");
             }
-            else if (configuration.NeedsLiveChange())
+            else if (view.upscalerChangeQueued)
             {
                 ImGui::TextDisabled("Feature update queued");
             }
@@ -239,48 +335,9 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
         {
             ImGui::TextColored(kRust, "NVIDIA host is unavailable.");
         }
-
-        ImGui::Separator();
-        ImGui::BeginDisabled(settingsDraft.upscaleType == XeSS);
-        ImGui::TextUnformatted("DLSS model preset");
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::BeginCombo("##dlssPreset", TheosRenderPipeline::DLSSPreset::Label(settingsDraft.dlssPreset)))
-        {
-            for (const auto& entry : TheosRenderPipeline::DLSSPreset::entries)
-            {
-                if (ImGui::Selectable(entry.label, entry.value == settingsDraft.dlssPreset))
-                {
-                    settingsDraft.dlssPreset = entry.value;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        DrawSettingsHelp(
-            std::format("{}\nRequested preset; NVIDIA chooses the actual model. L/M require a supporting runtime.",
-                        TheosRenderPipeline::DLSSPreset::Description(settingsDraft.dlssPreset))
-                .c_str());
-        ImGui::EndDisabled();
+        DrawPresetSharpeningStatus(view);
         ImGui::Spacing();
-#if defined(TRP_NO_NEURAL_RENDERING)
-        // Without NR there is no Neural Rendering tab to hold sharpening.
-        ImGui::Checkbox("Sharpening", &settingsDraft.sharpening);
-        ImGui::BeginDisabled(!settingsDraft.sharpening);
-        ImGui::SliderFloat("Strength##sharpness", &settingsDraft.sharpness, 0, 1, "%.2f");
-        ImGui::EndDisabled();
-#else
-        DrawSettingsValue("Sharpening", settingsDraft.sharpening ? std::format("{:.2f}", settingsDraft.sharpness).c_str() : "Off");
-        DrawSettingsHelp("Set in the Neural Rendering tab. Applies with or without NR.");
-#endif
-        DrawPresetSharpeningStatus();
-        ImGui::Separator();
-
-        ImGui::BeginDisabled(settingsDraft.upscaleType == XeSS);
-        ImGui::Checkbox("Auto exposure", &settingsDraft.autoExposure);
-        ImGui::EndDisabled();
-        if (settingsDraft.upscaleType == XeSS) { DrawSettingsHelp("XeSS preserves the SDR exposure supplied by the game and ENB."); }
-        ImGui::Checkbox("Camera jitter", &settingsDraft.enableJitter);
-        ImGui::Separator();
-        DrawHDROutputSettings();
+        DrawHDROutputSettings(view);
 
         if (showDeveloperControls)
         {

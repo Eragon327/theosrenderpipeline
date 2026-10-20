@@ -1,10 +1,6 @@
 #include "OverlayUI.h"
 #include "OverlayUIStyle.h"
 #include "OverlayFrameView.h"
-#include "PerformanceTuning.h"
-#include "FrameTrace.h"
-#include "CommunityShaderIntegration.h"
-#include "FrameGen/NvidiaHost.h"
 #include <cstdio>
 #include <PCH.h>
 
@@ -67,17 +63,26 @@ void OverlayUI::DrawFrameMeasurements(const FrameView& view, float columnHeight)
     ImGui::Spacing();
 }
 
-void OverlayUI::DrawStageMeasurements(SettingsPage page)
+namespace
 {
-    const auto* performance = PerformanceTuning::GetSingleton();
-    const auto& timings = performance->GetTimingSnapshot();
+// A timing for the menu: the shared formatter's value with its unit.
+std::string MenuMilliseconds(float value, bool available)
+{
+    auto text = TheosRenderPipeline::Telemetry::Milliseconds(value, available);
+    return text == "unavailable" ? text : text + " ms";
+}
+}
+
+void OverlayUI::DrawStageMeasurements(const FrameView& view, SettingsPage page)
+{
+    const auto& timings = view.timings;
     using Stage12 = PerformanceTuning::D3D12Stage;
     // D3D12 passes appear only while they run: NR placement and the frame
     // generation provider decide which lists exist.
     auto row12 = [&](const char* name, Stage12 stage, const char* help = nullptr) {
         const auto i = static_cast<std::size_t>(stage);
-        if (!performance->TimingEnabled() || !timings.d3d12Available[i]) { return false; }
-        DrawSettingsValue(name, TheosRenderPipeline::Telemetry::Milliseconds(timings.d3d12Ms[i], true).c_str());
+        if (!view.timingEnabled || !timings.d3d12Available[i]) { return false; }
+        DrawSettingsValue(name, MenuMilliseconds(timings.d3d12Ms[i], true).c_str());
         if (help) { DrawSettingsHelp(help); }
         return true;
     };
@@ -89,24 +94,24 @@ void OverlayUI::DrawStageMeasurements(SettingsPage page)
         using Stage11 = PerformanceTuning::D3D11Stage;
         const auto roundTrip = static_cast<std::size_t>(Stage11::kNeuralEarlyRoundTrip);
         const auto earlyList = static_cast<std::size_t>(Stage12::kEarlyNeuralList);
-        if (performance->TimingEnabled() && timings.d3d11Available[roundTrip] && timings.d3d12Available[earlyList])
+        if (view.timingEnabled && timings.d3d11Available[roundTrip] && timings.d3d12Available[earlyList])
         {
             const auto handoff = (std::max)(0.0f, timings.d3d11Ms[roundTrip] - timings.d3d12Ms[earlyList]);
             DrawSettingsValue("D3D11/D3D12 handoff",
-                              TheosRenderPipeline::Telemetry::Milliseconds(handoff, true).c_str());
+                              MenuMilliseconds(handoff, true).c_str());
             DrawSettingsHelp("Before-DLSS NR only: the input and result copies plus the waits between the two APIs.");
         }
         return;
     }
-    if (performance->TimingEnabled() && performance->GetQueryDiagnostics().quarantined)
+    if (view.timingEnabled && view.timingQuarantined)
     {
         ImGui::TextDisabled("GPU timings unavailable (query failure)");
         DrawSettingsHelp("GPU timing queries failed. Restarting the game retries timings; rendering continues.");
         return;
     }
-    if (!performance->TimingEnabled() || !timings.lastCompletedGeneration)
+    if (!view.timingEnabled || !timings.lastCompletedGeneration)
     {
-        ImGui::TextDisabled("%s", performance->TimingEnabled() ? "GPU timings: waiting" : "GPU timings: off");
+        ImGui::TextDisabled("%s", view.timingEnabled ? "GPU timings: waiting" : "GPU timings: off");
         DrawSettingsHelp("Enable stage timings in Advanced, then Apply.");
         return;
     }
@@ -115,13 +120,13 @@ void OverlayUI::DrawStageMeasurements(SettingsPage page)
         const auto i = static_cast<std::size_t>(stage);
         if (timings.d3d11ScopeInvalid[i]) { DrawSettingsValue(name, "invalid scope"); return; }
         DrawSettingsValue(
-            name, TheosRenderPipeline::Telemetry::Milliseconds(timings.d3d11Ms[i], timings.d3d11Available[i]).c_str());
+            name, MenuMilliseconds(timings.d3d11Ms[i], timings.d3d11Available[i]).c_str());
     };
     if (page == SettingsPage::Image)
     {
-        if (!TheosRenderPipeline::CommunityShaders::Active())
+        if (!view.communityShaders)
         {
-            row(NvidiaHost::GetSingleton()->XeSSActive() ? "XeSS + transfers/sharpening" : "DLSS", Stage::kDLSS);
+            row(view.xessActive ? "XeSS + transfers/sharpening" : "DLSS", Stage::kDLSS);
             row("Sharpening", Stage::kRCAS);
         }
 
@@ -189,13 +194,13 @@ void OverlayUI::DrawOutputOptimizations()
     DrawSettingsHelp("On by default. Avoids the DLSS copy when sharpening is off; does not disable sharpening. Apply required.");
 }
 
-void OverlayUI::DrawMeasurementControls()
+void OverlayUI::DrawMeasurementControls(const FrameView& view)
 {
     ImGui::Checkbox("Stage timings", &settingsDraft.enableGPUTimings);
     DrawSettingsHelp("Non-blocking GPU/CPU measurements; Apply required.");
     ImGui::Checkbox("Record frame trace", &settingsDraft.enableFrameTrace);
     DrawSettingsHelp("Writes a .sfgtrace sidecar on a background thread; Apply required.");
-    const auto trace = FrameTrace::GetSingleton()->GetStatus();
+    const auto& trace = view.trace;
     if (trace.enabled || trace.written || trace.dropped || trace.writerFailed)
     {
         ImGui::TextWrapped("Trace: %s | written %llu | dropped %llu",
@@ -208,16 +213,15 @@ void OverlayUI::DrawMeasurementControls()
     }
     if (showDeveloperControls)
     {
-        auto* performance = PerformanceTuning::GetSingleton();
         if (ImGui::Button("Reset session fallbacks"))
         {
-            performance->ResetSessionFallbacks();
+            ResetSessionFallbacks();
             actionMessage = "Performance fallback latches reset.";
             actionMessageIsError = false;
         }
         if (ImGui::Button("Clear timing window"))
         {
-            performance->ResetTimingWindow();
+            ClearTimingWindow();
             actionMessage = "Rolling timing window cleared.";
             actionMessageIsError = false;
         }

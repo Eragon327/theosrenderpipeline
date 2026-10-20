@@ -14,9 +14,10 @@ Rendering (NR), and native-resolution menus and HUD. Current version:
 - NR before or after DLSS/DLAA, one or two independently configured passes,
   input scaling and tuning, in both editions. NR defaults off.
 - Optional peripheral compression and combined NR preparation, both off by default.
-- Optional weather and time presets for NR appearance settings and sharpening, with smooth
-  transitions and separate interior settings. Presets are shareable files. See
-  [presets](package/APPEARANCE-PROFILES.md).
+- Optional weather overrides for NR appearance settings and sharpening: change
+  settings for chosen weathers and places, with smooth transitions and optional
+  values by time of day. Overrides are shareable files. See
+  [weather overrides](package/APPEARANCE-PROFILES.md).
 - ReShade source-frame effects, explicit depth and placement controls.
 - Native UI composition, inventory/spell previews, loading artwork and external
   ImGui integration, with live GPU measurements beside the settings.
@@ -41,7 +42,7 @@ options default off; their effect on responsiveness depends on the workload.
 
 ### Experimental NR object masks
 
-The NR tab can treat first-person arms/weapons, player equipment, other humanoids and creatures independently in each NR pass. Object rules are global rather than weather/time preset overrides and are saved with the ordinary NR preferences. Classification is captured only while a running pass overrides a group or the mask preview is on, and it never skips inference.
+The NR tab can treat first-person arms/weapons, player equipment, other humanoids and creatures independently in each NR pass. Object rules belong to Base rather than to weather overrides and are saved with the ordinary NR preferences. Classification is captured only while a running pass overrides a group or the mask preview is on, and it never skips inference.
 
 Optional group overrides also set tone and structure independently inside each NR pass. Unselected or unavailable classification uses that pass's ordinary intensity/tone/structure values. Tone and structure overrides require a reconstruction NR runtime; legacy NR retains per-pass strength. A pass with active provider controls pauses automatic skin masking for that pass while retaining the saved skin setting. Pass-two object overrides are independent of its “same settings” toggle.
 
@@ -268,6 +269,10 @@ use the installation guides for configuration, shaders and required runtimes.
 The Intel fixtures in `tests/xefg` are built and run explicitly against
 identified Intel and NVIDIA runtime directories. Their output counts do not
 establish physical display cadence.
+
+The same build includes `TRPOverlayPreview`, which draws the in-game menu
+offline from sample renderer states and writes PNGs for reviewing menu
+changes without launching Skyrim. See [the preview guide](tools/OverlayPreview/README.md).
 
 The optional Universal XeFG tensor helper has a separate, opt-in
 [source build](src/FrameGen/XeFGExtension/README.md). Its maintained C++ is in

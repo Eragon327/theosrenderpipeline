@@ -110,7 +110,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.neuralCombat.weaponsDrawn = ini.GetBoolValue(section, "NROnePassWeaponsDrawn", false);
 		value.neuralCombat.recoverySeconds = static_cast<float>(ini.GetDoubleValue(section, "NRPassRecoverySeconds", 5));
 		auto& nr = value.neuralTuning;
-		nr.style = static_cast<int>(ini.GetLongValue(section, "NRStyle", 0));
+		nr.style = std::clamp(static_cast<int>(ini.GetLongValue(section, "NRStyle", 0)), 0, 255);
 		nr.intensity = static_cast<float>(ini.GetDoubleValue(section, "NRIntensity", 1));
 		nr.localToneStrength = static_cast<float>(ini.GetDoubleValue(section, "NRLocalTone", 1));
 		nr.localStructureStrength = static_cast<float>(ini.GetDoubleValue(section, "NRLocalStructure", 1));

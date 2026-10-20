@@ -20,6 +20,9 @@ namespace TheosRenderPipeline::NeuralObjects
         NeuralRendering::ObjectCapture capture;
         std::array<bool,4> loggedGroups{};
         std::atomic<const char*> status{"Object capture is unavailable on this Skyrim version"};
+        // Set when installing was refused, so the rows grey out instead of retrying.
+        std::atomic<bool> declined{};
+        bool SupportedVersion() { return REL::Module::get().version() == REL::Version{1,6,1170,0}; }
         // Where draws leave the capture path, summarized in the log while masks are on.
         using Skip = NeuralRendering::ObjectCapture::Skip;
         struct Counters
@@ -92,7 +95,7 @@ namespace TheosRenderPipeline::NeuralObjects
     }
     void Install()
     {
-        if (original || REL::Module::get().version() != REL::Version{1,6,1170,0}) { return; }
+        if (original || !SupportedVersion()) { return; }
         const auto site = REL::ID(107644).address();
         // Verified in the retained, statically unpacked executable. SSE Engine
         // Fixes already replaces this entry with a jump out of the image; chain
@@ -103,6 +106,7 @@ namespace TheosRenderPipeline::NeuralObjects
         if (!K32GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(nullptr), &image, sizeof(image)) ||
             !HookSafety::Entry(site, prefix, REL::Module::get().base(), image.SizeOfImage)) {
             status.store("Object capture hook conflicts with another patch; normal NR retained");
+            declined.store(true);
             logger::warn("[NR Objects] draw-helper entry is neither the original code nor another plugin's jump; capture unavailable");
             return;
         }
@@ -118,6 +122,7 @@ namespace TheosRenderPipeline::NeuralObjects
         }
         original = reinterpret_cast<DrawPass>(HookSafety::InstallEntryDetour(site, reinterpret_cast<std::uintptr_t>(&Pass)));
         status.store(original ? "Experimental opaque-object capture ready" : "Object capture hook unavailable; normal NR retained");
+        declined.store(!original);
     }
     void Configure(bool value)
     {
@@ -176,5 +181,11 @@ namespace TheosRenderPipeline::NeuralObjects
     {
         return enabled.load(std::memory_order_relaxed) ? capture.Current(NvidiaHost::GetSingleton()->PresentCount()) : nullptr;
     }
-    const char* Status() { return status.load(); }
+    const char* Status()
+    {
+        // The hook installs only when a group is first switched on.
+        if (!original && !declined.load() && SupportedVersion()) { return "Object capture starts when you switch a group on"; }
+        return status.load();
+    }
+    bool Available() { return original != nullptr || (SupportedVersion() && !declined.load()); }
 }

@@ -131,6 +131,11 @@ int main()
 	old.neuralSecondPass.tuning = { 7, .25f, 1.5f, .3f, -1, true, true };
 	StorePreferences(ini, old);
 	Require(LoadPreferences(ini) == old, "all pass 2 settings round trip independently");
+	// Any custom style a runtime might accept survives; out-of-range values clamp.
+	ini.SetLongValue("SourceDLSSG", "NRStyle", 200);
+	ini.SetLongValue("SourceDLSSG", "NRPass2Style", -4);
+	const auto custom = LoadPreferences(ini);
+	Require(custom.neuralTuning.style == 200 && custom.neuralSecondPass.tuning.style == 0, "custom styles load within 0 to 255");
 	old.neuralSecondPass.linked = true;
 	StorePreferences(ini, old);
 	auto linked = LoadPreferences(ini);

@@ -2,9 +2,8 @@
 #include "OverlayUI.h"
 #include "OverlayUIStyle.h"
 #include "OverlaySettingRows.h"
-#include "WeatherAppearanceRuntime.h"
+#include "OverlayFrameView.h"
 #include "WeatherAppearanceINI.h"
-#include "CommunityShaderIntegration.h"
 #include <SimpleIni.h>
 #include <cstdio>
 #include <optional>
@@ -17,7 +16,7 @@ namespace
 {
 // presetSelected uses 0 for Base; stored preset IDs are 1..0x7FFFFFFF.
 constexpr std::uint32_t BaseRow = 0;
-constexpr std::array<const char*, 6> GroupLabels{"Outdoors", "Clear", "Cloudy", "Rain", "Snow", "Interior"};
+constexpr std::array<const char*, 6> GroupLabels{"Anywhere outside", "Clear", "Cloudy", "Rain", "Snow", "Interiors"};
 
 Appearance::Setup DraftSetup(const RendererSettingsDraft& draft)
 {
@@ -92,7 +91,7 @@ std::string Summary(const Appearance::NamedProfile& preset)
     return preset.profile.enabled ? text : "Off | " + text;
 }
 void Note(const char* text) { ImGui::TextDisabled("%s", text); }
-const char* ShownName(const Appearance::NamedProfile& preset) { return preset.name.empty() ? "Unnamed preset" : preset.name.c_str(); }
+const char* ShownName(const Appearance::NamedProfile& preset) { return preset.name.empty() ? "Unnamed override" : preset.name.c_str(); }
 void Tooltip(const char* text)
 {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", text); }
@@ -106,8 +105,8 @@ std::string FieldValue(const Appearance::Field& field, const Appearance::Setup& 
     if (key == "Passes") { return value == 2 ? "two passes" : "one pass"; }
     if (key == "Pass2SameAsPass1") { return value != 0 ? "follows Pass 1" : "own settings"; }
     if (key == "ReconstructionMethod") { return value == 2 ? "Ratio" : value == 1 ? "Residual" : "Auto"; }
-    if (key.ends_with("Network")) { return value != 0 ? "Shipping" : "Default"; }
-    if (key.ends_with("Style")) { return std::format("Style {}", static_cast<int>(value)); }
+    if (key.ends_with("Network")) { return NeuralNetworkName(value != 0 ? 1 : 0); }
+    if (key.ends_with("Style")) { return NeuralStyleName(static_cast<int>(value)); }
     if (key.ends_with("InputScale")) { return std::format("{:.1f}%", value * 100); }
     if (key == "ReturnDelay") { return std::format("{:.1f} s", value); }
     if (field.integral && field.low == 0 && field.high == 1) { return value != 0 ? "on" : "off"; }
@@ -186,17 +185,17 @@ bool OverlayUI::PresetEditorSelected() const
     return presetSelected != BaseRow && Appearance::FindPreset(settingsDraft.appearance, presetSelected);
 }
 
-void OverlayUI::DrawPresetList()
+void OverlayUI::DrawPresetList(const FrameView& view)
 {
-    auto& runtime = Appearance::Runtime::Get();
-    const auto state = runtime.State();
-    const auto catalogue = runtime.Catalogue();
-    const bool cs = CommunityShaders::Active();
+    const auto& state = view.appearance;
+    const auto& catalogue = view.weatherCatalogue;
+    const bool cs = view.communityShaders;
     auto& settings = settingsDraft.appearance;
     const auto& scene = state.context;
 
-    DrawSettingsHeading("Presets");
-    Note("Presets change Neural Rendering settings for the weather or places you choose. Everywhere else uses Base.");
+    DrawSettingsHeading("Weather overrides");
+    Note("Change settings for the weathers and places you choose, with different values by time of day if you want. "
+         "Everywhere else uses Base.");
     if (scene.valid && !settings.presets.empty()) {
         const auto applied = state.paused ? std::string("Base (paused)") : state.result.incoming;
         const auto place = scene.interior ? std::string("Interior") : ShortWeatherLabel(scene.incoming.record, *catalogue);
@@ -224,11 +223,11 @@ void OverlayUI::DrawPresetList()
     }
     if (!settings.presets.empty()) {
         bool paused = state.paused;
-        if (ImGui::Checkbox("Pause presets", &paused)) { runtime.Pause(paused); }
+        if (ImGui::Checkbox("Pause overrides", &paused)) { PausePresets(paused); }
         Tooltip("Uses Base right away, until you untick this or restart the game. Not saved.");
     }
 
-    // Mark the presets the edited configuration would select for the current weather.
+    // Mark the overrides the edited configuration would select for the current weather.
     Appearance::Selection now;
     if (scene.valid && Appearance::UsesPresets(settings) && !state.paused) {
         now = Appearance::Select(Appearance::ResolveClaims(settings), scene.incoming, scene.interior);
@@ -237,7 +236,7 @@ void OverlayUI::DrawPresetList()
     if (!PresetEditorSelected()) { presetSelected = BaseRow; }
 
     ImGui::Spacing();
-    if (PresetRow(-1, "Base", "Your Neural Rendering settings", presetSelected == BaseRow, baseNow, false)) { presetSelected = BaseRow; }
+    if (PresetRow(-1, "Base", "Your settings, used everywhere else", presetSelected == BaseRow, baseNow, false)) { presetSelected = BaseRow; }
     const float rowHeight = ImGui::GetTextLineHeight() * 2 + ImGui::GetStyle().FramePadding.y * 3;
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(settings.presets.size()), rowHeight + ImGui::GetStyle().ItemSpacing.y);
@@ -250,8 +249,8 @@ void OverlayUI::DrawPresetList()
 
     const bool full = settings.presets.size() >= Appearance::MaxPresets;
     ImGui::BeginDisabled(full);
-    if (ImGui::Button("Create new preset")) {
-        if (const auto id = Appearance::AddPreset(settings, settings.presets.empty() ? "My first preset" : "New preset")) { presetSelected = id; }
+    if (ImGui::Button("New override")) {
+        if (const auto id = Appearance::AddPreset(settings, settings.presets.empty() ? "My first override" : "New override")) { presetSelected = id; }
     }
     Tooltip("Starts with no changes. Choose when it applies, then change the settings you want different from Base.");
     if (const auto* selected = Appearance::FindPreset(settings, presetSelected)) {
@@ -260,7 +259,7 @@ void OverlayUI::DrawPresetList()
             const auto copy = *selected;
             if (const auto id = Appearance::AddPreset(settings, copy.name + " copy", copy.profile)) { presetSelected = id; }
         }
-        Tooltip("Copies the selected preset's changes. Choose when the copy applies.");
+        Tooltip("Copies the selected override's changes. Choose when the copy applies.");
     }
     ImGui::EndDisabled();
     if (Appearance::FindPreset(settings, presetSelected)) {
@@ -273,15 +272,15 @@ void OverlayUI::DrawPresetList()
         ImGui::BeginDisabled(index + 1 == static_cast<std::ptrdiff_t>(settings.presets.size()));
         if (ImGui::Button("Move down")) { Appearance::MovePreset(settings, presetSelected, 1); }
         ImGui::EndDisabled();
-        Tooltip("When two presets use the same weather, the higher one wins.");
+        Tooltip("When two overrides use the same weather, the higher one wins.");
     }
     ImGui::SameLine();
     if (ImGui::Button("Timing...")) { ImGui::OpenPopup("presetTiming"); }
-    Tooltip("When each time of day starts, and how smoothly presets change.");
+    Tooltip("When each time of day starts, and how smoothly overrides change.");
     if (ImGui::BeginPopup("presetTiming")) {
         ImGui::PushItemWidth(Px(220.0f));
         ImGui::SliderFloat("Transition smoothing (seconds)", &settings.smoothingSeconds, 0, 10, "%.1f");
-        ImGui::TextDisabled("Softens changes between presets. Zero follows weather and time directly.");
+        ImGui::TextDisabled("Softens changes between overrides. Zero follows weather and time directly.");
         ImGui::Spacing();
         ImGui::TextUnformatted("Time of day starts (game hours)");
         for (std::size_t i = 0; i < Appearance::Times.size(); ++i) { ImGui::InputFloat(Appearance::Times[i], &settings.hours[i], .25f, 1, "%.2f"); }
@@ -299,17 +298,17 @@ void OverlayUI::DrawPresetList()
         }
         Tooltip("Uses ENB's Night, Sunrise, Day and Sunset markers, plus Sunrise minus DawnDuration and Sunset plus DuskDuration. "
             "It does not reproduce ENB's internal phase weights or change ENB settings.");
-        ImGui::TextDisabled("Times must increase from Night to Dusk. Presets blend between neighbouring times.");
+        ImGui::TextDisabled("Times must increase from Night to Dusk. Overrides blend between neighbouring times.");
         ImGui::EndPopup();
     }
     settings.enabled = Appearance::UsesPresets(settings);
 }
 
-void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferences&, bool&, float&)>& drawSettings)
+void OverlayUI::DrawPresetEditor(const FrameView& view,
+    const std::function<void(SourceDLSSG::Preferences&, bool&, float&)>& drawSettings)
 {
-    auto& runtime = Appearance::Runtime::Get();
-    const auto state = runtime.State();
-    const auto catalogue = runtime.Catalogue();
+    const auto& state = view.appearance;
+    const auto& catalogue = view.weatherCatalogue;
     auto& settings = settingsDraft.appearance;
     const auto& scene = state.context;
     auto found = std::ranges::find_if(settings.presets, [&](const auto& item) { return item.id == presetSelected; });
@@ -330,8 +329,9 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
         Flow flow;
         const auto changes = profile.changes.size();
         flow.Text(changes ? std::format("{} change{}", changes, changes == 1 ? "" : "s").c_str() : "No changes yet");
-        flow.Checkbox("Use this preset", &profile.enabled);
-        Tooltip("Unticked presets keep their settings but are ignored.");
+        Tooltip("Changed settings are amber. Everything else follows Base, including later Base edits.");
+        flow.Checkbox("Use", &profile.enabled);
+        Tooltip("Unticked overrides keep their settings but are ignored.");
         ImGui::BeginDisabled(profile.changes.empty());
         if (flow.Button("Reset all to Base")) { profile.changes.clear(); }
         ImGui::EndDisabled();
@@ -340,92 +340,134 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
         ImGui::EndDisabled();
         Tooltip("Adds a copy with every setting stored, so it looks the same with anyone's Base. Share its file.");
     }
-    Note("Changed settings are amber. Everything else follows Base, including later Base edits.");
-    if (BeginSettingRows("presetName", LabelWidth({"One pass while weapons are drawn", "Input colour is linear HDR"}))) {
+    const auto claims = Appearance::ResolveClaims(settings);
+    // A claim a higher override already uses is shown muted with who uses it.
+    const auto shadowedBy = [&](const Appearance::NamedProfile* owner) {
+        return owner && owner != &preset ? owner : nullptr;
+    };
+    // One checkbox per weather type or place, flowing within its cell; any number can be ticked.
+    const auto groupToggle = [&](Flow& flow, Appearance::Group value) {
+        const auto i = static_cast<std::size_t>(value);
+        const auto* owner = shadowedBy(claims.groups[i]);
+        // Decided once: the checkbox may change the value between push and pop.
+        const bool muted = owner && preset.groups[i];
+        if (muted) { ImGui::PushStyleColor(ImGuiCol_Text, kMuted); }
+        flow.Checkbox(GroupLabels[i], &preset.groups[i]);
+        if (muted) { ImGui::PopStyleColor(); }
+        if (owner) {
+            Tooltip(std::format("\"{}\" uses this{}. The higher override in the list wins; move this one up to use it here.",
+                ShownName(*owner), preset.groups[i] ? " instead" : "").c_str());
+        } else if (value == Appearance::Group::Exterior) {
+            Tooltip("Any outdoor weather not covered by a more specific override.");
+        }
+    };
+    std::optional<Appearance::Record> unassign;
+    bool openPicker = false;
+    const auto grid = NeuralRowsGrid();
+    const GridScope gridScope(grid);
+    if (BeginSettingRows("overrideWhen", LabelWidth({"Scene normalization"}))) {
         SettingRow("Name", nullptr, false, false, [&] {
             char name[81]{}; std::snprintf(name, sizeof(name), "%s", preset.name.c_str());
-            // The name is the preset's file name, so characters files cannot use are not typed.
+            // The name is the override's file name, so characters files cannot use are not typed.
             const bool changed = ImGui::InputText("##v", name, sizeof(name), ImGuiInputTextFlags_CallbackCharFilter,
                 [](ImGuiInputTextCallbackData* data) { return Appearance::FileNameCharacter(data->EventChar) ? 0 : 1; });
             if (changed) { preset.name = name; }
             return changed;
         });
-        ImGui::EndTable();
-    }
 
-    DrawSettingsHeading("Use when");
-    const auto claims = Appearance::ResolveClaims(settings);
-    // A claim a higher preset already uses is shown muted with who uses it.
-    const auto shadowedBy = [&](const Appearance::NamedProfile* owner) {
-        return owner && owner != &preset ? owner : nullptr;
-    };
-    {
-        Flow flow;
-        for (const auto value : {Appearance::Group::Clear, Appearance::Group::Cloudy, Appearance::Group::Rain,
-                 Appearance::Group::Snow, Appearance::Group::Interior, Appearance::Group::Exterior}) {
-            const auto i = static_cast<std::size_t>(value);
-            const auto* owner = shadowedBy(claims.groups[i]);
-            if (owner && preset.groups[i]) { ImGui::PushStyleColor(ImGuiCol_Text, kMuted); }
-            flow.Checkbox(GroupLabels[i], &preset.groups[i]);
-            if (owner && preset.groups[i]) { ImGui::PopStyleColor(); }
-            if (owner) {
-                Tooltip(std::format("\"{}\" uses this{}. The higher preset in the list wins; move this one up to use it here.",
-                    ShownName(*owner), preset.groups[i] ? " instead" : "").c_str());
-            } else if (value == Appearance::Group::Exterior) {
-                Tooltip("Any outdoor weather not covered by a more specific preset.");
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        HintLabel("Weathers", "An exact weather wins over a weather type, which wins over Anywhere outside. If two "
+                              "overrides share one, the higher in the list wins.");
+        ImGui::TableNextColumn();
+        {
+            Flow flow;
+            for (std::size_t i = 0; i < preset.weathers.size(); ++i) {
+                const auto& record = preset.weathers[i];
+                const bool loaded = FindWeather(record, *catalogue);
+                const auto* owner = shadowedBy(Appearance::WeatherOwner(claims, record));
+                const auto label = std::format("{}  x##chip{}", ShortWeatherLabel(record, *catalogue), i);
+                flow.Next(ImGui::CalcTextSize(label.c_str(), nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2);
+                if (Chip(label.c_str(), !loaded || owner)) { unassign = record; }
+                Tooltip(std::format("{}{}{}\nClick to remove.", WeatherLabel(record, *catalogue),
+                    loaded ? "" : "\nNot loaded this session; kept for when its plugin returns.",
+                    owner ? std::format("\n\"{}\" uses this instead; it is higher in the list.", ShownName(*owner)) : std::string()).c_str());
+            }
+            const bool currentHere = Appearance::HasWeather(preset, scene.incoming.record);
+            ImGui::BeginDisabled(!scene.valid || scene.interior || !Appearance::Valid(scene.incoming.record) || currentHere);
+            if (flow.Button("Add current")) {
+                const std::array records{scene.incoming.record};
+                if (!Appearance::AddWeathers(settings, preset.id, records)) { actionMessage = "Weather assignment limit reached."; actionMessageIsError = true; }
+            }
+            ImGui::EndDisabled();
+            if (scene.valid && !scene.interior) {
+                Tooltip(currentHere ? std::format("{} is already in this override.", WeatherLabel(scene.incoming.record, *catalogue)).c_str()
+                                    : WeatherLabel(scene.incoming.record, *catalogue).c_str());
+            } else {
+                Tooltip("Outside, adds the weather you are in.");
+            }
+            if (flow.Button("Add...")) { openPicker = true; }
+            Tooltip("Pick exact weathers, such as fog or ash, from every weather the game has loaded.");
+        }
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Weather types");
+        ImGui::TableNextColumn();
+        {
+            Flow flow(Px(18.0f));
+            for (const auto value : {Appearance::Group::Clear, Appearance::Group::Cloudy, Appearance::Group::Rain, Appearance::Group::Snow}) {
+                groupToggle(flow, value);
             }
         }
-    }
-    std::optional<Appearance::Record> unassign;
-    {
-        Flow flow;
-        for (std::size_t i = 0; i < preset.weathers.size(); ++i) {
-            const auto& record = preset.weathers[i];
-            const bool loaded = FindWeather(record, *catalogue);
-            const auto* owner = shadowedBy(Appearance::WeatherOwner(claims, record));
-            const auto label = std::format("{}  x##chip{}", ShortWeatherLabel(record, *catalogue), i);
-            if (!loaded || owner) { ImGui::PushStyleColor(ImGuiCol_Text, kMuted); }
-            if (flow.Button(label.c_str())) { unassign = record; }
-            if (!loaded || owner) { ImGui::PopStyleColor(); }
-            Tooltip(std::format("{}{}{}\nClick to remove.", WeatherLabel(record, *catalogue),
-                loaded ? "" : "\nNot loaded this session; kept for when its plugin returns.",
-                owner ? std::format("\n\"{}\" uses this instead; it is higher in the list.", ShownName(*owner)) : std::string()).c_str());
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Places");
+        ImGui::TableNextColumn();
+        {
+            Flow flow(Px(18.0f));
+            groupToggle(flow, Appearance::Group::Interior);
+            groupToggle(flow, Appearance::Group::Exterior);
         }
-        if (flow.Button("Add weathers...")) { ImGui::OpenPopup("weatherPicker"); }
-        Tooltip("Pick exact weathers, such as fog or ash, that the weather types above don't describe well.");
-        const bool currentHere = Appearance::HasWeather(preset, scene.incoming.record);
-        ImGui::BeginDisabled(!scene.valid || scene.interior || !Appearance::Valid(scene.incoming.record) || currentHere);
-        if (flow.Button("Add current weather")) {
-            const std::array records{scene.incoming.record};
-            if (!Appearance::AddWeathers(settings, preset.id, records)) { actionMessage = "Weather assignment limit reached."; actionMessageIsError = true; }
+
+        // All day, or one look per time of day that blends into the next.
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        HintLabel("Time of day", "Pick a time to give it its own look; it blends into the next. Intensity, local tone, "
+                                 "local structure and sharpening strength can differ by time; other settings stay the same "
+                                 "all day. Green is now.");
+        ImGui::TableNextColumn();
+        {
+            const auto& times = Appearance::Times;
+            std::array<std::string, 6> help;
+            for (std::size_t i = 0; i < times.size(); ++i) {
+                const auto next = (i + 1) % times.size();
+                help[i] = std::format("{}, from {}, blending toward {} at {}.{}", times[i], Clock(settings.hours[i]),
+                    times[next], Clock(settings.hours[next]), i == nowIndex ? " Now." : "");
+            }
+            const auto time = [&](std::size_t i) { return Segment{times[i], true, help[i].c_str(), i == nowIndex}; };
+            int selected = presetTimed ? presetTime + 1 : 0;
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (Segmented("timeOfDay", selected, {{"All day", true, "One look all day. Choosing this keeps the selected time's values."},
+                    time(0), time(1), time(2), time(3), time(4), time(5)})) {
+                if (selected == 0) {
+                    // Back to one look: the selected time's values apply all day.
+                    presetTimed = false;
+                    for (auto& change : profile.changes) { const auto point = change.points[presetTime]; change.points.fill(point); }
+                } else {
+                    presetTimed = true;
+                    presetTime = selected - 1;
+                }
+            }
         }
-        ImGui::EndDisabled();
-        if (scene.valid && !scene.interior) { Tooltip(WeatherLabel(scene.incoming.record, *catalogue).c_str()); }
+        ImGui::EndTable();
     }
     if (unassign) { Appearance::RemoveWeather(settings, preset.id, *unassign); }
-    Note("Specific weathers win over weather types, which win over Outdoors. If presets share one, the higher in the list wins.");
+    if (openPicker) { ImGui::OpenPopup("weatherPicker"); }
     ImGui::Spacing();
-    if (ImGui::Checkbox("Different look by time of day", &presetTimed) && !presetTimed) {
-        // Turning it off keeps the selected time's values all day.
-        for (auto& change : profile.changes) { const auto point = change.points[presetTime]; change.points.fill(point); }
-    }
-    Tooltip("Intensity, local tone, local structure and sharpening strength can differ at each time of day and blend "
-        "between them. Other settings stay the same all day.");
-    if (presetTimed) {
-        Flow flow;
-        for (std::size_t i = 0; i < Appearance::Times.size(); ++i) {
-            const bool selected = presetTime == static_cast<int>(i);
-            if (selected) { ImGui::PushStyleColor(ImGuiCol_Button, kAmberDim); }
-            if (i == nowIndex) { ImGui::PushStyleColor(ImGuiCol_Text, kSage); }
-            if (flow.Button(std::format("{}##time{}", Appearance::Times[i], i).c_str())) { presetTime = static_cast<int>(i); }
-            ImGui::PopStyleColor(static_cast<int>(selected) + static_cast<int>(i == nowIndex));
-            const auto next = (i + 1) % Appearance::Times.size();
-            Tooltip(std::format("From {}, blending toward {} at {}.{}", Clock(settings.hours[i]), Appearance::Times[next],
-                Clock(settings.hours[next]), i == nowIndex ? " Current time." : "").c_str());
-        }
-        Note("Pick a time to edit its look; it blends into the next. Green is now. Other settings stay the same all day.");
-    }
-
     if (ImGui::BeginPopup("weatherPicker")) {
         ImGui::Text("Add weathers to %s", ShownName(preset));
         ImGui::PushItemWidth(Px(420.0f));
@@ -450,7 +492,7 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
                 if (ImGui::Checkbox(entry.label.c_str(), &checked)) {
                     if (checked) { presetPickerSelection.push_back(entry.weather.record); } else { presetPickerSelection.erase(selected); }
                 }
-                if (Appearance::HasWeather(preset, entry.weather.record)) { ImGui::SameLine(); ImGui::TextDisabled("(in this preset)"); }
+                if (Appearance::HasWeather(preset, entry.weather.record)) { ImGui::SameLine(); ImGui::TextDisabled("(in this override)"); }
                 else if (const auto* owner = Appearance::WeatherOwner(claims, entry.weather.record)) {
                     ImGui::SameLine();
                     ImGui::TextDisabled("-> %s", ShownName(*owner));
@@ -466,7 +508,7 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
             }
         }
         ImGui::SameLine(); if (ImGui::Button("Clear selection")) { presetPickerSelection.clear(); }
-        ImGui::SameLine(); if (ImGui::Button("Refresh list")) { SKSE::GetTaskInterface()->AddTask([] { Appearance::Runtime::Get().CaptureCatalogue(); }); }
+        ImGui::SameLine(); if (ImGui::Button("Refresh list")) { RefreshWeatherList(); }
         ImGui::BeginDisabled(presetPickerSelection.empty());
         if (ImGui::Button("Add selected")) {
             if (Appearance::AddWeathers(settings, preset.id, presetPickerSelection)) { presetPickerSelection.clear(); ImGui::CloseCurrentPopup(); }
@@ -474,7 +516,7 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
         }
         ImGui::EndDisabled();
         ImGui::SameLine(); if (ImGui::Button("Close")) { ImGui::CloseCurrentPopup(); }
-        ImGui::TextDisabled("A weather in several presets uses the highest one in the list. Names come from the game or an editor-ID plugin.");
+        ImGui::TextDisabled("A weather in several overrides uses the highest one in the list. Names come from the game or an editor-ID plugin.");
         ImGui::EndPopup();
     }
 
@@ -492,7 +534,9 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
     std::vector<std::string> restore;
     EditorDecor decor(profile, base, presetTimed ? Appearance::Times[presetTime] : nullptr, restore);
     ActivePresetDecor() = &decor;
+    ActiveEditScope() = preset.id;
     drawSettings(nr, sharpening, sharpness);
+    ActiveEditScope() = 0;
     ActivePresetDecor() = nullptr;
     auto edited = base;
     edited.neural = nr.neuralEnabled;
@@ -528,15 +572,15 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
     const auto* nrChange = Appearance::FindChange(profile, "NeuralRendering");
     const auto* sharpeningChange = Appearance::FindChange(profile, "SharpeningEnabled");
     if ((nrChange && nrChange->points[0] != 0 && !base.neural) || (sharpeningChange && sharpeningChange->points[0] != 0 && !base.sharpening)) {
-        Note("Presets can switch NR or sharpening off, but not on while Base has them off.");
+        Note("Overrides can switch NR or sharpening off, but not on while Base has them off.");
     }
 
     ImGui::Spacing();
     bool remove = false;
-    if (ImGui::Button("Delete preset...")) { ImGui::OpenPopup("deletePreset"); }
+    if (ImGui::Button("Delete override...")) { ImGui::OpenPopup("deletePreset"); }
     if (ImGui::BeginPopup("deletePreset")) {
         ImGui::Text("Delete \"%s\"?", ShownName(preset));
-        ImGui::TextDisabled("Where it applied, Base or another preset is used.\nSave as default deletes its preset file; Discard undoes this.");
+        ImGui::TextDisabled("Where it applied, Base or another override is used.\nSave as default deletes its file; Discard undoes this.");
         if (ImGui::Button("Delete")) { remove = true; ImGui::CloseCurrentPopup(); }
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
@@ -552,9 +596,56 @@ void OverlayUI::DrawPresetEditor(const std::function<void(SourceDLSSG::Preferenc
     settings.enabled = Appearance::UsesPresets(settings);
 }
 
-void OverlayUI::DrawPresetSharpeningStatus()
+namespace
 {
-    const auto state = Appearance::Runtime::Get().State();
+// Names the most specific override in use now that changes a setting, and its value now.
+// Resolves the overrides selected for the incoming weather as the runtime does, so a
+// note shows the value they give and names the most specific one that sets it. During
+// a weather transition the runtime still blends from the outgoing weather.
+struct BaseOverrideNotes final : OverrideNotes
+{
+    Appearance::Selection now;
+    const Appearance::Setup& base;
+    Appearance::Setup resolved;
+    bool interior;
+    BaseOverrideNotes(Appearance::Selection now, const Appearance::Settings& settings, const Appearance::Setup& base, float hour, bool interior)
+        : now(now), base(base), resolved(Appearance::Resolve(Appearance::Flatten(now), settings, hour, base)), interior(interior) {}
+    std::string Note(const char* key) const override
+    {
+        const auto* field = Appearance::FindField(key);
+        if (!field || field->get(resolved) == field->get(base)) { return {}; }
+        const char* owner = nullptr;
+        for (auto it = now.layers.rbegin(); it != now.layers.rend() && !owner; ++it) {
+            if (*it && Appearance::FindChange((*it)->profile, key)) { owner = ShownName(**it); }
+        }
+        const auto where = interior ? "place" : "weather";
+        const auto value = FieldValue(*field, resolved);
+        return owner ? std::format("\"{}\" replaces this in this {} ({}). Base still applies everywhere else.", owner, where, value)
+                     : std::format("This {}'s weather overrides change this ({}). Base still applies everywhere else.", where, value);
+    }
+};
+}
+
+void OverlayUI::DrawBaseSettings(const FrameView& view, const std::function<void()>& drawSettings)
+{
+    const auto& state = view.appearance;
+    const auto& settings = settingsDraft.appearance;
+    const auto& scene = state.context;
+    Appearance::Selection now;
+    if (scene.valid && Appearance::UsesPresets(settings) && !state.paused) {
+        now = Appearance::Select(Appearance::ResolveClaims(settings), scene.incoming, scene.interior);
+    }
+    const auto base = DraftSetup(settingsDraft);
+    BaseOverrideNotes notes(now, settings, base, scene.hour, scene.interior);
+    const bool any = std::ranges::any_of(now.layers, [](const auto* layer) { return layer != nullptr; });
+    if (any) { ActiveOverrideNotes() = &notes; }
+    drawSettings();
+    ActiveOverrideNotes() = nullptr;
+}
+
+void OverlayUI::DrawPresetSharpeningStatus(const FrameView& view)
+{
+    const auto& state = view.appearance;
     if (!state.result.active || state.result.sharpnessSource == "Base") { return; }
-    ImGui::TextDisabled("Now %.2f from the \"%s\" preset.", state.result.setup.sharpness, state.result.sharpnessSource.c_str());
+    ImGui::TextDisabled("Now %.2f from the \"%s\" weather override.", state.result.setup.sharpness, state.result.sharpnessSource.c_str());
 }
