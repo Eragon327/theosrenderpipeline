@@ -81,7 +81,8 @@ PreviewScenario Healthy()
 
     view.sourceReady = true;
     view.neuralObjectsAvailable = true;
-    view.neuralObjectStatus = "Experimental opaque-object capture ready";
+    // As in game before a group is first switched on: supported, hook not yet installed.
+    view.neuralObjectStatus = "Object capture starts when you switch a group on";
     view.generationActive = true;
     view.effectiveMultiplier = 4;
     view.uiRecomposition = true;
