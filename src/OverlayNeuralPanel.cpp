@@ -657,9 +657,17 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             // users and for runtimes that may add styles: clicking it edits the
             // number in place, and it then reads "Custom 7".
             const bool legacy = LegacyNeuralRuntime(view);
+            // One editor per override and pass, so a number being typed cannot land in another.
+            ImGui::PushID(static_cast<int>(ActiveEditScope()));
+            ImGui::PushID(pass2 ? 2 : 1);
             auto* storage = ImGui::GetStateStorage();
-            const ImGuiID editId = ImGui::GetID("customEdit"), draftId = ImGui::GetID("customDraft");
+            const ImGuiID editId = ImGui::GetID("customEdit"), draftId = ImGui::GetID("customDraft"),
+                          frameId = ImGui::GetID("customFrame");
             int editing = storage->GetInt(editId, 0); // 0 closed, 1 focus on this draw, 2 open
+            // An edit left when its row stopped drawing (another tab, pass or override, or the
+            // menu closed) is dropped rather than applied later.
+            if (editing && storage->GetInt(frameId, -1) != ImGui::GetFrameCount() - 1) { editing = 0; }
+            storage->SetInt(frameId, ImGui::GetFrameCount());
             const auto customLabel = tuning.style > 2 ? std::format("Custom {}", tuning.style) : std::string("Custom");
             int index = (std::min)(tuning.style, 3);
             SegmentedLayout layout;
@@ -677,14 +685,9 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             }
             if (index != 3) { editing = 0; }
             if (editing) {
-                // Over the Custom segment, or beside the combo in a narrow menu.
-                if (layout.combo) {
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(Px(56.0f));
-                } else {
-                    ImGui::SetCursorScreenPos(layout.lastMin);
-                    ImGui::SetNextItemWidth(layout.lastMax.x - layout.lastMin.x);
-                }
+                // Over the Custom segment, or over the whole combo in a narrow menu.
+                ImGui::SetCursorScreenPos(layout.lastMin);
+                ImGui::SetNextItemWidth(layout.lastMax.x - layout.lastMin.x);
                 if (editing == 1) { ImGui::SetKeyboardFocusHere(); editing = 2; }
                 int number = storage->GetInt(draftId, 3);
                 // Coloured as the selected segment it replaces.
@@ -706,6 +709,8 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 }
             }
             storage->SetInt(editId, editing);
+            ImGui::PopID();
+            ImGui::PopID();
             return changed;
         });
         SettingRow("Intensity", key("Intensity").c_str(), false, unavailable,

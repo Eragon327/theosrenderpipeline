@@ -349,9 +349,11 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
     const auto groupToggle = [&](Flow& flow, Appearance::Group value) {
         const auto i = static_cast<std::size_t>(value);
         const auto* owner = shadowedBy(claims.groups[i]);
-        if (owner && preset.groups[i]) { ImGui::PushStyleColor(ImGuiCol_Text, kMuted); }
+        // Decided once: the checkbox may change the value between push and pop.
+        const bool muted = owner && preset.groups[i];
+        if (muted) { ImGui::PushStyleColor(ImGuiCol_Text, kMuted); }
         flow.Checkbox(GroupLabels[i], &preset.groups[i]);
-        if (owner && preset.groups[i]) { ImGui::PopStyleColor(); }
+        if (muted) { ImGui::PopStyleColor(); }
         if (owner) {
             Tooltip(std::format("\"{}\" uses this{}. The higher override in the list wins; move this one up to use it here.",
                 ShownName(*owner), preset.groups[i] ? " instead" : "").c_str());
@@ -532,7 +534,9 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
     std::vector<std::string> restore;
     EditorDecor decor(profile, base, presetTimed ? Appearance::Times[presetTime] : nullptr, restore);
     ActivePresetDecor() = &decor;
+    ActiveEditScope() = preset.id;
     drawSettings(nr, sharpening, sharpness);
+    ActiveEditScope() = 0;
     ActivePresetDecor() = nullptr;
     auto edited = base;
     edited.neural = nr.neuralEnabled;
@@ -595,33 +599,29 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
 namespace
 {
 // Names the most specific override in use now that changes a setting, and its value now.
+// Resolves the overrides selected for the incoming weather as the runtime does, so a
+// note shows the value they give and names the most specific one that sets it. During
+// a weather transition the runtime still blends from the outgoing weather.
 struct BaseOverrideNotes final : OverrideNotes
 {
     Appearance::Selection now;
-    const Appearance::Settings& settings;
     const Appearance::Setup& base;
-    float hour;
+    Appearance::Setup resolved;
     bool interior;
     BaseOverrideNotes(Appearance::Selection now, const Appearance::Settings& settings, const Appearance::Setup& base, float hour, bool interior)
-        : now(now), settings(settings), base(base), hour(hour), interior(interior) {}
+        : now(now), base(base), resolved(Appearance::Resolve(Appearance::Flatten(now), settings, hour, base)), interior(interior) {}
     std::string Note(const char* key) const override
     {
         const auto* field = Appearance::FindField(key);
-        if (!field) { return {}; }
-        for (auto it = now.layers.rbegin(); it != now.layers.rend(); ++it) {
-            const auto* change = *it ? Appearance::FindChange((*it)->profile, key) : nullptr;
-            if (!change) { continue; }
-            const float value = field->look ? Appearance::AtTime(change->points, settings.hours, hour) : change->points[0];
-            // Overrides switch NR and sharpening off, never on.
-            const std::string_view name = key;
-            if ((name == "NeuralRendering" && !base.neural) || (name == "SharpeningEnabled" && !base.sharpening)) { return {}; }
-            auto setup = base;
-            field->set(setup, value);
-            if (field->get(setup) == field->get(base)) { return {}; }
-            return std::format("\"{}\" replaces this in the current {} ({} now). Base still applies everywhere else.",
-                ShownName(**it), interior ? "place" : "weather", FieldValue(*field, setup));
+        if (!field || field->get(resolved) == field->get(base)) { return {}; }
+        const char* owner = nullptr;
+        for (auto it = now.layers.rbegin(); it != now.layers.rend() && !owner; ++it) {
+            if (*it && Appearance::FindChange((*it)->profile, key)) { owner = ShownName(**it); }
         }
-        return {};
+        const auto where = interior ? "place" : "weather";
+        const auto value = FieldValue(*field, resolved);
+        return owner ? std::format("\"{}\" replaces this in this {} ({}). Base still applies everywhere else.", owner, where, value)
+                     : std::format("This {}'s weather overrides change this ({}). Base still applies everywhere else.", where, value);
     }
 };
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace TheosRenderPipeline::Overlay
@@ -32,6 +33,13 @@ public:
     virtual ~OverrideNotes() = default;
     virtual std::string Note(const char* key) const = 0;
 };
+// The weather override being edited, or 0 for Base. Inline editors key their
+// state by it so an edit in progress cannot land in another override.
+inline std::uint32_t& ActiveEditScope()
+{
+    static std::uint32_t scope{};
+    return scope;
+}
 inline const OverrideNotes*& ActiveOverrideNotes()
 {
     static const OverrideNotes* notes{};

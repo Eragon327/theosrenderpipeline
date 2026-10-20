@@ -242,14 +242,24 @@ inline bool Segmented(const char* id, int& selected, std::initializer_list<Segme
         // Too narrow: the same choice as a combo.
         const auto* current = selected >= 0 && selected < count ? (segments.begin() + selected)->label : "";
         ImGui::SetNextItemWidth(width);
-        if (layout) { layout->combo = true; }
+        if (layout)
+        {
+            // The combo stands in for every segment, the last one included.
+            layout->combo = true;
+            layout->lastMin = ImGui::GetCursorScreenPos();
+            layout->lastMax = ImVec2(layout->lastMin.x + width, layout->lastMin.y + height);
+        }
         if (ImGui::BeginCombo("##segments", current))
         {
             int index = 0;
             for (const auto& segment : segments)
             {
                 ImGui::BeginDisabled(!segment.enabled);
-                if (ImGui::Selectable(segment.label, index == selected) && index != selected) { selected = index; changed = true; }
+                if (ImGui::Selectable(segment.label, index == selected))
+                {
+                    if (layout) { layout->clicked = index; }
+                    if (index != selected) { selected = index; changed = true; }
+                }
                 ImGui::EndDisabled();
                 if (segment.reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", segment.reason); }
                 ++index;
