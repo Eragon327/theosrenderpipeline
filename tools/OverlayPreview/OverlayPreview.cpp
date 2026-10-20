@@ -378,6 +378,14 @@ int main(int argc, char** argv)
         live.script = options->script;
         live.save = options->save;
         live.full = options->full;
+        if (options->tabs.size() > 1)
+        {
+            std::fputs("--live opens one tab; give a single --tab.\n", stderr);
+            return 2;
+        }
+        for (const auto& tab : kTabs)
+            if (options->tabs.contains(tab.name))
+                live.page = tab.page;
         return RunLivePreview(live);
     }
 

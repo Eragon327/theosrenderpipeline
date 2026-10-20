@@ -87,6 +87,7 @@ struct Window
     UINT resizeWidth{}, resizeHeight{};
     std::vector<KeyEvent> keys;
     bool closed{};
+    bool focused{true};
 };
 Window* g_window{};
 
@@ -103,6 +104,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_CHAR:
         if (g_window)
             g_window->keys.push_back({message, wParam});
+        break;
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        if (g_window)
+            g_window->focused = message == WM_SETFOCUS;
         break;
     case WM_SIZE:
         if (g_window && wParam != SIZE_MINIMIZED)
@@ -328,7 +334,9 @@ private:
         // A reload keeps the window where it was dragged.
         const auto layout = lastLayout_ ? *lastLayout_ : options_.layout.value_or(Layout{});
         ImGui::SetCurrentContext(menu_);
-        preview_ = std::make_unique<OverlayPreview>(scenario_, layout, SettingsPage::None);
+        // The starting tab applies to the first load; reloads keep the user's tab.
+        preview_ = std::make_unique<OverlayPreview>(scenario_, layout, loaded_ ? SettingsPage::None : options_.page);
+        loaded_ = true;
         preview_->SetLive(true);
         if (labOverride_)
             preview_->SetLabMode(*labOverride_);
@@ -487,6 +495,13 @@ private:
         wheel_ = ImVec2(0, 0);
         // The mouse stays at the last step for the saved frame, so a hover shows.
         mousePos_ = scriptMouse_;
+        // As PNG mode, let the first frames settle before any step or save: the menu
+        // window and new tab headers only take their place after a frame or two.
+        if (settleFrames_ < 4)
+        {
+            ++settleFrames_;
+            return;
+        }
         if (step_ >= options_.script.size())
         {
             saveRequested_ = true;
@@ -517,6 +532,7 @@ private:
 
 public:
     bool Finished() const { return finished_; }
+    bool SaveFailed() const { return saveFailed_; }
 
 private:
     void ApplyPendingChanges()
@@ -590,11 +606,13 @@ private:
                 io.AddKeyEvent(mapped, down);
         }
         window_.keys.clear();
-        if (keyboardToMenu_ != menuFocused_)
+        // Scripted runs type without the window having focus.
+        const bool focused = keyboardToMenu_ && (window_.focused || Scripted());
+        if (focused != menuFocused_)
         {
-            // Losing focus releases any keys the menu still holds.
-            io.AddFocusEvent(keyboardToMenu_);
-            menuFocused_ = keyboardToMenu_;
+            // Losing focus, to the sidebar or another application, releases any keys the menu still holds.
+            io.AddFocusEvent(focused);
+            menuFocused_ = focused;
         }
     }
 
@@ -628,27 +646,28 @@ private:
         if (saveRequested_)
         {
             saveRequested_ = false;
-            Save(Scripted() && options_.full ? ImRect() : menuRect_);
+            saveFailed_ = !Save(Scripted() && options_.full ? ImRect() : menuRect_);
             finished_ = Scripted();
         }
     }
 
-    void Save(const ImRect& rect)
+    bool Save(const ImRect& rect)
     {
         const auto image = ReadPreviewTexture(window_.device.Get(), window_.context.Get(), target_.texture.Get(), rect);
         const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         std::error_code error;
-        std::filesystem::create_directories(options_.out, error);
         const auto path = std::filesystem::absolute(!options_.save.empty() ? options_.save
             : options_.out / std::format("live-{}-{}x{}-{}.png", scenarios_[scenarioIndex_].name, target_.width,
                                target_.height, stamp));
+        std::filesystem::create_directories(path.parent_path(), error);
         const auto result = image ? TheosRenderPipeline::ScreenshotFile::Replace(path, image->width, image->height,
                                         image->bgr, 0)
                                   : E_FAIL;
         saved_ = SUCCEEDED(result) ? "Saved " + path.string()
                                    : std::format("Could not save the PNG (0x{:08X})", static_cast<unsigned>(result));
         std::printf("%s\n", saved_.c_str());
+        return SUCCEEDED(result);
     }
 
     Window& window_;
@@ -677,7 +696,8 @@ private:
     bool mouseDown_[3]{}, menuMouseDown_[3]{};
     ImGuiMouseCursor menuCursor_{ImGuiMouseCursor_Arrow};
     std::chrono::steady_clock::time_point lastFrame_{};
-    bool reloadScenario_{}, saveRequested_{}, finished_{};
+    bool reloadScenario_{}, saveRequested_{}, finished_{}, saveFailed_{}, loaded_{};
+    int settleFrames_{};
     ImRect menuRect_;
     ImVec2 scriptMouse_{-FLT_MAX, -FLT_MAX};
     std::string typing_;
@@ -730,7 +750,11 @@ int RunLivePreview(const LivePreviewOptions& options)
             preview.Frame();
             window.swapChain->Present(1, 0);
             if (preview.Finished())
+            {
+                // A scripted run fails when its image could not be saved.
+                result = preview.SaveFailed() ? 1 : 0;
                 break;
+            }
         }
     }
     if (window.hwnd)

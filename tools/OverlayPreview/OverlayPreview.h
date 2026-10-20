@@ -73,6 +73,8 @@ struct LivePreviewOptions
     std::vector<Step> script;
     std::filesystem::path save;
     bool full{};
+    // The tab the menu opens on, from --tab.
+    TheosRenderPipeline::Overlay::SettingsPage page{TheosRenderPipeline::Overlay::SettingsPage::None};
 };
 
 // The interactive window (LivePreview.cpp). Returns the process exit code.
