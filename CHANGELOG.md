@@ -1,5 +1,27 @@
 # Unreleased
 
+- Rework the settings menu. Neural Rendering shows passes as folder tabs over one
+  pass's settings, with Reset all to Pass 1 on the Pass 2 tab, a small undo arrow
+  on changed rows and object rules inside each pass (an eye per group for the mask
+  preview). Short pick-one choices are segmented controls; choices that combine
+  stay checkboxes. Frame generation is one list with the provider at the top.
+  Settings that do not apply are greyed out with the reason, never hidden.
+- Rename presets to weather overrides. Conditions are rows: exact weathers, weather
+  types, places (Interiors, Anywhere outside) and a time-of-day strip with All day
+  first. While Base is selected, a cloud marks settings the current override
+  replaces. Files, the `Presets` folder and INI keys are unchanged.
+- NR Style is Default, Natural, Cinematic or Custom; clicking Custom edits any
+  number from 3 to 255 in place. On 310.8 and 310.9.16 every number from 2 up gives
+  Cinematic's output; Custom is kept for later runtimes. Saved styles load within
+  0 to 255.
+- NR Network is Small (310.9.16's faster model, the default) or Old (the model 310.8
+  runs). 310.9.16's Old output matches 310.8 exactly.
+- Object rules can be switched on before the capture hook installs; the menu
+  previously greyed them on Skyrim 1.6.1170 with a misleading version message.
+- Fix a colour-stack imbalance when ticking a weather type another override uses.
+- Add `TRPOverlayPreview`, which draws the menu offline to PNGs or in a live window
+  with scripted clicks, typing and saves; a CTest renders every scenario and tab.
+
 - Give every object group independent Strength, Tone and Structure controls in
   Pass 1 and Pass 2. Strength blends with that pass's input; zero on Pass 2
   retains Pass 1's work. Both model evaluations still run.

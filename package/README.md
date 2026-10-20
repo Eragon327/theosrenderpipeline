@@ -206,11 +206,12 @@ and drag the column divider to change the layout. The pipeline bar above the
 tabs shows the applied rendering order. Advanced contains Lab mode for detailed
 runtime information and the information needed for problem reports.
 
-The Neural Rendering tab contains **Base** and named presets. Presets change
-only their edited settings; other settings follow Base. Sharpening is here too.
-Pass 2 follows Pass 1 until you edit a Pass 2 setting; **Match Pass 1** relinks it.
-Both passes use the same placement, and two passes can substantially increase
-inference cost. See [preset files and weather/time controls](APPEARANCE-PROFILES.md).
+The Neural Rendering tab contains **Base** and named weather overrides. Overrides
+change only their edited settings; other settings follow Base. Sharpening is here
+too. Passes are folder tabs: **+** adds Pass 2, which follows Pass 1 until you edit
+one of its settings; **Reset all to Pass 1** on its tab relinks it. Both passes use
+the same placement, and two passes can substantially increase inference cost. See
+[weather overrides](APPEARANCE-PROFILES.md).
 
 - DLSS starts at 67%, preset K, with sharpening enabled.
 - Frame generation starts on at x2. Choose x4 or another supported multiplier
