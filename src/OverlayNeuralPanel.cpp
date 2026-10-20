@@ -653,14 +653,33 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     if (BeginSettingRows("passLook", passLabel))
     {
         SettingRow("Style", key("Style").c_str(), false, unavailable, [&] {
-            // The runtimes accept other numbers, but they all look exactly like Cinematic.
-            int index = std::clamp(tuning.style, 0, 2);
-            const bool changed = Segmented("style", index, {
+            // Named styles as in OptiScaler forks. Custom opens a field for any
+            // other number, kept for runtimes that may add styles.
+            const bool legacy = LegacyNeuralRuntime(view);
+            const bool custom = tuning.style > 2;
+            const float box = Px(56.0f);
+            if (custom) { ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - box - ImGui::GetStyle().ItemSpacing.x); }
+            int index = (std::min)(tuning.style, 3);
+            bool changed = Segmented("style", index, {
                 {"Default", true, "Style 0."},
                 {"Natural", true, "Style 1."},
-                {"Cinematic", true, "Style 2."}});
-            if (changed) { tuning.style = index; }
-            DrawSettingsHelp("NR look, named as in OptiScaler forks.");
+                {"Cinematic", true, "Style 2."},
+                {"Custom", !legacy, legacy ? "310.8 runs styles 0 to 2 only."
+                    : "Type any other style number, 3 to 255. On 310.8 and 310.9.16 every number from 2 up looks "
+                      "exactly like Cinematic; a later NVIDIA runtime may add styles."}});
+            if (changed) { tuning.style = index == 3 ? 3 : index; }
+            if (custom || index == 3)
+            {
+                ImGui::SameLine();
+                int number = (std::max)(tuning.style, 3);
+                ImGui::SetNextItemWidth(box);
+                if (ImGui::InputInt("##customStyle", &number, 0, 0, ImGuiInputTextFlags_AutoSelectAll))
+                {
+                    tuning.style = std::clamp(number, 3, 255);
+                    changed = true;
+                }
+                DrawSettingsHelp("Style number, 3 to 255. On current runtimes these look like Cinematic.");
+            }
             return changed;
         });
         SettingRow("Intensity", key("Intensity").c_str(), false, unavailable,
