@@ -5,7 +5,7 @@
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
-	enum class ResolveKernel : unsigned { Downsample, Residual, Ratio, PackDepth, PackMotion, PrepareColor, PackGuides, ResizeColor, RestoreSecond };
+	enum class ResolveKernel : unsigned { Downsample, Residual, Ratio, PackDepth, PackMotion, PrepareColor, PackGuides, ResizeColor, RestoreSecond, Split };
 	struct ResolveConstants
 	{
 		UINT sourceWidth{}, sourceHeight{}, targetWidth{}, targetHeight{};
@@ -15,14 +15,15 @@ namespace TheosRenderPipeline::SourceDLSSG
 		UINT peripheral{}, encodedFormat{}; // 0 float32, 1 float16, 2 UNORM8 intermediate
 		UINT guideWidth{}, guideHeight{};
 		float motionScaleX{ 1 }, motionScaleY{ 1 };
+		UINT splitX{};
 	};
-	static_assert(sizeof(ResolveConstants) == 80);
+	static_assert(sizeof(ResolveConstants) == 84);
 	// All resources enter and leave COMMON. Slot retirement is the caller's
 	// responsibility. Each dispatch in a frame needs a distinct stage index.
 	class NeuralResolveKernels
 	{
 	public:
-		static constexpr unsigned kStages = 11;
+		static constexpr unsigned kStages = 12;
 		HRESULT Initialize(ID3D12Device* device);
 		HRESULT Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot, unsigned stage,
 			ResolveKernel kernel, const ResolveConstants& constants, ID3D12Resource* a, ID3D12Resource* b,
@@ -41,7 +42,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::array<std::array<DescriptorTable, kStages>, kCommandSlots> tables_;
 		std::uint64_t descriptorWrites_{};
 		Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
-		std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, 9> pipelines_;
+		std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, 10> pipelines_;
 		std::array<std::array<Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>, kStages>, kCommandSlots> heaps_;
 	};
 }

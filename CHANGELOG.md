@@ -1,3 +1,10 @@
+# Unreleased
+
+- Add Neural Rendering > Compare, a live, session-only comparison that is never
+  saved. Split shows the frame without NR left of a movable line. Freeze frame
+  (after upscaling only) keeps NR working on one held frame while the game runs
+  on, so setting changes compare on identical content.
+
 # 0.5.0
 
 Settings note: object rules from 0.4.5 (`NRObjectMasks` and the `NR*Strength`

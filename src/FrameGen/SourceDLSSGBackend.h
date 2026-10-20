@@ -110,6 +110,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 			bool eligible, ID3D11Texture2D* color, ID3D11Texture2D* motion, ID3D11Texture2D* depth,
 			FrameExtent guideExtent, FrameExtent colorExtent, bool& reset);
 		NeuralOptions NeuralConfiguration() const;
+		// Session-only NR comparison, applied live from the menu.
+		void ConfigureNeuralCompare(NeuralRendering::CompareSettings a_compare);
+		NeuralRendering::CompareSettings NeuralCompare() const;
 		int NeuralComputeCapability() const;
 		NeuralSnapshot NeuralState() const;
 		bool ConfigureReflex(sl::ReflexMode a_mode)
@@ -366,6 +369,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralHistory neuralHistory_;
 		mutable std::mutex neuralMutex_;
 		NeuralOptions neuralOptions_;
+		NeuralRendering::CompareSettings neuralCompare_; // Protected by neuralMutex_.
 		NeuralOptions frameNeuralOptions_;
 		NeuralSnapshot neuralSnapshot_;
 		sl::Constants frameConstants_{};

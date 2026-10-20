@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <functional>
 #include <vector>
 #include <imgui_internal.h>
 #include <string_view>
@@ -18,6 +19,10 @@ using namespace TheosRenderPipeline::Overlay;
 
 namespace
 {
+// Base only: the live, session-only NR comparison. Set while the panel draws
+// Base; weather overrides never show it.
+std::function<void(TheosRenderPipeline::NeuralRendering::CompareSettings)> g_setCompare;
+
 void DrawNRAppliedPasses(const OverlayUI::FrameView& view, const TheosRenderPipeline::SourceDLSSG::NeuralOptions& applied)
 {
     const auto width = applied.beforeUpscaling ? view.renderWidth : view.outputWidth;
@@ -589,6 +594,48 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             DrawSettingsHelp("Both passes use the selected side of upscaling. UI is composed afterwards.");
             return changed;
         });
+        if (base && g_setCompare)
+        {
+            // Applies at once and is never saved, so it is not a draft change.
+            SettingRow("Compare", nullptr, false, unavailable, [&] {
+                auto compare = view.neuralApplied.compare;
+                bool changed = ImGui::Checkbox("Split", &compare.split);
+                DrawSettingsHelp("Session only, never saved. Left of the line shows the frame without NR.");
+                ImGui::SameLine();
+                ImGui::BeginDisabled(!compare.split);
+                // The slider takes what Freeze frame leaves of the column.
+                const auto& style = ImGui::GetStyle();
+                const float freezeWidth = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x +
+                                          ImGui::CalcTextSize("Freeze frame").x;
+                ImGui::SetNextItemWidth((std::max)(Px(48.0f), ImGui::GetContentRegionAvail().x - freezeWidth -
+                                                                  style.ItemSpacing.x * 3));
+                float percent = compare.splitPosition * 100.0f;
+                if (ImGui::SliderFloat("##splitAt", &percent, 0, 100, "%.0f%%"))
+                {
+                    compare.splitPosition = percent / 100.0f;
+                    changed = true;
+                }
+                ImGui::EndDisabled();
+                DrawSettingsHelp("Where the line sits, from the left edge.");
+                // Follows the applied placement: the comparison is live, the draft is not.
+                const bool before = view.neuralApplied.beforeUpscaling;
+                ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
+                ImGui::BeginDisabled(before);
+                bool freeze = compare.freeze && !before;
+                if (ImGui::Checkbox("Freeze frame", &freeze))
+                {
+                    compare.freeze = freeze;
+                    changed = true;
+                }
+                ImGui::EndDisabled();
+                DrawSettingsHelp(before ? "Freeze frame needs After upscaling: before upscaling, DLSS needs a moving frame."
+                                        : "Session only. NR keeps working on one held frame while the game runs on, so "
+                                          "setting changes compare on identical content. Turn frame generation off for a "
+                                          "steady image.");
+                if (changed) { g_setCompare(compare); }
+                return false;
+            });
+        }
         ImGui::EndTable();
     }
     auto* decor = ActivePresetDecor();
@@ -1042,8 +1089,10 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
         }
         else {
             DrawBaseSettings(view, [&] {
+                g_setCompare = [this](auto compare) { SetNeuralCompare(compare); };
                 DrawSourceNeuralControls(view, settingsDraft.sourceDLSSG, settingsDraft.sharpening, settingsDraft.sharpness,
                                          settingsDraft.upscaleType, nrRuntimePresent);
+                g_setCompare = nullptr;
             });
         }
         EndSettingsColumns();

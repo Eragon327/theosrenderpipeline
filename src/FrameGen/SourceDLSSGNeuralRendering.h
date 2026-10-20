@@ -102,6 +102,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralResolveKernels resolve_;
         NeuralRendering::ObjectBlend objectBlend_;
         Microsoft::WRL::ComPtr<ID3D12Resource> objectResult_;
+		Microsoft::WRL::ComPtr<ID3D12Resource> splitResult_; // Session-only compare
+		// Freeze frame: the held scene, its depth and object mask, and a motion
+		// field that is never written, so stays zero.
+		Microsoft::WRL::ComPtr<ID3D12Resource> heldColor_, heldDepth_, heldMask_, stillMotion_;
+		bool frozen_{};
+		// Records the hold; returns false only on a failure that leaves the frame unusable.
+		bool HoldFrame(ID3D12Device* device, ID3D12GraphicsCommandList* list, bool freeze,
+			ID3D12Resource*& motion, ID3D12Resource*& depth, ID3D12Resource* hudless, ID3D12Resource*& objectMask, bool& reset);
         std::array<NeuralRendering::ObjectBlend,2> passObjectBlend_;
         std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,2> passObjectResult_;
         NeuralRendering::ObjectControl objectControl_;

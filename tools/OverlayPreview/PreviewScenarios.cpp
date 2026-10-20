@@ -282,6 +282,20 @@ PreviewScenario Objects()
     return scenario;
 }
 
+// NR after upscaling with the live comparison on: Split at 60% and a held frame.
+PreviewScenario Compare()
+{
+    auto scenario = Healthy();
+    scenario.name = "compare";
+    scenario.summary = "NR after upscaling with Split at 60% and Freeze frame on";
+    scenario.applied.sourceDLSSG.neuralBeforeUpscaling = false;
+    scenario.draft = scenario.applied;
+    auto& applied = scenario.view.neuralApplied;
+    applied.beforeUpscaling = false;
+    applied.compare = {true, 0.6f, true};
+    return scenario;
+}
+
 // A non-NVIDIA GPU: XeSS upscaling and XeFG x2, with NR unavailable.
 PreviewScenario Intel()
 {
@@ -337,5 +351,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Intel(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Intel(), Lab()};
 }

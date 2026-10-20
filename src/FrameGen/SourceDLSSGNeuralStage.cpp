@@ -125,7 +125,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 	NeuralOptions Backend::NeuralConfiguration() const
 	{
-		std::scoped_lock lock(neuralMutex_); return neuralOptions_;
+		std::scoped_lock lock(neuralMutex_);
+		auto options = neuralOptions_;
+		options.compare = neuralCompare_;
+		return options;
+	}
+	void Backend::ConfigureNeuralCompare(NeuralRendering::CompareSettings a_compare)
+	{
+		std::scoped_lock lock(neuralMutex_); neuralCompare_ = NeuralRendering::SanitizeCompare(a_compare);
+	}
+	NeuralRendering::CompareSettings Backend::NeuralCompare() const
+	{
+		std::scoped_lock lock(neuralMutex_); return neuralCompare_;
 	}
 	NeuralSnapshot Backend::NeuralState() const
 	{

@@ -296,6 +296,52 @@ static void RatioGain(ID3D11Device* device, ID3D11DeviceContext* context,
     std::puts("Ratio gain: final luminance bound, zero effect, black, HDR/SDR, BGRA, alpha and colour extrapolation passed.");
 }
 
+// Compare: columns left of SplitX are the original, columns from it NR's
+// result, except a two-pixel divider that alternates black and white every six
+// rows and keeps the result's alpha. Pixels outside the target are untouched.
+static void SplitCompare(ID3D11Device* device, ID3D11DeviceContext* context,
+    ID3D11ComputeShader* shader, ID3D11Buffer* constants)
+{
+    constexpr UINT width = 23, height = 19, activeWidth = 17, activeHeight = 14;
+    constexpr Pixel sentinel{-0.5f, -0.25f, -0.125f, -2.0f};
+    std::vector<Pixel> before(size_t(width) * height), after(before.size());
+    for (size_t i = 0; i < before.size(); ++i) {
+        const float v = float(i % 97);
+        before[i] = {v, v * 0.5f + 1, 3, 0.25f};
+        after[i] = {64 - v, 2, v * 0.25f + 5, 0.75f};
+    }
+    auto original = Texture(device, width, height, before);
+    auto result = Texture(device, width, height, after);
+    for (const UINT splitX : {0u, 1u, 8u, activeWidth - 1, activeWidth}) {
+        auto output = Texture(device, width, height, std::vector<Pixel>(before.size(), sentinel));
+        ResolveConstants params{};
+        params.sourceWidth = params.targetWidth = activeWidth;
+        params.sourceHeight = params.targetHeight = activeHeight;
+        params.splitX = splitX;
+        Dispatch(context, shader, constants, params, {original.srv.Get(), result.srv.Get(), nullptr},
+            output.uav.Get(), width, height);
+        const auto read = Readback(context, output.texture.Get());
+        const auto exact = [](const Pixel& a, const Pixel& b) {
+            return std::memcmp(a.data(), b.data(), sizeof(Pixel)) == 0;
+        };
+        for (UINT y = 0; y < height; ++y) {
+            for (UINT x = 0; x < width; ++x) {
+                const size_t i = size_t(y) * width + x;
+                if (x >= activeWidth || y >= activeHeight) {
+                    Require(exact(read[i], sentinel), "split leaves pixels outside the target untouched");
+                } else if (x == splitX || x + 1 == splitX) {
+                    const float v = (y / 6) & 1 ? 1.0f : 0.0f;
+                    Require(read[i][0] == v && read[i][1] == v && read[i][2] == v, "split divider alternates every six rows");
+                    Require(read[i][3] == after[i][3], "split divider keeps NR's alpha");
+                } else {
+                    Require(exact(read[i], x < splitX ? before[i] : after[i]), "split shows the original left of the line");
+                }
+            }
+        }
+    }
+    std::puts("Split compare: original left, NR right, divider, alpha and active-region guard passed.");
+}
+
 int main()
 {
     ComPtr<ID3D11Device> device;
@@ -330,6 +376,12 @@ int main()
     }
     ProducerEdits(device.Get(), context.Get(), shader.Get(), constants.Get());
     RatioGain(device.Get(), context.Get(), shader.Get(), constants.Get());
+    ComPtr<ID3D11ComputeShader> split;
+    code.Reset(); errors.Reset();
+    Check(D3DCompile(source, sizeof(source) - 1, "TRP-split-compare-test", nullptr, nullptr,
+        "Split", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors), "compile production split shader");
+    Check(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &split), "split compute shader");
+    SplitCompare(device.Get(), context.Get(), split.Get(), constants.Get());
     context->ClearState();
     std::puts("Ratio color: FP16 HDR/SDR identity, bounded input, channel order, alpha and active-region guards passed.");
 }

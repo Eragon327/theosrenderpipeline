@@ -17,6 +17,7 @@ cbuffer NRParams : register(b0) {
     uint Peripheral, EncodedFormat;
     uint GuideWidth, GuideHeight;
     float MotionScaleX, MotionScaleY;
+    uint SplitX;
 };
 Texture2D<float4> Tex0 : register(t0);
 Texture2D<float4> Tex1 : register(t1);
@@ -100,6 +101,19 @@ void FilterColor(uint3 p, bool encode) {
         sum+=Tex0.Load(int3(ClampPixel(base+int2(x,y),uint2(SourceWidth,SourceHeight)),0))*w;
     }
     OutputColor[p.xy]=sum;
+}
+)"
+// MSVC limits one literal to 16 KB; adjacent literals concatenate.
+R"(// Compare: original left of SplitX, NR's result from it, and a two-pixel
+// black/white divider that reads on bright and dark content alike.
+[numthreads(8,8,1)] void Split(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=TargetWidth || p.y>=TargetHeight) return;
+    float4 result=Tex1.Load(int3(p.xy,0));
+    if (p.x+1==SplitX || p.x==SplitX) {
+        float v=((p.y/6)&1)?1:0;
+        OutputColor[p.xy]=float4(v,v,v,result.a); return;
+    }
+    OutputColor[p.xy]=p.x<SplitX ? Tex0.Load(int3(p.xy,0)) : result;
 }
 [numthreads(8,8,1)] void RestoreSecond(uint3 p : SV_DispatchThreadID) {
     if (p.x>=TargetWidth || p.y>=TargetHeight) return;
