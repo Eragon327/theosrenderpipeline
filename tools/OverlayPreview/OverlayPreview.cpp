@@ -97,6 +97,7 @@ void PrintUsage()
         "  --click X,Y         With --live: click at X,Y from the menu window's top-left\n"
         "                      (repeatable, in order)\n"
         "  --hover X,Y         With --live: then rest the mouse at X,Y, for tooltips\n"
+        "  --type TEXT         With --live: type TEXT into the focused field ({enter} presses Enter)\n"
         "  --save PATH         With --live: after the clicks and hover, save the menu and exit");
 }
 
@@ -127,6 +128,16 @@ std::optional<Options> ParseOptions(int argc, char** argv)
             options.out = *text;
         else if (arg == "--save")
             options.save = *text;
+        else if (arg == "--type")
+        {
+            LivePreviewOptions::Step step;
+            step.text = *text;
+            for (std::size_t at; (at = step.text.find("{enter}")) != std::string::npos;)
+                step.text.replace(at, 7, "\n");
+            if (!options.script.empty())
+                step.x = options.script.back().x, step.y = options.script.back().y;
+            options.script.push_back(step);
+        }
         else if (arg == "--click" || arg == "--hover")
         {
             LivePreviewOptions::Step step;

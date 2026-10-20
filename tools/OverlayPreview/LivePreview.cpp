@@ -494,6 +494,17 @@ private:
         }
         const auto& step = options_.script[step_];
         mousePos_ = scriptMouse_ = ImVec2(menuRect_.Min.x + step.x, menuRect_.Min.y + step.y);
+        if (!step.text.empty())
+        {
+            if (stepFrame_ == 0)
+                typing_ = step.text;
+            if (++stepFrame_ >= 4 && typing_.empty() && !enterDown_)
+            {
+                ++step_;
+                stepFrame_ = 0;
+            }
+            return;
+        }
         mouseDown_[0] = step.click && stepFrame_ >= 2 && stepFrame_ < 4;
         if (++stepFrame_ >= (step.click ? 10 : 60))
         {
@@ -541,6 +552,24 @@ private:
         }
         if (wheel_.x != 0 || wheel_.y != 0)
             io.AddMouseWheelEvent(wheel_.x, wheel_.y);
+        // Scripted typing: one character or key per frame.
+        if (enterDown_)
+        {
+            io.AddKeyEvent(ImGuiKey_Enter, false);
+            enterDown_ = false;
+        }
+        else if (!typing_.empty())
+        {
+            const char c = typing_.front();
+            typing_.erase(0, 1);
+            if (c == '\n')
+            {
+                io.AddKeyEvent(ImGuiKey_Enter, true);
+                enterDown_ = true;
+            }
+            else
+                io.AddInputCharacter(static_cast<unsigned>(c));
+        }
         for (const auto& key : window_.keys)
         {
             if (!keyboardToMenu_)
@@ -651,6 +680,8 @@ private:
     bool reloadScenario_{}, saveRequested_{}, finished_{};
     ImRect menuRect_;
     ImVec2 scriptMouse_{-FLT_MAX, -FLT_MAX};
+    std::string typing_;
+    bool enterDown_{};
     std::size_t step_{};
     int stepFrame_{};
     std::string saved_;

@@ -56,6 +56,10 @@ out/build/base/Release/TRPOverlayPreview.exe --live --scenario healthy `
     --click 132,144 --click 975,373 --hover 920,270 --save out/overlay-preview/pass2-off.png
 ```
 
+`--type TEXT` types into the focused field, one character per frame;
+`{enter}` presses Enter. For example, `--click 1540,322 --type "7{enter}"`
+sets a custom NR style.
+
 The `OverlayPreview` CTest renders every scenario and tab with WARP, so a
 menu change that no longer builds or draws offline fails the suite.
 

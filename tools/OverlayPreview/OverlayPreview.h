@@ -62,10 +62,13 @@ struct LivePreviewOptions
     // A scripted run: positions relative to the menu window's top-left, in
     // output pixels. Each click is followed by a short wait; the hover stays
     // long enough for tooltips. The run then saves the menu to save and exits.
+    // A typing step sends text one character per frame at the last position;
+    // "{enter}" presses Enter.
     struct Step
     {
         float x{}, y{};
         bool click{};
+        std::string text;
     };
     std::vector<Step> script;
     std::filesystem::path save;
