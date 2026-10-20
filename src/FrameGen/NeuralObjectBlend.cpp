@@ -20,7 +20,7 @@ namespace TheosRenderPipeline::NeuralRendering
         ComPtr<ID3D12RootSignature> root;
         ComPtr<ID3D12PipelineState> pipeline;
         if (FAILED(hr) || FAILED(hr=device->CreateRootSignature(0,signature->GetBufferPointer(),signature->GetBufferSize(),IID_PPV_ARGS(&root))) ||
-            FAILED(hr=D3DCompile(kObjectBlendShader,sizeof(kObjectBlendShader)-1,"NR-object-blend",nullptr,nullptr,
+            FAILED(hr=D3DCompile(kObjectBlendShader.data(),kObjectBlendShader.size(),"NR-object-blend",nullptr,nullptr,
                 "main","cs_5_1",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&errors))) { return hr; }
         D3D12_COMPUTE_PIPELINE_STATE_DESC pso{}; pso.pRootSignature=root.Get();
         pso.CS={code->GetBufferPointer(),code->GetBufferSize()};
@@ -32,10 +32,10 @@ namespace TheosRenderPipeline::NeuralRendering
         root_=std::move(root); pipeline_=std::move(pipeline); return S_OK;
     }
     HRESULT ObjectBlend::Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
-        const ObjectMaskSettings& settings, ID3D12Resource* original, ID3D12Resource* neural,
-        ID3D12Resource* objects, ID3D12Resource* depth, ID3D12Resource* output, std::array<float,2> guideOffset)
+        const ObjectBlendRequest& request, ID3D12Resource* original, ID3D12Resource* neural,
+        ID3D12Resource* objects, ID3D12Resource* depth, ID3D12Resource* output, std::array<float,2> guideOffset, bool peripheral)
     {
-        if (!std::isfinite(guideOffset[0]) || !std::isfinite(guideOffset[1]) || !device || !list || slot>=heaps_.size() || !settings.enabled || !original || !neural || !objects || !depth || !output ||
+        if (!std::isfinite(guideOffset[0]) || !std::isfinite(guideOffset[1]) || !device || !list || slot>=heaps_.size() || !original || !neural || !objects || !depth || !output ||
             output==original || output==neural || output==objects || output==depth) { return E_INVALIDARG; }
         const auto d=output->GetDesc(), g=depth->GetDesc(), m=objects->GetDesc();
         for(auto* r:{original,neural,objects,depth,output}) {
@@ -68,7 +68,9 @@ namespace TheosRenderPipeline::NeuralRendering
         device->CreateUnorderedAccessView(output,nullptr,&uav,handle);
         transition(output,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         ObjectBlendConstants constants{static_cast<UINT>(d.Width),d.Height,static_cast<UINT>(g.Width),g.Height,
-            SanitizeObjectMask(settings).strength,guideOffset,{}};
+            SanitizeStrengths(request.strength),guideOffset,{},
+            (request.previewGroups & 0xFu) ? (request.classesOnly ? 2u : 1u) : 0u,
+            request.previewGroups & 0xFu,static_cast<UINT>(peripheral),0};
         list->SetDescriptorHeaps(1,&heap); list->SetComputeRootSignature(root_.Get()); list->SetPipelineState(pipeline_.Get());
         list->SetComputeRoot32BitConstants(0,sizeof(constants)/4,&constants,0);
         list->SetComputeRootDescriptorTable(1,heap->GetGPUDescriptorHandleForHeapStart());

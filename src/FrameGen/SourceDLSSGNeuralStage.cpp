@@ -29,7 +29,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (a_options.runtimePath != neuralOptions_.runtimePath || (!neuralOptions_.enabled && a_options.enabled)) {
 			neuralAvailability_.Reset();
 		}
-		NeuralObjects::Configure(a_options.enabled && a_options.objectMasks.enabled);
+		NeuralObjects::Configure(a_options.enabled && NeuralRendering::ObjectsInUse(a_options.objectMasks, a_options.passes));
         neuralOptions_ = std::move(a_options);
 	}
 	const std::string* Backend::SelectNeuralRuntime(NeuralOptions& options)

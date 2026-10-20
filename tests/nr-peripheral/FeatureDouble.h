@@ -6,4 +6,6 @@ inline unsigned sourceWidth{}, sourceHeight{}, guideWidth{}, guideHeight{}, work
 inline unsigned secondWidth{}, secondHeight{};
 inline bool transform{};
 inline unsigned creations{}, evaluations{}, resets{};
+inline bool objectControls{};
+inline unsigned controlEvaluations{};
 }

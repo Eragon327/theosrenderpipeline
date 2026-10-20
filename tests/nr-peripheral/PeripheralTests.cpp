@@ -211,4 +211,4 @@ static void IndependentPasses(GPU& gpu,bool adaptive=false){
     std::printf("PASS: %u independent pass configurations (adaptive=%d); rounded sizes, larger/smaller/equal second grid, per-pass tuning/preset, identity detail, chained transform and UI/history contracts\n",cases,adaptive);
 }
 #include "ObjectMaskCases.h"
-int main(){GPU gpu;ObjectMaskCases(gpu);Kernels(gpu);DescriptorCache(gpu);Passes(gpu);CombinedPreparation(gpu);PreparationRecorder(gpu);IndependentPasses(gpu);IndependentPasses(gpu,true);}
+int main(){GPU gpu;ObjectMaskCases(gpu);PassObjectStrengthCases(gpu);Kernels(gpu);DescriptorCache(gpu);Passes(gpu);CombinedPreparation(gpu);PreparationRecorder(gpu);IndependentPasses(gpu);IndependentPasses(gpu,true);}

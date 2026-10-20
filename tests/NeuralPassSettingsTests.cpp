@@ -17,16 +17,55 @@ int main()
     {
         CSimpleIniA saved;
         Preferences values;
-        Require(!values.neuralObjectMasks.enabled, "object masks default off");
-        values.neuralObjectMasks = {true,{0,0.25f,0.5f,1}};
+        Require(!values.neuralObjectMasks.passes[0].Active() && !values.neuralObjectMasks.passes[1].Active(), "object rules default off");
+        Require(!NeuralRendering::ObjectsInUse(values.neuralObjectMasks, 2), "no object capture by default");
+        for(unsigned pass=0;pass<2;++pass)for(unsigned group=0;group<4;++group){
+            values.neuralObjectMasks.passes[pass].groups[group]={group%2==0,float(pass+group)/5,float(group)/4,float(pass+group)/8};
+        }
         StorePreferences(saved,values);
-        Require(LoadPreferences(saved).neuralObjectMasks == values.neuralObjectMasks, "all four object mask rules round trip");
+        Require(LoadPreferences(saved).neuralObjectMasks==values.neuralObjectMasks,"both passes' group controls round trip independently");
+        CSimpleIniA old;
+        old.SetBoolValue("SourceDLSSG", "NRObjectMasks", true);
+        old.SetDoubleValue("SourceDLSSG", "NRFirstPersonStrength", 0);
+        Require(!NeuralRendering::ObjectsInUse(LoadPreferences(old).neuralObjectMasks, 2),
+            "released whole-chain object keys are ignored");
+        old.SetBoolValue("SourceDLSSG", "NRObjectPass1Group1Enabled", true);
+        const auto migrated=LoadPreferences(old).neuralObjectMasks;
+        Require(migrated.passes[0].groups[0].enabled && migrated.passes[0].groups[0].strength==1,
+            "a missing per-pass strength keeps the full pass");
+        Require(NeuralRendering::ObjectsInUse(migrated, 1) && !NeuralRendering::ObjectsInUse(
+            [&] { auto second = migrated; second.passes[0] = {}; second.passes[1].groups[2].enabled = true; return second; }(), 1),
+            "capture follows rules in passes that run");
+        StorePreferences(saved, LoadPreferences(old));
+        Require(!saved.KeyExists("SourceDLSSG", "NRObjectMasks") && !saved.KeyExists("SourceDLSSG", "NRFirstPersonStrength"),
+            "whole-chain object keys are not written");
+        auto malformed=migrated;
+        malformed.passes[0].groups[0].strength=std::numeric_limits<float>::quiet_NaN();
+        malformed.passes[1].groups[0]={true,1,1,-3};
+        malformed.passes[1].groups[1]={false,1,1,3};
+        malformed=NeuralRendering::SanitizeObjectMask(malformed);
+        Require(malformed.passes[0].groups[0].strength==1 && malformed.passes[1].Strengths()==std::array<float,4>{0,1,1,1},
+            "invalid strengths sanitize and disabled groups retain full NR");
+        values.neuralObjectMasks.previewGroups=0x5;
+        values.neuralObjectMasks.previewClassesOnly=true;
+        StorePreferences(saved,values);
+        Require(!LoadPreferences(saved).neuralObjectMasks.previewGroups && !LoadPreferences(saved).neuralObjectMasks.previewClassesOnly,
+            "diagnostic preview never persists");
+        NeuralRendering::ObjectMaskSettings shown; shown.previewGroups=0x8;
+        Require(NeuralRendering::ObjectsInUse(shown, 1), "showing a group in the preview turns capture on without rules");
         NeuralOptions options; options.enabled=true; options.automaticRuntime=true;
         options.objectMasks=values.neuralObjectMasks;
         NeuralHistory history; Require(history.ResetFor(options,true,false),"first object policy resets");
         Require(!history.ResetFor(options,true,false),"unchanged object policy retains history");
-        options.objectMasks.strength[2]=0.75f;
-        Require(history.ResetFor(options,true,false),"object policy edit resets NR history");
+        options.objectMasks.previewGroups=0x6;
+        options.objectMasks.previewClassesOnly=true;
+        Require(!history.ResetFor(options,true,false),"preview edits do not invalidate inference history");
+        options.objectMasks.passes[1].groups[1].tone=.125f;
+        Require(history.ResetFor(options,true,false),"per-pass object controls invalidate history");
+        options.objectMasks.passes[1].groups[1].strength=.875f;
+        Require(history.ResetFor(options,true,false),"per-pass strength edits invalidate history");
+        options.objectMasks.passes[0].groups[1].enabled=true; // starts disabled above
+        Require(history.ResetFor(options,true,false),"enabling a pass object rule resets NR history");
     }
 
 	auto empty = LoadPreferences(ini);

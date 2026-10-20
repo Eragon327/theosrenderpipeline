@@ -226,6 +226,7 @@ set(ARP_NEURAL_SOURCES
     src/FrameGen/NeuralRenderingModulePathHook.cpp
     src/FrameGen/NeuralRenderingRuntimeIdentity.cpp
     src/FrameGen/NeuralObjectBlend.cpp
+    src/FrameGen/NeuralObjectControl.cpp
     src/FrameGen/SourceDLSSGNeuralRendering.cpp
     src/FrameGen/SourceDLSSGNeuralStage.cpp
     src/FrameGen/SourceDLSSGNeuralResolve.cpp

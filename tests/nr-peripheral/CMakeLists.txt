@@ -6,6 +6,7 @@ add_executable(TRPNeuralPeripheralTests PeripheralTests.cpp FeatureDouble.cpp
     ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp
     ../../src/FrameGen/SourceDLSSGNeuralResolve.cpp
     ../../src/FrameGen/NeuralObjectBlend.cpp
+    ../../src/FrameGen/NeuralObjectControl.cpp
     ../../src/FrameGen/SourceDLSSGInterop.cpp ../../src/FrameGen/D3D12StageTimer.cpp)
 target_compile_features(TRPNeuralPeripheralTests PRIVATE cxx_std_23)
 target_compile_definitions(TRPNeuralPeripheralTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -41,6 +42,7 @@ if(TRP_NR_VENDOR_BENCHMARK)
         ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp
         ../../src/FrameGen/SourceDLSSGNeuralResolve.cpp
     ../../src/FrameGen/NeuralObjectBlend.cpp
+    ../../src/FrameGen/NeuralObjectControl.cpp
         ../../src/FrameGen/SourceDLSSGInterop.cpp ../../src/FrameGen/D3D12StageTimer.cpp
         ../../src/FrameGen/NeuralRenderingFeatureSession.cpp
         ../../src/FrameGen/NeuralRenderingModulePathHook.cpp
@@ -56,6 +58,7 @@ if(TRP_NR_VENDOR_BENCHMARK)
         ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp
         ../../src/FrameGen/SourceDLSSGNeuralResolve.cpp
     ../../src/FrameGen/NeuralObjectBlend.cpp
+    ../../src/FrameGen/NeuralObjectControl.cpp
         ../../src/FrameGen/SourceDLSSGInterop.cpp ../../src/FrameGen/D3D12StageTimer.cpp
         ../../src/FrameGen/NeuralRenderingFeatureSession.cpp
         ../../src/FrameGen/NeuralRenderingModulePathHook.cpp
@@ -65,6 +68,18 @@ if(TRP_NR_VENDOR_BENCHMARK)
     target_compile_definitions(TRPNeuralHDRRangeProbe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN TRP_NR_VENDOR_BENCHMARK)
     target_include_directories(TRPNeuralHDRRangeProbe PRIVATE . ../../src "${NGX_SDK}/include")
     target_link_libraries(TRPNeuralHDRRangeProbe PRIVATE d3d12 d3d11 d3dcompiler dxgi bcrypt version
+        "${NGX_SDK}/lib/Windows_x86_64/nvsdk_ngx_d.lib")
+    add_executable(TRPNeuralObjectVendorProbe ObjectControlVendorProbe.cpp
+        ../../src/FrameGen/SourceDLSSGNeuralRendering.cpp ../../src/FrameGen/SourceDLSSGNeuralResolve.cpp
+        ../../src/FrameGen/NeuralObjectBlend.cpp ../../src/FrameGen/NeuralObjectControl.cpp
+        ../../src/FrameGen/SourceDLSSGInterop.cpp ../../src/FrameGen/D3D12StageTimer.cpp
+        ../../src/FrameGen/NeuralRenderingFeatureSession.cpp ../../src/FrameGen/NeuralRenderingModulePathHook.cpp
+        ../../src/FrameGen/NeuralRenderingRuntimeIdentity.cpp ${nr_ada_sources})
+    target_compile_features(TRPNeuralObjectVendorProbe PRIVATE cxx_std_23)
+    trp_target_neural_shaders(TRPNeuralObjectVendorProbe)
+    target_compile_definitions(TRPNeuralObjectVendorProbe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN TRP_NR_VENDOR_BENCHMARK)
+    target_include_directories(TRPNeuralObjectVendorProbe PRIVATE . ../../src "${NGX_SDK}/include")
+    target_link_libraries(TRPNeuralObjectVendorProbe PRIVATE d3d12 d3d11 d3dcompiler dxgi bcrypt version
         "${NGX_SDK}/lib/Windows_x86_64/nvsdk_ngx_d.lib")
 endif()
 # Header-only configuration contract; the main build already supplies SimpleIni.

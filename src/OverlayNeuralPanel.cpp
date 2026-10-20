@@ -97,21 +97,54 @@ const char* NeuralUnavailableReason(int upscaleType, bool nrRuntimePresent)
 // Base and presets share these controls. Presets add each row's state column.
 void DrawNeuralObjectSettings(TheosRenderPipeline::SourceDLSSG::Preferences& draft, bool unavailable)
 {
+    // Object rules belong to each pass; there is no switch or limit for the chain.
     namespace NR = TheosRenderPipeline::NeuralRendering;
     auto& masks = draft.neuralObjectMasks;
     ImGui::BeginDisabled(unavailable);
-    ImGui::Checkbox("Object-specific NR (experimental)", &masks.enabled);
-    if (masks.enabled) {
-        for (unsigned i=0; i<4; ++i) {
-            ImGui::SliderFloat(NR::kObjectGroups[i], &masks.strength[i], 0.0f, 1.0f, "%.2f");
+    ImGui::TextUnformatted("Object-specific NR (experimental)");
+    // Session-only mask preview: tick the groups to show over the finished image.
+    ImGui::TextUnformatted("Mask preview (session only)");
+    for (unsigned group=0;group<4;++group) {
+        bool shown=(masks.previewGroups>>group)&1;
+        if (group) { ImGui::SameLine(); }
+        if (ImGui::Checkbox((std::string("Show ")+NR::kObjectGroups[group]).c_str(),&shown)) {
+            masks.previewGroups=shown?(masks.previewGroups|(1u<<group)):(masks.previewGroups&~(1u<<group));
         }
-        ImGui::TextWrapped("%s", TheosRenderPipeline::NeuralObjects::Status());
-        ImGui::TextDisabled(TheosRenderPipeline::NeuralObjects::Current() ?
-            "Current-frame classification available" : "No current-frame classification; normal NR");
-        DrawSettingsHelp("0 preserves the original object; 1 applies the full NR result. Applies after both passes, before UI composition. "
-            "Experimental opaque-object capture for Skyrim 1.6.1170; transparent/alpha-tested or unclassified pixels keep normal NR. "
-            "This does not reduce inference cost.");
     }
+    ImGui::BeginDisabled(!masks.previewGroups);
+    ImGui::Checkbox("Classes only",&masks.previewClassesOnly);
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Green: first-person | Blue: player | Orange: humanoids | Purple: creatures");
+    ImGui::TextWrapped("Tick a group to override it in that pass. Strength 0 keeps this pass's input; 1 keeps its full "
+        "result. Pass 2 at 0 keeps Pass 1's work. Tone and structure replace that pass's values and require a "
+        "reconstruction NR runtime; active controls pause its automatic skin mask. Object rules are independent of "
+        "Match Pass 1 and weather presets.");
+    if (ImGui::BeginTable("objectPasses", 2, ImGuiTableFlags_SizingStretchSame)) {
+        for(unsigned pass=0;pass<2;++pass) {
+            ImGui::TableNextColumn();
+            ImGui::PushID(static_cast<int>(pass));
+            ImGui::BeginDisabled(pass==1&&draft.neuralPasses!=2);
+            ImGui::TextColored(kAmber, "Pass %u",pass+1);
+            for(unsigned group=0;group<4;++group) {
+                ImGui::PushID(static_cast<int>(group));
+                auto& rule=masks.passes[pass].groups[group];
+                ImGui::Checkbox(NR::kObjectGroups[group],&rule.enabled);
+                ImGui::BeginDisabled(!rule.enabled);
+                ImGui::SliderFloat("Strength",&rule.strength,0,1,"%.2f");
+                ImGui::SliderFloat("Tone",&rule.tone,0,1,"%.2f");
+                ImGui::SliderFloat("Structure",&rule.structure,0,1,"%.2f");
+                ImGui::EndDisabled();ImGui::PopID();
+            }
+            ImGui::EndDisabled();ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::TextWrapped("%s", TheosRenderPipeline::NeuralObjects::Status());
+    ImGui::TextDisabled(TheosRenderPipeline::NeuralObjects::Current() ?
+        "Current-frame classification available" : "No current-frame classification; normal NR");
+    DrawSettingsHelp("Experimental opaque-object capture for Skyrim 1.6.1170, captured only while a running pass overrides a "
+        "group or the preview is on. Transparent/alpha-tested or unclassified pixels keep normal NR. Strength adds blending "
+        "work and memory; both inference passes still run. UI is composed afterwards.");
     ImGui::EndDisabled();
 }
 

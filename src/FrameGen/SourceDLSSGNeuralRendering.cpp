@@ -330,9 +330,29 @@ namespace TheosRenderPipeline::SourceDLSSG
 		constexpr auto read = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 		constexpr auto common = D3D12_RESOURCE_STATE_COMMON;
 		constexpr auto write = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		// Prepare both passes before transitioning shared guides for evaluation.
+		// Each mask samples the raw classification/depth at that model's grid,
+		// including peripheral compression and the existing SDK pixel jitter.
+		std::array<ID3D12Resource*,2> controls{};
+		bool controlReset=false;
+		for (unsigned pass=0;pass<2;++pass) {
+			const bool active=objectMask&&pass<unsigned(effectivePasses)&&
+				NeuralRendering::UsesReconstructionContract(feature_.Build())&&options.objectMasks.passes[pass].Active();
+			controlReset|=active!=objectControlActive_[pass];
+			if(active) {
+				auto* output=pass?secondOutput_.Get():featureOutput;
+				const auto hr=objectControl_.Record(device,list,slot,pass,options.objectMasks.passes[pass],
+					pass?options.EffectiveSecond().tuning:options.tuning,objectMask,depth,
+					static_cast<UINT>(output->GetDesc().Width),output->GetDesc().Height,reconstruction.peripheralCompression,objectMaskGuideOffset);
+				if(FAILED(hr)){status_=std::format("NR object controls failed 0x{:08X}",static_cast<UINT>(hr));return false;}
+				controls[pass]=objectControl_.Output(pass);
+			}
+			objectControlActive_[pass]=active;
+		}
+		secondControlMask_=controls[1];
 		// Every resource NGX reads. featureColor is hudless unless preparation replaced it.
-		const std::array<ID3D12Resource*, 6> inputs{ featureMotion, featureDepth, featureUI, hudless, composed,
-			featureColor != hudless ? featureColor : nullptr };
+		const std::array<ID3D12Resource*, 8> inputs{ featureMotion, featureDepth, featureUI, hudless, composed,
+			featureColor != hudless ? featureColor : nullptr,controls[0],controls[1] };
 		auto transitionInputs = [&](Barriers& barriers, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after) {
 			for (auto* resource : inputs) { barriers.Add(resource, before, after); }
 		};
@@ -353,17 +373,64 @@ namespace TheosRenderPipeline::SourceDLSSG
 		input.motionVectorScaleX = reconstruction.peripheralCompression ? 1.0f : scaleX * motionRatio;
 		input.motionVectorScaleY = reconstruction.peripheralCompression ? 1.0f : scaleY * motionRatio;
 		input.reset = reset; input.depthInverted = depthInverted; input.tuning = options.tuning;
+		input.reset |= controlReset;
+		input.controlMask=controls[0];
+		if (input.controlMask) {
+			// The provider multiplies mask RGB by these global controls. Absolute
+			// pass/group values already live in the mask; do not apply them twice.
+			input.tuning.useAutoSkinMask = false;
+			input.tuning.intensity = input.tuning.localToneStrength = input.tuning.localStructureStrength = 1;
+		}
 		const bool gpuTiming = timestampHeap_ && timestampReadback_ && mappedTimestamps_ && timestampFrequency_;
 		const auto query = static_cast<UINT>(slot * 2);
 		marks.End(D3D12Stage::kNeuralPrepare);
 		marks.Begin(D3D12Stage::kNeuralInference);
 		if (gpuTiming) { list->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query); }
+		// Strength is source-owned, unlike the provider's tone/structure controls.
+		// Blend before the next pass reads this output, retaining that pass's input
+		// at zero. Each pass owns its scratch texture and retired-slot descriptors.
+		// The existing chain timing includes these blends and pass-2 preparation.
+		auto applyObjectStrength = [&](unsigned pass, const NeuralRendering::FeatureSession::EvaluationInput& evaluation) {
+			if (!objectMask) { return true; }
+			const auto strengths = options.objectMasks.passes[pass].Strengths();
+			if (std::all_of(strengths.begin(), strengths.end(), [](float value) { return value == 1; })) { return true; }
+			auto& result = passObjectResult_[pass];
+			if (!result) {
+				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+				const auto desc = evaluation.output->GetDesc();
+				const auto hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+					common, nullptr, IID_PPV_ARGS(&result));
+				if (FAILED(hr)) { status_ = "NR per-pass object-result allocation failed"; return false; }
+			}
+			// Raw depth remains readable when used directly by the first model;
+			// peripheral preparation instead left it COMMON. Other guides stay put.
+			const bool rawDepthRead = featureDepth == depth;
+			Barriers before{list};
+			before.Add(evaluation.color, read, common).Add(evaluation.output, write, common);
+			if (rawDepthRead) { before.Add(depth, read, common); }
+			before.Flush();
+			NeuralRendering::ObjectBlendRequest request;
+			request.strength = strengths;
+			const auto hr = passObjectBlend_[pass].Record(device, list, slot, request,
+				evaluation.color, evaluation.output, objectMask, depth, result.Get(), objectMaskGuideOffset,
+				reconstruction.peripheralCompression);
+			if (FAILED(hr) || FAILED(Interop::RecordCopy(list, result.Get(), evaluation.output))) {
+				status_ = std::format("NR pass {} object-strength composition failed", pass + 1); return false;
+			}
+			Barriers after{list};
+			after.Add(evaluation.color, common, read).Add(evaluation.output, common, write);
+			if (rawDepthRead) { after.Add(depth, common, read); }
+			after.Flush();
+			return true;
+		};
 		const auto cpuBegin = std::chrono::steady_clock::now();
 		auto second = input;
 		bool evaluated = feature_.RecordEvaluation(input);
 		if (!evaluated) { status_ = feature_.Status(); }
+		if (evaluated) { evaluated = applyObjectStrength(0, input); }
 		if (evaluated && effectivePasses == 2) {
 			evaluated = RecordSecond(device, list, slot, options, input, constants, motion, depth, ui, second);
+			if (evaluated) { evaluated = applyObjectStrength(1, second); }
 		}
 		const auto cpuRecordNanoseconds = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
 			std::chrono::steady_clock::now() - cpuBegin).count());
@@ -418,7 +485,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 			key.secondIntensity = secondSettings_.tuning.intensity;
 		}
 		key.passOverride = options.passOverride; key.requestedPasses = options.passes;
-		if (options.objectMasks.enabled && objectMask) {
+		key.objectControls=objectControlActive_;
+		key.objectControlsUnavailable=
+			(options.objectMasks.passes[0].Active()||options.objectMasks.passes[1].Active())&&
+			!NeuralRendering::UsesReconstructionContract(feature_.Build());
+		// The mask preview is drawn over the finished result at full strength;
+		// each pass has already applied its own object strength.
+		if (options.objectMasks.previewGroups && objectMask) {
 			if (!objectResult_) {
 				auto desc = corrected_->GetDesc();
 				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -435,11 +508,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 				transitionInputs(barriers, read, common);
 				barriers.Flush();
 			}
-			const auto hr = objectBlend_.Record(device, list, slot, options.objectMasks, hudless, corrected_.Get(), objectMask, depth,
+			NeuralRendering::ObjectBlendRequest preview;
+			preview.previewGroups = options.objectMasks.previewGroups; preview.classesOnly = options.objectMasks.previewClassesOnly;
+			const auto hr = objectBlend_.Record(device, list, slot, preview, hudless, corrected_.Get(), objectMask, depth,
 				objectResult_.Get(), objectMaskGuideOffset);
-			if (FAILED(hr)) { status_ = std::format("NR object-mask composition failed 0x{:08X}", static_cast<UINT>(hr)); return false; }
+			if (FAILED(hr)) { status_ = std::format("NR object-mask preview failed 0x{:08X}", static_cast<UINT>(hr)); return false; }
 			const auto copied = Interop::RecordCopy(list, objectResult_.Get(), corrected_.Get());
-			if (FAILED(copied)) { status_ = std::format("NR object-mask result copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
+			if (FAILED(copied)) { status_ = std::format("NR object-mask preview copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
 			if (!resolving) {
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), common, write);
@@ -529,6 +604,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 				successStatus_ += std::format("; pass override={}; requested={}",
 					NeuralRendering::PassOverrideName(key.passOverride), key.requestedPasses);
 			}
+			if(key.objectControls[0]||key.objectControls[1]){
+				successStatus_+=std::format("; object tone/structure pass1={} pass2={} (auto skin paused on masked passes)",key.objectControls[0],key.objectControls[1]);
+			}
+			if(key.objectControlsUnavailable){successStatus_+="; object tone/structure unavailable on legacy NR; per-pass and final strength retained";}
 		}
 		if (status_ != successStatus_) { status_ = successStatus_; }
 	}

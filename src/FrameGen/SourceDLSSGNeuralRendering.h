@@ -6,6 +6,7 @@
 #include "SourceDLSSGNeuralResolve.h"
 #include "SourceDLSSGNeuralTelemetry.h"
 #include "NeuralObjectBlend.h"
+#include "NeuralObjectControl.h"
 #include <array>
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -76,6 +77,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			float secondIntensity{};
 			NeuralRendering::PassOverride passOverride{};
 			int requestedPasses{};
+			std::array<bool,2> objectControls{};
+			bool objectControlsUnavailable{};
 			bool operator==(const StatusKey&) const = default;
 		};
 		void PublishStatus(const StatusKey& key);
@@ -99,6 +102,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralResolveKernels resolve_;
         NeuralRendering::ObjectBlend objectBlend_;
         Microsoft::WRL::ComPtr<ID3D12Resource> objectResult_;
+        std::array<NeuralRendering::ObjectBlend,2> passObjectBlend_;
+        std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,2> passObjectResult_;
+        NeuralRendering::ObjectControl objectControl_;
+        std::array<bool,2> objectControlActive_{};
+        ID3D12Resource* secondControlMask_{}; // frame-only, owned by objectControl_
 		bool fusedColor_{};
 		NeuralRendering::Reconstruction reconstruction_;
 		std::filesystem::path runtimePath_;

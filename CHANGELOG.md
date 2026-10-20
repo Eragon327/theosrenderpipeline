@@ -1,3 +1,19 @@
+# Unreleased
+
+- Give every object group independent Strength, Tone and Structure controls in
+  Pass 1 and Pass 2. Strength blends with that pass's input; zero on Pass 2
+  retains Pass 1's work. Both model evaluations still run.
+- Remove whole-chain object protection and the Object-specific NR switch. Object
+  rules now live only in each pass; capture runs while a running pass overrides
+  a group or the mask preview is on. The released `NRObjectMasks` and
+  `NR*Strength` keys are no longer read or written.
+- Add a session-only NR object-mask preview that shows any combination of
+  groups as a coloured overlay, or as classes only.
+- Add independent per-group tone/structure overrides inside each NR pass. Active
+  controls pause automatic skin masking for that pass; saved skin settings remain
+  unchanged. Legacy NR retains per-pass strength. Object capture remains opt-in
+  and uses the existing opaque-draw replay path.
+
 # 0.4.5
 
 - Reduce repeated NR recording work: use constant parameter names, reuse
