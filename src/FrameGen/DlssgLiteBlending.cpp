@@ -1,6 +1,7 @@
 #include <PCH.h>
 #include "DlssgLiteBlending.h"
 #include "DlssgPreset.h"
+#include "../CodePages.h"
 #include "../PluginPaths.h"
 #include <nvsdk_ngx.h>
 #include <nvsdk_ngx_defs.h>
@@ -32,7 +33,7 @@ namespace TheosRenderPipeline::SourceDLSSG::LiteBlending
 		class Stub final : public Xbyak::CodeGenerator
 		{
 		public:
-			Stub(std::span<const std::uint8_t> prologue, std::uintptr_t resume) : CodeGenerator(160)
+			Stub(std::span<const std::uint8_t> prologue, std::uintptr_t resume) : CodeGenerator(160, nullptr, &CodePageAllocator())
 			{
 				Xbyak::Label destination;
 				push(rcx); push(rdx); push(r8); push(r9);
