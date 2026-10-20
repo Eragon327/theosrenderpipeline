@@ -345,12 +345,13 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
     const auto shadowedBy = [&](const Appearance::NamedProfile* owner) {
         return owner && owner != &preset ? owner : nullptr;
     };
-    // One on/off button per weather type or place, flowing within its cell.
+    // One checkbox per weather type or place, flowing within its cell; any number can be ticked.
     const auto groupToggle = [&](Flow& flow, Appearance::Group value) {
         const auto i = static_cast<std::size_t>(value);
         const auto* owner = shadowedBy(claims.groups[i]);
-        flow.Next(ImGui::CalcTextSize(GroupLabels[i]).x + ImGui::GetStyle().FramePadding.x * 2);
-        ToggleButton(GroupLabels[i], preset.groups[i], owner && preset.groups[i]);
+        if (owner && preset.groups[i]) { ImGui::PushStyleColor(ImGuiCol_Text, kMuted); }
+        flow.Checkbox(GroupLabels[i], &preset.groups[i]);
+        if (owner && preset.groups[i]) { ImGui::PopStyleColor(); }
         if (owner) {
             Tooltip(std::format("\"{}\" uses this{}. The higher override in the list wins; move this one up to use it here.",
                 ShownName(*owner), preset.groups[i] ? " instead" : "").c_str());
@@ -384,9 +385,8 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
                 const bool loaded = FindWeather(record, *catalogue);
                 const auto* owner = shadowedBy(Appearance::WeatherOwner(claims, record));
                 const auto label = std::format("{}  x##chip{}", ShortWeatherLabel(record, *catalogue), i);
-                bool on = true;
                 flow.Next(ImGui::CalcTextSize(label.c_str(), nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2);
-                if (ToggleButton(label.c_str(), on, !loaded || owner)) { unassign = record; }
+                if (Chip(label.c_str(), !loaded || owner)) { unassign = record; }
                 Tooltip(std::format("{}{}{}\nClick to remove.", WeatherLabel(record, *catalogue),
                     loaded ? "" : "\nNot loaded this session; kept for when its plugin returns.",
                     owner ? std::format("\n\"{}\" uses this instead; it is higher in the list.", ShownName(*owner)) : std::string()).c_str());
@@ -414,7 +414,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
         ImGui::TextUnformatted("Weather types");
         ImGui::TableNextColumn();
         {
-            Flow flow;
+            Flow flow(Px(18.0f));
             for (const auto value : {Appearance::Group::Clear, Appearance::Group::Cloudy, Appearance::Group::Rain, Appearance::Group::Snow}) {
                 groupToggle(flow, value);
             }
@@ -426,7 +426,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
         ImGui::TextUnformatted("Places");
         ImGui::TableNextColumn();
         {
-            Flow flow;
+            Flow flow(Px(18.0f));
             groupToggle(flow, Appearance::Group::Interior);
             groupToggle(flow, Appearance::Group::Exterior);
         }

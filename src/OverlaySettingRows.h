@@ -14,10 +14,12 @@ namespace TheosRenderPipeline::Overlay
 class Flow
 {
 public:
-    Flow() : right_(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x) {}
+    // gap is the space between items; zero uses the style's item spacing.
+    explicit Flow(float gap = 0)
+        : right_(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x), gap_(gap > 0 ? gap : ImGui::GetStyle().ItemSpacing.x) {}
     void Next(float width)
     {
-        if (!first_ && lastEnd_ + ImGui::GetStyle().ItemSpacing.x + width <= right_) { ImGui::SameLine(); }
+        if (!first_ && lastEnd_ + gap_ + width <= right_) { ImGui::SameLine(0, gap_); }
         first_ = false;
         lastEnd_ = ImGui::GetCursorPosX() + width;
     }
@@ -38,7 +40,7 @@ public:
         ImGui::TextDisabled("%s", text);
     }
 private:
-    float right_, lastEnd_{};
+    float right_, gap_, lastEnd_{};
     bool first_{true};
 };
 
@@ -292,25 +294,24 @@ inline bool Segmented(const char* id, int& selected, std::initializer_list<Segme
     return changed;
 }
 
-// A separate on/off button for choices that combine, such as weather types;
-// joined segments are kept for choosing one of several. A selected button is
-// amber; a muted one has greyed text. Returns true when clicked.
-inline bool ToggleButton(const char* label, bool& on, bool muted = false)
+// An item someone added to a list, such as an exact weather: an amber chip that
+// is removed by clicking it. A muted chip has greyed text. Returns true when
+// clicked. Choices that can be on together use checkboxes; pick-one choices use
+// joined segments.
+inline bool Chip(const char* label, bool muted = false)
 {
     const auto& style = ImGui::GetStyle();
     const auto text = ImGui::CalcTextSize(label, nullptr, true);
     const ImVec2 size(text.x + style.FramePadding.x * 2, ImGui::GetFrameHeight());
     const bool clicked = ImGui::InvisibleButton(label, size);
-    if (clicked) { on = !on; }
     const bool hovered = ImGui::IsItemHovered();
     const auto topLeft = ImGui::GetItemRectMin();
     const ImVec2 bottomRight(topLeft.x + size.x, topLeft.y + size.y);
     auto* draw = ImGui::GetWindowDrawList();
-    const auto fill = on ? ImGui::GetColorU32(ImVec4(0.23f, 0.18f, 0.08f, 1.0f))
-                    : hovered ? ImGui::GetColorU32(ImGuiCol_FrameBgHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg);
-    draw->AddRectFilled(topLeft, bottomRight, fill, style.FrameRounding);
-    draw->AddRect(topLeft, bottomRight, on ? ImGui::GetColorU32(kAmberDim) : ImGui::GetColorU32(ImGuiCol_Border), style.FrameRounding);
-    const auto colour = muted ? ImGui::GetColorU32(kMuted) : on ? ImGui::GetColorU32(kAmber) : ImGui::GetColorU32(ImGuiCol_Text);
+    draw->AddRectFilled(topLeft, bottomRight, ImGui::GetColorU32(ImVec4(0.23f, 0.18f, 0.08f, 1.0f)), style.FrameRounding);
+    // The border brightens on hover, since a click removes the chip.
+    draw->AddRect(topLeft, bottomRight, ImGui::GetColorU32(hovered ? kAmber : kAmberDim), style.FrameRounding);
+    const auto colour = ImGui::GetColorU32(muted ? kMuted : kAmber);
     const char* end = label;
     while (*end && !(end[0] == '#' && end[1] == '#')) { ++end; }
     draw->AddText(ImVec2(topLeft.x + style.FramePadding.x, topLeft.y + (size.y - text.y) * 0.5f), colour, label, end);
