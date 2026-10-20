@@ -431,7 +431,8 @@ namespace TheosRenderPipeline::SourceDLSSG
     {
         objectMaskCurrent_ = false;
 #if !defined(TRP_NO_NEURAL_RENDERING)
-        if (!frameNeuralOptions_.enabled || !frameNeuralOptions_.objectMasks.enabled) { return true; }
+        if (!frameNeuralOptions_.enabled ||
+            !NeuralRendering::ObjectsInUse(frameNeuralOptions_.objectMasks, frameNeuralOptions_.EffectivePasses())) { return true; }
         auto* source = NeuralObjects::Current();
         if (!source || objectMaskRefused_) { return true; }
         // Masks are experimental: a mask texture that cannot be shared turns them

@@ -79,8 +79,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 	inline bool SameHistoryOptions(NeuralOptions current, const NeuralOptions& previous)
 	{
 		auto previousComparable=previous;
-		current.objectMasks.preview=previousComparable.objectMasks.preview=NeuralRendering::ObjectPreview::Off;
-		current.objectMasks.previewGroup=previousComparable.objectMasks.previewGroup=0;
+		current.objectMasks.previewGroups=previousComparable.objectMasks.previewGroups=0;
+		current.objectMasks.previewClassesOnly=previousComparable.objectMasks.previewClassesOnly=false;
 		if (current.appearanceRevision && current.appearanceRevision == previous.appearanceRevision) {
 			const auto retain = [](NeuralRendering::Tuning& value, const NeuralRendering::Tuning& old) {
 				value.intensity = old.intensity;

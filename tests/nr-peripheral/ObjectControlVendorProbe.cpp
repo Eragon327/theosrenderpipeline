@@ -27,7 +27,6 @@ int wmain(int argc,wchar_t** argv)
         const bool masked=mode==1||mode==2;
         NeuralOptions options;options.enabled=true;options.beforeUpscaling=true;options.runtimePath=std::filesystem::absolute(argv[1]);
         options.tuning.intensity=tuning[0];options.tuning.localToneStrength=tuning[1];options.tuning.localStructureStrength=tuning[2];
-        options.objectMasks.enabled=true;options.objectMasks.strength.fill(1);
         if(masked)for(unsigned group=0;group<4;++group)
             options.objectMasks.passes[0].groups[group]={true,mode==2?float(group%2):tuning[1],mode==2?float((group+1)%2):tuning[2]};
         for(unsigned frame=0;frame<8;++frame){

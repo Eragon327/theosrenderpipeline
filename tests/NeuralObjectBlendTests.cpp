@@ -127,14 +127,15 @@ int main(){
     Check(gpu.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&gpu.allocator)),"allocator");
     Check(gpu.device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,gpu.allocator.Get(),nullptr,IID_PPV_ARGS(&gpu.list)),"list");
     Check(gpu.device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gpu.fence)),"fence");
-    ObjectMaskSettings settings;settings.enabled=true;settings.strength={0,0.25f,0.5f,1};
-    auto sanitized=settings;sanitized.strength={-1,2,std::numeric_limits<float>::quiet_NaN(),0.75f};
-    Require(SanitizeObjectMask(sanitized).strength==std::array<float,4>{0,1,1,0.75f},"sanitize invalid tuning");
-    Require(ObjectStrength(settings,ObjectGroup::World)==1,"world unchanged");
+    ObjectBlendRequest settings;settings.strength={0,0.25f,0.5f,1};
+    Require(SanitizeStrengths({-1,2,std::numeric_limits<float>::quiet_NaN(),0.75f})==std::array<float,4>{0,1,1,0.75f},"sanitize invalid strengths");
+    Require(ObjectBlendRequest{}.strength==std::array<float,4>{1,1,1,1},"a default request keeps the full result");
     ObjectBlend blend;
     for(unsigned iteration=0;iteration<72;++iteration){
         const bool peripheral=iteration>=36;
-        settings.preview=static_cast<ObjectPreview>((iteration%36)/12);settings.previewGroup=iteration%2?2:0;
+        // Off, overlay and classes-only, each with all groups, one group and two groups.
+        const unsigned mode=(iteration%36)/12;
+        settings.previewGroups=mode==0?0u:iteration%3==0?0xFu:iteration%3==1?0x2u:0xAu;settings.classesOnly=mode==2;
         const UINT gw=iteration%2 ? W/2:W, gh=iteration%2 ? H/2:H;
         const std::array<float,2> offset{iteration%3==0?0.0f:iteration%3==1?0.75f:-0.75f,iteration%2?0.375f:-0.375f};
         std::vector<float> original(W*H*4),neural(W*H*4),objects(gw*gh),depth(gw*gh,0.5f);
@@ -168,10 +169,10 @@ int main(){
             unsigned group=qx%8;if(qy%4!=0||group>4)group=0;
             float amount=group?settings.strength[group-1]:1;
             for(unsigned c=0;c<4;++c){float expected=amount==0?original[i*4+c]:amount==1?neural[i*4+c]:c==3?original[i*4+c]:original[i*4+c]+(neural[i*4+c]-original[i*4+c])*amount;
-                const bool selected=group&&(settings.previewGroup==0||settings.previewGroup==group);
+                const bool selected=group&&((settings.previewGroups>>(group-1))&1);
                 const std::array<std::array<float,3>,4> colors{{{.2f,.9f,.4f},{.25f,.55f,1},{1,.65f,.15f},{.8f,.3f,.95f}}};
-                if(c<3&&settings.preview==ObjectPreview::Overlay&&selected)expected+=(colors[group-1][c]-expected)*.6f;
-                if(c<3&&settings.preview==ObjectPreview::Classes)expected=selected?colors[group-1][c]:0;
+                if(c<3&&settings.previewGroups&&!settings.classesOnly&&selected)expected+=(colors[group-1][c]-expected)*.6f;
+                if(c<3&&settings.previewGroups&&settings.classesOnly)expected=selected?colors[group-1][c]:0;
                 Require(std::abs(pixels[i*4+c]-expected)<.000001f,"all channels match independent group/occlusion/preview oracle");}
         }
         Require(blend.Record(gpu.device.Get(),gpu.list.Get(),0,settings,a.Get(),b.Get(),m.Get(),d.Get(),a.Get())==E_INVALIDARG,"alias refused before recording");

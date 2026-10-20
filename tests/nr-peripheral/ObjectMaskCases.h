@@ -13,7 +13,7 @@ static void ObjectMaskCases(GPU& gpu)
         options.reconstruction.peripheralCompression=peripheral;
         options.secondPass.linked=false; options.secondPass.inputScale=.5f; options.secondPass.preset=1;
         options.secondPass.tuning.intensity=.6f; options.secondPass.tuning.uiCorrection=!world;
-        options.objectMasks={true,{0,.25f,.5f,1}};
+        options.objectMasks={};
         options.objectMasks.passes[0].groups[0]={true,.25f,.75f};
         options.objectMasks.passes[1].groups[1]={true,.75f,.25f};
         options.tuning.useAutoSkinMask=true;options.secondPass.tuning.useAutoSkinMask=true;
@@ -31,7 +31,10 @@ static void ObjectMaskCases(GPU& gpu)
             classes[y*gw+x]={PackObjectPixel(static_cast<ObjectGroup>(x%4+1),y%3==0?.2f:.4f),0,0,0};
         auto mask=gpu.Texture(gw,gh,classes,DXGI_FORMAT_R32_FLOAT);
         std::vector<Pixel> baseline;
-        for(bool masked:{false,true}) {
+        // 0: no classification; 1: per-pass rules; 2: rules plus the classes preview.
+        for(unsigned run:{0u,1u,2u}) {
+            const bool masked=run!=0;
+            options.objectMasks.previewGroups=run==2?0xFu:0u; options.objectMasks.previewClassesOnly=run==2;
             Fixture::creations=Fixture::evaluations=Fixture::resets=0;
             Fixture::objectControls=masked;Fixture::controlEvaluations=0;
             NeuralPass pass;
@@ -44,25 +47,27 @@ static void ObjectMaskCases(GPU& gpu)
             for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x) {
                 const auto i=y*w+x; const auto qx=unsigned(std::clamp(int(std::floor((x+.5f)*gw/w+offset[0])),0,int(gw)-1)),
                     qy=unsigned(std::clamp(int(std::floor((y+.5f)*gh/h+offset[1])),0,int(gh)-1));
-                const float amount=qy%3==0?1:options.objectMasks.strength[qx%4];
+                // Rules with full strength leave the result; the preview tints classified pixels.
+                const unsigned group=qy%3==0?0:qx%4+1;
+                const std::array<std::array<float,3>,4> colors{{{.2f,.9f,.4f},{.25f,.55f,1},{1,.65f,.15f},{.8f,.3f,.95f}}};
                 for(unsigned c=0;c<4;++c) {
-                    const float expected=amount==0?pixels[i][c]:amount==1?baseline[i][c]:c==3?pixels[i][c]:
-                        pixels[i][c]+amount*(baseline[i][c]-pixels[i][c]);
-                    Near(actual[i][c],expected,.000001,"mask applies to final one/two-pass native-grid result");
+                    const float expected=run==2&&c<3?(group?colors[group-1][c]:0.f):baseline[i][c];
+                    Near(actual[i][c],expected,.000001,run==2?"classes preview on the final native-grid result":
+                        "full-strength object rules leave the one/two-pass result");
                 }
             }
             if(!world) {
                 const auto real=gpu.Read(pass.Composed()),tag=gpu.Read(scene.Get());
                 for(unsigned i=0;i<w*h;++i)for(unsigned c=0;c<4;++c) {
                     Near(tag[i][c],actual[i][c],0,"masked real frame and FG HUD-less input agree");
-                    if(c<3)Near(real[i][c],actual[i][c]*.75f+std::array<float,3>{.05f,.025f,0}[c],.000001,"UI composes after object masks");
+                    if(c<3)Near(real[i][c],actual[i][c]*.75f+std::array<float,3>{.05f,.025f,0}[c],.000001,"UI composes after object masks and preview");
                 }
             }
         }
     }
     Fixture::secondWidth=Fixture::secondHeight=0;Fixture::transform=false;
     Fixture::objectControls=false;
-    std::puts("PASS object masks inside production NR recorder: both placements, one/two independent passes, scaled/peripheral grids, UI and FG tags");
+    std::puts("PASS object rules and preview inside production NR recorder: both placements, one/two independent passes, scaled/peripheral grids, UI and FG tags");
 }
 
 static void PassObjectStrengthCases(GPU& gpu)
@@ -76,7 +81,6 @@ static void PassObjectStrengthCases(GPU& gpu)
         options.reconstruction.inputScale=peripheral?.75f:1; options.reconstruction.peripheralCompression=peripheral;
         options.secondPass.linked=false; options.secondPass.inputScale=resized?.5f:options.reconstruction.inputScale;
         options.secondPass.tuning.intensity=.6f; options.secondPass.preset=1;
-        options.objectMasks.enabled=true; options.objectMasks.strength.fill(1);
         for (auto& pass:options.objectMasks.passes) { pass.groups[0].enabled=true; }
         Fixture::peripheral=peripheral; Fixture::worldOnly=world; Fixture::sourceWidth=w; Fixture::sourceHeight=h;
         Fixture::guideWidth=gw; Fixture::guideHeight=gh; Fixture::transform=true;
@@ -90,7 +94,8 @@ static void PassObjectStrengthCases(GPU& gpu)
         auto ui=gpu.Texture(w,h,std::vector<Pixel>(w*h,{.05f,.025f,0,.25f})),composed=gpu.Texture(w,h);
         std::vector<Pixel> firstOnly;
         // One-pass reference, full chain, each exact bypass, fractional strengths,
-        // then final protection overriding the otherwise active per-pass result.
+        // then a full chain again (6), missing and occluded classification, and
+        // disabled rules.
         for (unsigned scenario=0;scenario<10;++scenario) {
             const float s1=scenario>=7||scenario==3||scenario==4?0:scenario==5?.5f:1;
             const float s2=scenario>=7||scenario==2||scenario==4?0:scenario==5?.25f:1;
@@ -98,7 +103,6 @@ static void PassObjectStrengthCases(GPU& gpu)
             options.objectMasks.passes[0].groups[0].strength=s1;
             options.objectMasks.passes[1].groups[0].strength=s2;
             for (auto& rule:options.objectMasks.passes) { rule.groups[0].enabled=scenario!=9; }
-            options.objectMasks.strength.fill(scenario>=6&&scenario!=9?0.f:1.f);
             Fixture::creations=Fixture::evaluations=Fixture::resets=0;
             Fixture::objectControls=scenario!=7&&scenario!=9; Fixture::controlEvaluations=0;
             NeuralPass pass;
@@ -113,11 +117,11 @@ static void PassObjectStrengthCases(GPU& gpu)
                 for (unsigned i=0;i<w*h;++i) for (unsigned c=0;c<4;++c) {
                     const float original=pixels[i][c];
                     const float first=c<3?original+(scenario>=7?1:s1)*(original*.8f+.01f-original):original;
-                    const float expected=scenario==6?original:scenario==0?first:
+                    const float expected=scenario==0?first:
                         c<3?first+(scenario>=7?1:s2)*(first*.6f+.02f-first):original;
                     Near(actual[i][c],expected,.0004,"independent per-pass strengths blend the input of their own pass");
                     if(scenario==2) Near(actual[i][c],firstOnly[i][c],.000001,"zero second-pass strength retains the first pass including alpha");
-                    if(scenario==4||scenario==6) Near(actual[i][c],original,.000001,"zero pass strengths or final protection retain original values");
+                    if(scenario==4) Near(actual[i][c],original,.000001,"zero strength in both passes retains original values");
                 }
                 if(!world) {
                     const auto real=gpu.Read(pass.Composed()),tag=gpu.Read(scene.Get());
@@ -132,5 +136,5 @@ static void PassObjectStrengthCases(GPU& gpu)
         }
     }
     Fixture::secondWidth=Fixture::secondHeight=0; Fixture::transform=false; Fixture::objectControls=false;
-    std::puts("PASS per-pass object strength endpoints, fractions, second-pass preservation, final protection, resized/peripheral grids and UI/FG agreement");
+    std::puts("PASS per-pass object strength endpoints, fractions, second-pass preservation, resized/peripheral grids and UI/FG agreement");
 }
