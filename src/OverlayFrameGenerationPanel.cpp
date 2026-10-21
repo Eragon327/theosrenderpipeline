@@ -25,8 +25,14 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         // NVIDIA's limits are known only once DLSS-G has run and answered a state
         // query; before that, leave the list open and let the runtime limit it.
         const bool nvidiaReported = !intel && sourceState.stateQueries > 0;
+        // A running XeFG presenter that already tried x3-x6 (experimental MFG or the
+        // tensor model) knows its limit. Before that try, x3+ is what requests it,
+        // and a pending tensor switch makes a new presenter, so the list stays open.
+        const bool intelLimitKnown = editIntel && intel && view.xefg.experimentalMFG &&
+            settingsDraft.sourceDLSSG.xefgTensorCores == view.xefgTensorRequested;
         // Standard offers Intel's official x2 only; the x3-x6 unlock is in Universal.
-        const auto usableMaximum = editIntel ? (view.xefgUnlockAvailable ? TheosRenderPipeline::XeFGMaxGeneratedFrames : 1u) :
+        const auto usableMaximum = editIntel ? (!view.xefgUnlockAvailable ? 1u : intelLimitKnown ?
+            (std::max)(1u, view.xefg.maxGeneratedFrames) : TheosRenderPipeline::XeFGMaxGeneratedFrames) :
             !nvidiaReported ? 5u :
             TheosRenderPipeline::SourceDLSSG::MFGContract::Maximum(
             unlock.UsesCompatibilityUnlock(), unlock.Ready(), sourceState.state.numFramesToGenerateMax);
@@ -167,7 +173,9 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             // Multiplier: unavailable counts are greyed with the reason.
             auto& requestedCount = editIntel ? draft.xefg.generatedFrames : request.generatedFrames;
             const unsigned listedMaximum = editIntel ? TheosRenderPipeline::XeFGMaxGeneratedFrames : 5u;
-            const auto limitReason = editIntel ? std::string(view.xefgUnlockAvailable ? "" : "x3 to x6 need the Universal edition.")
+            const auto limitReason = editIntel ? (!view.xefgUnlockAvailable ? std::string("x3 to x6 need the Universal edition.")
+                                                  : usableMaximum <= 1 ? "x2 only: " + view.xefgUnlockStatus
+                                                  : std::format("This XeFG presenter supports up to x{}.", usableMaximum + 1))
                                    : std::format("This NVIDIA runtime supports up to x{}.", usableMaximum + 1);
             const char* experimental = "Experimental: patches Intel's runtime in memory. The first Apply recreates the Intel "
                                        "presenter; later changes apply live.";
@@ -347,13 +355,10 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 DrawSettingsHelp(!editIntel ? xefgOnly
                     : !view.xefgUnlockAvailable ? "Universal only."
                     : "Uses the optional XeFG tensor helper on NVIDIA when its bundle is installed; otherwise XeFG "
-                      "uses its normal path. Save as default and restart Skyrim to change it.");
+                      "uses its normal path. Apply switches it, with a short pause while XeFG restarts.");
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                if (editIntel && draft.xefgTensorCores != view.xefgTensorRequested)
-                    ImGui::TextColored(kOchre, "save and restart to change");
-                else
-                    ImGui::TextDisabled("experimental | restart");
+                ImGui::TextDisabled("experimental");
                 return changed;
             });
             const auto& pacing = view.xefg.pacing;

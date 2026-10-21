@@ -377,7 +377,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (intelStartup) {
 			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_)) ||
 				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, true, &native, 0,
-					XeFGConfiguration(), IntelPipelines(xefgPipelines_, xefg_.PipelineCacheName(), xefg_.RuntimeModule())))) { return fault_; }
+					XeFGConfiguration(), IntelPipelines(XeFGPipelineCache(), xefg_.PipelineCacheName(), xefg_.RuntimeModule())))) { return fault_; }
 			providerStatus_ = "Intel XeFG presenter; latency owner=XeLL";
 		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), "Streamline swapchain")) { return fault_; }
 		retainedNative_ = native;
@@ -564,7 +564,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (provider_ == FrameGenerationProvider::XeFG) {
 			if (!CheckXeFG(xefg_.Prepare(frameConstants_, XeFGFrameTimeConfiguration()))) { return false; }
 			recreateXeFG_ = xefg_.Snapshot().invertedDepth != (frameConstants_.depthInverted == sl::eTrue) ||
-				XeFGNeedsRecreation(xefg_.Snapshot().experimentalMFG, XeFGConfiguration());
+				XeFGNeedsRecreation(xefg_.Snapshot().experimentalMFG, XeFGConfiguration()) ||
+				xefg_.ProbedTensorRequest() != xefgTensorRequested_.load();
 			return true; // Intel copies the final HUD-less image after late NR, at Present.
 		}
 		if (!Check(interop_.SignalD3D11(Work::FrameGeneration), "D3D11 guides ready")) { return false; }
@@ -1316,7 +1317,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		return provider == FrameGenerationProvider::XeFG ?
 			xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), presenterDesc_,
 				frameConstants_.depthInverted == sl::eTrue, result, session_.Snapshot().frameIndex, XeFGConfiguration(),
-				IntelPipelines(xefgPipelines_, xefg_.PipelineCacheName(), xefg_.RuntimeModule())) :
+				IntelPipelines(XeFGPipelineCache(), xefg_.PipelineCacheName(), xefg_.RuntimeModule())) :
 			streamlineFactory_->CreateSwapChain(queue_.Get(), &presenterDesc_, result);
 	}
 	bool Backend::ApplyProviderSwitch(SwapChain& wrapper)
@@ -1365,10 +1366,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		++presenterPresents_;
 		// Intel stores pipelines as it first uses them; persist what has grown.
 		if (presenterPresents_ % 600 == 0) {
-			for (auto* cache : {&xefgPipelines_, &xessPipelines_}) {
+			for (auto* cache : {&xefgPipelines_, &xefgTensorPipelines_, &xessPipelines_}) {
 				const auto before = cache->Status();
 				cache->SaveIfGrown();
-				if (cache->Status() != before) { logger::info("[PipelineCache] {} {}", cache == &xefgPipelines_ ? "xefg" : "xess", cache->Status()); }
+				if (cache->Status() != before) {
+					logger::info("[PipelineCache] {} {}", cache == &xefgPipelines_ ? "xefg" : cache == &xefgTensorPipelines_ ? "xefg-tensor" : "xess",
+						cache->Status());
+				}
 			}
 		}
 		const bool replaced = std::exchange(presenterReplaced_, false);

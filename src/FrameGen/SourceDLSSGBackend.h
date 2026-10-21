@@ -51,8 +51,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const XeFGSnapshot& XeFGState() const { return xefg_.Snapshot(); }
 		const std::string& XeFGUnlockStatus() const { return xefg_.UnlockStatus(); }
 		const std::string& XeFGTensorStatus() const { return xefg_.TensorStatus(); }
-		void ConfigureXeFGTensor(bool requested) { if (!attempted_) { xefgTensorRequested_ = requested; } }
-		bool XeFGTensorRequested() const { return xefgTensorRequested_; }
+		// Live: a running XeFG presenter is recreated on the other Intel SDK copy.
+		void ConfigureXeFGTensor(bool requested) { xefgTensorRequested_.store(requested); }
+		bool XeFGTensorRequested() const { return xefgTensorRequested_.load(); }
+		// Whether the running presenter uses the tensor model's SDK copy.
+		bool XeFGTensorInUse() const { return xefg_.TensorInUse(); }
 		const std::string& XeFGPacingStatus() const { return xefg_.PacingStatus(); }
 		void ConfigureXeFGFlipMetering(bool enabled) { xefgFlipMetering_.store(enabled, std::memory_order_relaxed); }
 		bool XeFGFlipMetering() const { return xefgFlipMetering_.load(std::memory_order_relaxed); }
@@ -262,7 +265,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		SessionAPI api_{};
 		Session session_;
 		XeFGPresenter xefg_;
-		bool xefgTensorRequested_{};
+		std::atomic<bool> xefgTensorRequested_{};
 		std::atomic<std::uint32_t> xefgOptions_{1};
 		XeSSUpscaler xess_;
 		UINT adapterVendor_{};
@@ -293,7 +296,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool xefgReuseWindowGpu_{};
 		SlowPresentGate slowPresent_;
 		ID3D12PipelineLibrary* IntelPipelines(PipelineCache& cache, const char* name, HMODULE runtime);
-		PipelineCache xefgPipelines_, xessPipelines_;
+		// Each Intel SDK copy keeps its own pipeline cache.
+		PipelineCache xefgPipelines_, xefgTensorPipelines_, xessPipelines_;
+		PipelineCache& XeFGPipelineCache() { return xefg_.TensorWanted() ? xefgTensorPipelines_ : xefgPipelines_; }
 		XeFGSettleGate xefgSettle_;
 		std::chrono::steady_clock::time_point lastHostFrame_{};
 		UINT adapterDevice_{};

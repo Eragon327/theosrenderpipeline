@@ -313,6 +313,28 @@ PreviewScenario Exposure()
 }
 
 // A non-NVIDIA GPU: XeSS upscaling and XeFG x2, with NR unavailable.
+PreviewScenario Intel();
+// Universal on NVIDIA: the tensor model was asked for x5 and safely refused, so
+// the running presenter is x2 only and x3-x6 are greyed with Intel's reason.
+PreviewScenario TensorRefused()
+{
+    auto scenario = Intel();
+    scenario.name = "tensor-refused";
+    scenario.summary = "XeFG tensor model refused at x5; x3-x6 greyed with the reason";
+    auto& view = scenario.view;
+    view.nvidiaAdapter = true;
+    view.xefgUnlockAvailable = true;
+    view.xefgTensorRequested = true;
+    view.xefg.experimentalMFG = true;
+    view.xefgUnlockStatus = "XeFG model safely refused; official 1.3.4 x2 retained: model catalog not recognised";
+    view.xefgTensorStatus = view.xefgUnlockStatus;
+    scenario.applied.sourceDLSSG.xefgTensorCores = true;
+    scenario.applied.sourceDLSSG.xefg.generatedFrames = 4;
+    scenario.applied.sourceDLSSG.xefg.experimentalMFG = true;
+    scenario.draft = scenario.applied;
+    return scenario;
+}
+
 PreviewScenario Intel()
 {
     auto scenario = Healthy();
@@ -367,5 +389,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Intel(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Intel(), TensorRefused(), Lab()};
 }

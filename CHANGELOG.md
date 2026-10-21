@@ -12,6 +12,17 @@
 - Before upscaling, Ratio reconstruction now shows NR the frame on the steady,
   unjittered grid and moves its change back to each jittered pixel. DLSS still
   receives the jittered frame. Community Shaders and Auto/Residual are unchanged.
+- The XeFG tensor model now switches live: Apply recreates the XeFG presenter on
+  the other Intel SDK copy after a short pause, instead of needing a restart.
+  Both copies stay loaded and share one XeLL, and each keeps its own pipeline
+  cache.
+- Once a running XeFG presenter has tried x3 to x6 and Intel refused or capped
+  them, the Multiplier row greys the counts it cannot reach, with the reason.
+- NR settings that rebuild the model (placement, reconstruction, network, input)
+  no longer re-verify the 266 MB runtime each time, which froze the game for
+  several seconds. The log records each rebuild step's time.
+- Build the renderer with whole-program optimization, which its link-time code
+  generation already expected.
 
 # 0.5.0
 
