@@ -35,6 +35,16 @@ namespace TheosRenderPipeline
         bool startupViewport_{true};
     };
 
+    // Whether Present hands frame generation (and NR after upscaling) a UI layer
+    // and the HUD-less scene. Drawn UI always does. So does a frame whose
+    // interface the game was told to hide (tm, the console, photo modes and any
+    // other mod using ShowMenus(false)): no UI reached it, so it is HUD-less by
+    // definition, once the tagged UI layer has been cleared to transparent.
+    inline bool HandOffUIAtPresent(bool uiDrawn, bool interfaceHidden, bool clearedTransparent)
+    {
+        return uiDrawn || (interfaceHidden && clearedTransparent);
+    }
+
     enum class ViewportChange { None, StartupRender, NativeUI };
     inline ViewportChange NativeUIViewport(const NativeUIFrame& frame, bool mainOrLoading,
         bool uiActive, bool internal, UINT count, const D3D11_VIEWPORT* input,

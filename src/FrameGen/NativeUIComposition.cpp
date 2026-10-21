@@ -270,6 +270,14 @@ bool NativeUIComposition::Compose(ID3D11DeviceContext* a_context, ID3D11Texture2
 	return ComposeLayer(a_context, a_presentation, nativeUIColorAndAlphaSRV_.Get());
 }
 
+bool NativeUIComposition::ClearTagged(ID3D11DeviceContext* a_context)
+{
+	if (!nativeUITextureMode_ || !nativeUIExtractionAvailable_ || !a_context || !nativeUIColorAndAlphaRTV_) { return false; }
+	constexpr float transparent[4]{};
+	a_context->ClearRenderTargetView(nativeUIColorAndAlphaRTV_.Get(), transparent);
+	return true;
+}
+
 bool NativeUIComposition::ComposeOverlay(ID3D11DeviceContext* context, ID3D11Texture2D* presentation,
     ID3D11ShaderResourceView* overlay)
 {

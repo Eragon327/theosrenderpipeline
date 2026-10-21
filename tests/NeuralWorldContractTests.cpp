@@ -2,6 +2,7 @@
 #include "RendererSettings.h"
 #include "FrameGen/SourceDLSSGNeuralState.h"
 #include "FrameGen/SourceDLSSGNeuralAvailability.h"
+#include "FrameGen/NativeUIFrame.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -51,7 +52,7 @@ int main()
             return reset;
         };
         Require(frame(false, true), "initial world resets history");
-        Require(frame(false, false) == !early, "hiding interface preserves early NR history and suspends late NR");
+        Require(frame(false, false) == !early, "missing UI guides preserve early NR history and suspend late NR");
         Require(!frame(false, false), "repeated hidden-interface frames are stable");
         Require(frame(false, true) == !early, "late NR restarts when its guides return");
         Require(frame(true, false), "loading interrupts NR history in either placement");
@@ -61,6 +62,19 @@ int main()
         Require(!NeuralFrameEligible(true, early, false, false, true, true), "unavailable UI state is not an active world");
         Require(!NeuralPreparedEligible(true, false, true, true), "world-only cannot claim an unevaluated early pass");
         Require(!NeuralFrameEligible(false, early, true, false, true, true), "dedicated native UI contract remains required");
+    }
+
+    // A hidden interface (tm, the console, photo modes) hands off a cleared UI
+    // layer and the HUD-less scene, so late NR keeps running; a failed clear
+    // or a UI that is neither drawn nor hidden hands off nothing.
+    Require(HandOffUIAtPresent(true, false, false), "drawn UI is handed off");
+    Require(HandOffUIAtPresent(false, true, true), "a hidden interface hands off a transparent UI layer");
+    Require(!HandOffUIAtPresent(false, true, false), "an uncleared UI layer is never handed off");
+    Require(!HandOffUIAtPresent(false, false, false), "an undrawn, visible interface keeps the old fallback");
+    {
+        NeuralOptions late; late.enabled = true;
+        const bool guides = HandOffUIAtPresent(false, true, true);
+        Require(NeuralFrameEligible(true, late.WorldOnly(), true, false, guides, guides), "late NR stays eligible with the interface hidden");
     }
 
     using namespace TheosRenderPipeline::NeuralRendering;

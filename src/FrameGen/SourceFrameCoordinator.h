@@ -58,7 +58,11 @@ namespace TheosRenderPipeline
             pass_.End(context);
             pass_.Frame().PreparingPresent();
             if (!pass_.HasEarlyEvaluation()) {
-                if (!operations.PreparePresentTarget() || !EvaluateBackground(operations, pass_.Frame().UIDrawn())) {
+                const bool drawn = pass_.Frame().UIDrawn();
+                const bool hidden = !drawn && operations.InterfaceHidden();
+                const bool handOff = HandOffUIAtPresent(drawn, hidden, hidden && operations.ClearNativeUI());
+                if (hidden) { operations.Trace(handOff ? "hidden-interface-hudless" : "hidden-interface-clear-failed"); }
+                if (!operations.PreparePresentTarget() || !EvaluateBackground(operations, handOff)) {
                     operations.DisableRuntime();
                     operations.Trace("present-fallback-failed");
                     return false;
