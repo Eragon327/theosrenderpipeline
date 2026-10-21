@@ -32,12 +32,15 @@ file, so updates keep it; MO2 places it in Overwrite. NR keyboard
 shortcuts are opt-in. HDR is experimental, through Community Shaders or TRP's own
 HDR output; see [HDR](#hdr-experimental).
 
-With two NR passes selected, optional **One pass in combat** and **One pass while
-weapons/spells are drawn** controls temporarily skip the second pass. The return
-delay defaults to five seconds after all selected conditions clear and pauses
-with the game. Your saved pass count, resolution and tuning remain unchanged.
-The second pass stays allocated and its history resets when it resumes. These
-options default off; their effect on responsiveness depends on the workload.
+NR runs one to five passes; each extra pass processes the previous pass's result
+with its own history, and follows Pass 1's settings until you change one of its
+own. With two or more NR passes selected, optional **One pass in combat** and
+**One pass while weapons/spells are drawn** controls temporarily skip the extra
+passes. The return delay defaults to five seconds after all selected conditions
+clear and pauses with the game. Your saved pass count, resolution and tuning remain
+unchanged. The extra passes stay allocated and their histories reset when they
+resume. These options default off; their effect on responsiveness depends on the
+workload.
 
 
 ### Experimental NR object masks

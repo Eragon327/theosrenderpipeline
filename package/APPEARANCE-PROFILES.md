@@ -17,7 +17,8 @@ shows what is applied, the game time and weather; hover it for the resolved valu
 
 The right column shows the selected row's settings: each label on the left, its
 control on the right. Passes are folder tabs above one pass's settings: **+** adds
-Pass 2, and **×** on its tab removes it (its own settings are kept for later).
+the next pass, up to Pass 5, and **×** on the last pass's tab removes it (its own
+settings are kept for later).
 Settings that do not apply are greyed out with the reason, never hidden. While Base
 is selected, a cloud beside a setting marks one the override in use now replaces;
 hover it for the override and its value.
@@ -28,10 +29,10 @@ game; it is not saved.
 
 ## Create and edit overrides
 
-1. Tune Base. Sharpening applies with or without NR. Pass 2 follows Pass 1 until you
-   change one of its settings, which gives it its own settings starting from Pass
-   1's; **Reset all to Pass 1**, attached to the Pass 2 tab, makes it follow Pass 1
-   again.
+1. Tune Base. Sharpening applies with or without NR. Each extra pass follows Pass 1
+   until you change one of its settings, which gives it its own settings starting
+   from Pass 1's; **Reset to Pass 1**, attached to its tab, makes that pass follow
+   Pass 1 again and leaves the other passes alone.
 2. **New override** starts with no changes. **Duplicate** copies the selected
    override.
 3. Choose when it applies:
@@ -59,8 +60,8 @@ Settings marked **!** restart NR briefly when they change: placement, NR input
 resolution, network, peripheral compression, combined preparation and
 Reconstruction. An override that changes one of them can hitch when the weather
 changes; interior and exterior changes happen behind a loading screen. Pass count
-switches without restarting NR: two passes stay allocated while any override uses
-them, and one-pass situations skip Pass 2 like the combat option.
+switches without restarting NR: the most passes any override in use asks for stay
+allocated, and situations with fewer skip the rest like the combat option.
 
 Overrides never switch NR or sharpening on while Base has them off, but can switch
 them off. The Image tab shows Base sharpening read-only, and the value in use when

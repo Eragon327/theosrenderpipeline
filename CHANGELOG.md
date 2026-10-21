@@ -1,3 +1,14 @@
+# Unreleased
+
+- NR runs up to five passes. **+** on the pass strip adds the next one; each extra
+  pass processes the previous pass's result with its own history, input
+  resolution, network, tuning and object rules, and follows Pass 1 until one of
+  its own settings changes. New keys follow Pass 2's (`NRPass3InputScale`,
+  `NRObjectPass4Group1Enabled`, weather override `Pass5Style` and so on); Pass 2's
+  keys are unchanged. Passes 3 to 5 start one per frame.
+- The pass strip's **Reset all to Pass 1** is now **Reset to Pass 1**: it relinks
+  only the selected pass and keeps its own settings for later.
+
 # 0.5.1
 
 Game-tested on an RTX 4080 SUPER with ENB. The Community Shaders changes (the grey
