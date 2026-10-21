@@ -11,7 +11,19 @@
   (`AdaptiveExposure`, `ExposureBias`; INI `NRAdaptiveExposure`, `NRExposureBias`).
 - Before upscaling, Ratio reconstruction now shows NR the frame on the steady,
   unjittered grid and moves its change back to each jittered pixel. DLSS still
-  receives the jittered frame. Community Shaders and Auto/Residual are unchanged.
+  receives the jittered frame, on TRP's own route and with Community Shaders.
+  Auto and Residual are unchanged.
+- Keep greys grey: where the original is near neutral, NR may change saturation
+  along its own hue but not tint it, which removes NR's green cast on grey
+  shading (Ratio and the Community Shaders route).
+- Ratio reconstruction treats a black answer from NR as a real shadow. Only an
+  entirely empty model output keeps the original, so shadows NR paints over lit
+  surfaces no longer leave bright specks.
+- Add NR Broad and Detail for Ratio reconstruction: Broad scales how much NR
+  relights whole areas and objects (lower it if object shadows change as the view
+  changes), Detail its local contrast and shading. Both default to 1, which leaves
+  the result unchanged, and both are weather override settings (`BroadStrength`,
+  `DetailStrength`; INI `NRBroadStrength`, `NRDetailStrength`).
 - The XeFG tensor model now switches live: Apply recreates the XeFG presenter on
   the other Intel SDK copy after a short pause, instead of needing a restart.
   Both copies stay loaded and share one XeLL, and each keeps its own pipeline

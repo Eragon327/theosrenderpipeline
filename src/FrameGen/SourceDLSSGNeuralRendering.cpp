@@ -377,7 +377,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Before upscaling, Ratio shows NR the frame on the steady grid and moves its
 		// change back to the jittered one; DLSS still receives the jittered pixels.
 		// Only the passes that read the raw frame, and the final resolve, use it.
-		const bool steady = method == NeuralRendering::ResolveMethod::Ratio && !reconstruction.producerColor &&
+		const bool steady = method == NeuralRendering::ResolveMethod::Ratio &&
 			options.beforeUpscaling && std::isfinite(colorJitter[0]) && std::isfinite(colorJitter[1]) &&
 			(colorJitter[0] != 0 || colorJitter[1] != 0);
 		const auto setJitter = [&](bool on) {
@@ -559,10 +559,38 @@ namespace TheosRenderPipeline::SourceDLSSG
 				constants.mode = 1;
 				if (!dispatch(3, ResolveKernel::Residual, hudless, residual_.Get(), nullptr, corrected_.Get())) { return false; }
 			} else {
+				// Broad and Detail: NR's change in stops at its grid, blurred across
+				// regions but not across the proxy's own edges, for the resolve to split.
+				const bool bands = !reconstruction.producerColor && reconstruction.ToneBands();
+				constants.broad = reconstruction.broadStrength; constants.detail = reconstruction.detailStrength;
+				constants.toneBands = bands;
+				if (bands) {
+					const auto work = featureColor->GetDesc();
+					for (auto* tone : { std::addressof(toneData_), std::addressof(toneScratch_) }) {
+						if (*tone) { continue; }
+						D3D12_RESOURCE_DESC desc{};
+						desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = work.Width; desc.Height = work.Height;
+						desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
+						desc.Format = DXGI_FORMAT_R16G16_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+						D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+						if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+							D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(tone->ReleaseAndGetAddressOf())))) {
+							status_ = "NR broad/detail allocation failed"; return false;
+						}
+					}
+					constants.targetWidth = static_cast<UINT>(work.Width); constants.targetHeight = work.Height;
+					if (!dispatch(13, ResolveKernel::PrepareTone, featureColor, modelResult, nullptr, toneData_.Get())) { return false; }
+					constants.mode = 0;
+					if (!dispatch(14, ResolveKernel::FilterTone, toneData_.Get(), nullptr, nullptr, toneScratch_.Get())) { return false; }
+					constants.mode = 1;
+					if (!dispatch(15, ResolveKernel::FilterTone, toneScratch_.Get(), nullptr, nullptr, toneData_.Get())) { return false; }
+					resolve_.SetTone(toneData_.Get());
+				}
 				constants.mode = 1; constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
 				setJitter(steady);
 				if (!dispatch(3, ResolveKernel::Ratio, featureColor, modelResult, hudless, corrected_.Get())) { return false; }
 				setJitter(false);
+				resolve_.SetTone(nullptr);
 			}
 		}
 

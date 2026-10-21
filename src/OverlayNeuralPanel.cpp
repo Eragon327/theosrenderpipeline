@@ -924,6 +924,21 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             DrawSettingsHelp(std::format("{}{}", producerColor ? "Colour strength." : "Ratio colour strength.", ratioHelp).c_str());
             return changed;
         });
+        // Applied after NR, like Effect and colour; changing them keeps NR's history.
+        const bool bandsOff = unavailable || producerColor || reconstruction.method != NR::ResolveMethod::Ratio;
+        SettingRowFor("Broad \xC2\xB7 detail", {"BroadStrength", "DetailStrength"}, false, bandsOff, [&] {
+            const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            const char* reason = producerColor ? "Not on the Community Shaders route yet." : "Used by Ratio reconstruction.";
+            ImGui::SetNextItemWidth(half);
+            bool changed = ImGui::SliderFloat("##broad", &reconstruction.broadStrength, 0, 2);
+            DrawSettingsHelp(bandsOff ? reason : "Broad: how much NR relights whole areas and objects. Lower it if shadows on "
+                                                 "objects change as the view changes.");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            changed |= ImGui::SliderFloat("##detail", &reconstruction.detailStrength, 0, 2);
+            DrawSettingsHelp(bandsOff ? reason : "Detail: NR's local contrast and fine shading.");
+            return changed;
+        });
         SettingRow(producerColor ? "Maximum scene gain" : "Maximum luma ratio", "MaximumRatio", false, ratioOff,
                    [&] { return ImGui::SliderFloat("##v", &reconstruction.maxRatio, producerColor ? 1.0f : 0.01f, 16); });
         if (!producerColor)
@@ -946,7 +961,8 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                     {"Fixed", true, "Divides linear HDR input by the white point before NR sees it."},
                     {"Adaptive", true, "TRP measures the frame's average brightness and adapts over about a second, so "
                                        "NR sees interiors and exteriors at a similar brightness. Only NR's view "
-                                       "changes; its effect is carried back onto the untouched frame."}});
+                                       "changes; its effect is carried back onto the untouched frame. NR may relight "
+                                       "objects as the view's brightness changes; Fixed keeps its view steady."}});
                 if (changed) { reconstruction.adaptiveExposure = mode == 1; }
                 DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
                                              : "How linear HDR input is scaled for NR's view.");

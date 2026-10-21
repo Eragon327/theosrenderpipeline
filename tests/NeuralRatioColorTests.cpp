@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -78,6 +79,7 @@ static std::vector<Pixel> Readback(ID3D11DeviceContext* context, ID3D11Texture2D
 
 // Bound at t3 by every dispatch: the measured white point, or null.
 static ID3D11ShaderResourceView* g_exposure{};
+static ID3D11ShaderResourceView* g_tone{};
 
 static void Dispatch(ID3D11DeviceContext* context, ID3D11ComputeShader* shader, ID3D11Buffer* constants,
     const ResolveConstants& params, const std::array<ID3D11ShaderResourceView*, 3>& inputs,
@@ -92,12 +94,13 @@ static void Dispatch(ID3D11DeviceContext* context, ID3D11ComputeShader* shader, 
     context->CSSetConstantBuffers(0, 1, &constants);
     context->CSSetShaderResources(0, static_cast<UINT>(inputs.size()), inputs.data());
     context->CSSetShaderResources(3, 1, &g_exposure);
+    context->CSSetShaderResources(4, 1, &g_tone);
     context->CSSetUnorderedAccessViews(0, 1, &output, nullptr);
     // Dispatch over the larger allocation so the active-extent guard is exercised.
     context->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
-    ID3D11ShaderResourceView* nullInputs[4]{};
+    ID3D11ShaderResourceView* nullInputs[5]{};
     ID3D11UnorderedAccessView* nullOutput{};
-    context->CSSetShaderResources(0, 4, nullInputs);
+    context->CSSetShaderResources(0, 5, nullInputs);
     context->CSSetUnorderedAccessViews(0, 1, &nullOutput, nullptr);
 }
 
@@ -524,6 +527,158 @@ static void SteadyGrid(ID3D11Device* device, ID3D11DeviceContext* context,
         encodeError, resolveError);
 }
 
+// The hue guard: a grey original stays grey when NR answers with a green cast,
+// while a clearly coloured original still takes NR's colour change. And black
+// is a legitimate answer: NR painting a shadow black over a lit surface darkens
+// it, while a model output with nothing anywhere keeps the original.
+static void GuardAndShadows(ID3D11Device* device, ID3D11DeviceContext* context,
+    ID3D11ComputeShader* ratio, ID3D11Buffer* constants)
+{
+    constexpr UINT width = 16, height = 16;
+    const auto luma = [](const Pixel& c) { return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2]; };
+    const auto run = [&](bool producer, const std::vector<Pixel>& scene, const std::vector<Pixel>& answer) {
+        auto original = Texture(device, width, height, scene);
+        auto encoded = Texture(device, width, height, std::vector<Pixel>(scene.size()));
+        auto resolved = Texture(device, width, height, std::vector<Pixel>(scene.size()));
+        ResolveConstants p{};
+        p.sourceWidth = p.targetWidth = p.workWidth = width;
+        p.sourceHeight = p.targetHeight = p.workHeight = height;
+        p.passthrough = 0; p.producerColor = producer; p.maxRatio = 4;
+        g_exposure = nullptr;
+        Dispatch(context, ratio, constants, p, {original.srv.Get(), nullptr, nullptr}, encoded.uav.Get(), width, height);
+        auto proxy = Readback(context, encoded.texture.Get());
+        std::vector<Pixel> model(proxy.size());
+        for (size_t i = 0; i < proxy.size(); ++i) {
+            for (int c = 0; c < 3; ++c) { model[i][c] = answer[i][c] < 0 ? proxy[i][c] * -answer[i][c] : answer[i][c]; }
+            model[i][3] = proxy[i][3];
+        }
+        auto modelTexture = Texture(device, width, height, model);
+        p.mode = 1;
+        Dispatch(context, ratio, constants, p, {encoded.srv.Get(), modelTexture.srv.Get(), original.srv.Get()},
+            resolved.uav.Get(), width, height);
+        return Readback(context, resolved.texture.Get());
+    };
+    // Negative answer entries scale the proxy channel; others are absolute.
+    const Pixel greenCast{-0.97f, -1.04f, -0.97f, 1}, unchanged{-1, -1, -1, 1};
+    for (const bool producer : {false, true}) {
+        std::vector<Pixel> scene(size_t(width) * height, Pixel{0.4f, 0.4f, 0.4f, 1});
+        std::vector<Pixel> answer(scene.size(), greenCast);
+        for (size_t i = 0; i < scene.size(); i += 2) { scene[i] = {0.6f, 0.15f, 0.1f, 1}; }
+        const auto out = run(producer, scene, answer);
+        for (size_t i = 1; i < scene.size(); i += 2) {
+            const float spread = (std::max)({out[i][0], out[i][1], out[i][2]}) - (std::min)({out[i][0], out[i][1], out[i][2]});
+            Require(spread < 0.002f, "a grey original stays grey under a green cast");
+        }
+        for (size_t i = 0; i < scene.size(); i += 2) {
+            Require(out[i][1] > scene[i][1] * 1.01f, "a coloured original still takes NR's colour change");
+        }
+    }
+    // Black shadow over a lit surface: one pixel answers black, the rest unchanged.
+    std::vector<Pixel> lit(size_t(width) * height, Pixel{0.8f, 0.7f, 0.6f, 1});
+    std::vector<Pixel> shadow(lit.size(), unchanged);
+    shadow[5 * width + 5] = {0, 0, 0, 1};
+    auto out = run(false, lit, shadow);
+    Require(luma(out[5 * width + 5]) < 0.01f * luma(lit[5 * width + 5]), "NR painting black darkens a lit pixel");
+    Require(std::abs(luma(out[0]) - luma(lit[0])) < 0.01f, "unchanged pixels keep their brightness");
+    // An empty model output (all black) is no answer: the original is kept.
+    out = run(false, lit, std::vector<Pixel>(lit.size(), Pixel{0, 0, 0, 1}));
+    for (size_t i = 0; i < lit.size(); ++i) {
+        Require(std::abs(luma(out[i]) - luma(lit[i])) < 0.01f, "an empty model output keeps the original");
+    }
+    std::puts("Hue guard and shadows: grey stays grey, colour still moves, black answers darken, empty output kept.");
+}
+
+// Broad and Detail. NR's change in stops is split into its edge-aware blur
+// (broad) and the rest (detail). A uniform brightening is all broad; a fine
+// checkerboard is all detail. At 1 and 1 the result is bit-identical to off.
+struct Tone { ComPtr<ID3D11Texture2D> texture; ComPtr<ID3D11ShaderResourceView> srv; ComPtr<ID3D11UnorderedAccessView> uav; };
+static Tone ToneTexture(ID3D11Device* device, UINT width, UINT height)
+{
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = width; desc.Height = height; desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+    desc.Format = DXGI_FORMAT_R16G16_FLOAT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+    Tone result;
+    Check(device->CreateTexture2D(&desc, nullptr, &result.texture), "tone texture");
+    Check(device->CreateShaderResourceView(result.texture.Get(), nullptr, &result.srv), "tone SRV");
+    Check(device->CreateUnorderedAccessView(result.texture.Get(), nullptr, &result.uav), "tone UAV");
+    return result;
+}
+static void BroadDetail(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11ComputeShader* ratio,
+    ID3D11ComputeShader* prepare, ID3D11ComputeShader* filter, ID3D11Buffer* constants)
+{
+    constexpr UINT width = 64, height = 48;
+    const auto luma = [](const Pixel& c) { return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2]; };
+    std::vector<Pixel> scene(size_t(width) * height);
+    for (UINT y = 0; y < height; ++y) {
+        for (UINT x = 0; x < width; ++x) { scene[size_t(y) * width + x] = {0.3f + 0.004f * x, 0.35f, 0.3f + 0.003f * y, 1}; }
+    }
+    auto original = Texture(device, width, height, scene);
+    auto encoded = Texture(device, width, height, std::vector<Pixel>(scene.size()));
+    ResolveConstants p{};
+    p.sourceWidth = p.targetWidth = p.workWidth = width;
+    p.sourceHeight = p.targetHeight = p.workHeight = height;
+    p.passthrough = 0; p.maxRatio = 4;
+    g_exposure = g_tone = nullptr;
+    Dispatch(context, ratio, constants, p, {original.srv.Get(), nullptr, nullptr}, encoded.uav.Get(), width, height);
+    const auto proxy = Readback(context, encoded.texture.Get());
+    const auto resolve = [&](const std::vector<Pixel>& answer, bool bands, float broad, float detail) {
+        auto model = Texture(device, width, height, answer);
+        auto tone = ToneTexture(device, width, height), scratch = ToneTexture(device, width, height);
+        auto resolved = Texture(device, width, height, std::vector<Pixel>(scene.size()));
+        ResolveConstants q = p;
+        q.broad = broad; q.detail = detail; q.toneBands = bands;
+        if (bands) {
+            Dispatch(context, prepare, constants, q, {encoded.srv.Get(), model.srv.Get(), nullptr}, tone.uav.Get(), width, height);
+            q.mode = 0;
+            Dispatch(context, filter, constants, q, {tone.srv.Get(), nullptr, nullptr}, scratch.uav.Get(), width, height);
+            q.mode = 1;
+            Dispatch(context, filter, constants, q, {scratch.srv.Get(), nullptr, nullptr}, tone.uav.Get(), width, height);
+            g_tone = tone.srv.Get();
+        }
+        q.mode = 1;
+        Dispatch(context, ratio, constants, q, {encoded.srv.Get(), model.srv.Get(), original.srv.Get()}, resolved.uav.Get(), width, height);
+        g_tone = nullptr;
+        return Readback(context, resolved.texture.Get());
+    };
+    // NR's answers in the proxy's display encoding: uniform +25% light, or a
+    // one-pixel checkerboard of +/-20% light.
+    const auto encode = [](float linear) { return linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1 / 2.4f) - 0.055f; };
+    const auto decode = [](float value) { return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f); };
+    std::vector<Pixel> uniform(proxy), checker(proxy);
+    for (UINT y = 0; y < height; ++y) {
+        for (UINT x = 0; x < width; ++x) {
+            const size_t i = size_t(y) * width + x;
+            const float flip = ((x + y) & 1) ? 1.2f : 0.8f;
+            for (int c = 0; c < 3; ++c) {
+                uniform[i][c] = encode((std::min)(decode(proxy[i][c]) * 1.25f, 1.0f));
+                checker[i][c] = encode((std::min)(decode(proxy[i][c]) * flip, 1.0f));
+            }
+        }
+    }
+    const auto off = resolve(uniform, false, 1, 1), neutral = resolve(uniform, true, 1, 1);
+    Require(std::memcmp(off.data(), neutral.data(), off.size() * sizeof(Pixel)) == 0, "Broad and Detail at 1 match off exactly");
+    // Interior pixels, away from the blur's clamped border.
+    const auto average = [&](const std::vector<Pixel>& image, int parity) {
+        double sum = 0; int count = 0;
+        for (UINT y = 12; y < height - 12; ++y) {
+            for (UINT x = 12; x < width - 12; ++x) {
+                if (parity >= 0 && int((x + y) & 1) != parity) { continue; }
+                const size_t i = size_t(y) * width + x;
+                sum += luma(image[i]) / luma(scene[i]); ++count;
+            }
+        }
+        return sum / count;
+    };
+    Require(std::abs(average(off, -1) - 1.25) < 0.02, "the uniform edit brightens by a quarter");
+    Require(std::abs(average(resolve(uniform, true, 0, 1), -1) - 1.0) < 0.02, "Broad 0 removes a uniform relighting");
+    Require(std::abs(average(resolve(uniform, true, 1, 0), -1) - 1.25) < 0.02, "Detail 0 keeps a uniform relighting");
+    const auto keptDetail = resolve(checker, true, 0, 1), noDetail = resolve(checker, true, 1, 0);
+    Require(average(keptDetail, 1) > 1.12 && average(keptDetail, 0) < 0.88, "Broad 0 keeps fine detail");
+    Require(std::abs(average(noDetail, 1) - average(noDetail, 0)) < 0.06, "Detail 0 removes fine detail");
+    std::puts("Broad and Detail: neutral is exact, uniform relighting is broad, a checkerboard is detail.");
+}
+
 int main()
 {
     ComPtr<ID3D11Device> device;
@@ -571,6 +726,15 @@ int main()
     Check(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &measure), "exposure compute shader");
     AdaptiveExposure(device.Get(), context.Get(), measure.Get(), shader.Get(), constants.Get());
     SteadyGrid(device.Get(), context.Get(), shader.Get(), constants.Get());
+    GuardAndShadows(device.Get(), context.Get(), shader.Get(), constants.Get());
+    ComPtr<ID3D11ComputeShader> prepareTone, filterTone;
+    for (auto [entry, target] : {std::pair{"PrepareTone", std::addressof(prepareTone)}, std::pair{"FilterTone", std::addressof(filterTone)}}) {
+        code.Reset(); errors.Reset();
+        Check(D3DCompile(source, sizeof(source) - 1, entry, nullptr, nullptr, entry, "cs_5_0",
+            D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors), "compile production tone shader");
+        Check(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, target->GetAddressOf()), "tone compute shader");
+    }
+    BroadDetail(device.Get(), context.Get(), shader.Get(), prepareTone.Get(), filterTone.Get(), constants.Get());
     context->ClearState();
     std::puts("Ratio color: FP16 HDR/SDR identity, bounded input, channel order, alpha and active-region guards passed.");
 }

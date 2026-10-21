@@ -86,6 +86,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		current.objectMasks.previewGroups=previousComparable.objectMasks.previewGroups=0;
 		current.objectMasks.previewClassesOnly=previousComparable.objectMasks.previewClassesOnly=false;
 		current.compare=previousComparable.compare={};
+		current.reconstruction.broadStrength=previousComparable.reconstruction.broadStrength=1;
+		current.reconstruction.detailStrength=previousComparable.reconstruction.detailStrength=1;
 		if (current.appearanceRevision && current.appearanceRevision == previous.appearanceRevision) {
 			const auto retain = [](NeuralRendering::Tuning& value, const NeuralRendering::Tuning& old) {
 				value.intensity = old.intensity;

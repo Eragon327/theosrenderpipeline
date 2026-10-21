@@ -114,6 +114,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		Microsoft::WRL::ComPtr<ID3D12Resource> exposure_;
 		std::chrono::steady_clock::time_point exposureTime_{};
 		bool exposureValid_{};
+		// Broad and Detail: NR's change in stops at its grid, blurred, and scratch.
+		Microsoft::WRL::ComPtr<ID3D12Resource> toneData_, toneScratch_;
 		// Records the hold; returns false only on a failure that leaves the frame unusable.
 		bool HoldFrame(ID3D12Device* device, ID3D12GraphicsCommandList* list, bool freeze,
 			ID3D12Resource*& motion, ID3D12Resource*& depth, ID3D12Resource* hudless, ID3D12Resource*& objectMask, bool& reset);

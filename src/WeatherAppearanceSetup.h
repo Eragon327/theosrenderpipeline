@@ -59,6 +59,8 @@ inline const auto& Fields()
             [](Setup& s, float v) { s.reconstruction.method = static_cast<NeuralRendering::ResolveMethod>(static_cast<int>(std::round(v))); }},
         TRP_APPEARANCE_FIELD("EffectStrength", false, 0, 2, false, reconstruction.transferStrength),
         TRP_APPEARANCE_FIELD("ColourStrength", false, 0, 2, false, reconstruction.colourStrength),
+        TRP_APPEARANCE_FIELD("BroadStrength", true, 0, 2, false, reconstruction.broadStrength),
+        TRP_APPEARANCE_FIELD("DetailStrength", true, 0, 2, false, reconstruction.detailStrength),
         TRP_APPEARANCE_FIELD("MaximumRatio", false, 0.01f, 16, false, reconstruction.maxRatio),
         TRP_APPEARANCE_FIELD("WhitePoint", false, 0.0001f, 10000, false, reconstruction.whitePoint),
         TRP_APPEARANCE_FIELD("InputHDR", false, 0, 1, true, reconstruction.colorIsHDR),
