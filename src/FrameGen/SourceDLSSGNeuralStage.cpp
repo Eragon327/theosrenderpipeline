@@ -147,13 +147,21 @@ namespace TheosRenderPipeline::SourceDLSSG
         if (!neuralPass_ || !neuralPass_->NeedsRecreation(options, motion_.desc.Width, motion_.desc.Height)) { return true; }
         // Private outputs are copied into stable shared textures. Only our
         // queues read the feature, and no command list may be open here.
+        const auto started = std::chrono::steady_clock::now();
+        const auto since = [](auto from) {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - from).count();
+        };
         if (!Check(interop_.Drain(), "retire NR before placement/reconstruction change")) { return false; }
+        const double drained = since(started);
         neuralPass_->RetireTelemetry();
         {
             std::scoped_lock lock(neuralMutex_);
             neuralSnapshot_.telemetry = neuralPass_->Telemetry();
         }
+        const auto releasing = std::chrono::steady_clock::now();
         neuralPass_.reset();
+        logger::info("[SourceDLSSG NR] rebuild: GPU drain {:.0f} ms, previous feature released in {:.0f} ms",
+            drained, since(releasing));
         logger::info("[SourceDLSSG NR] retired feature for placement={} passes={} preset={} inputScale={} resolve={} HDR={} producerColor={} peripheral={} fusion={}",
             options.beforeUpscaling ? "before DLSS" : "after DLSS", options.passes, options.reconstruction.preset,
             options.reconstruction.inputScale, static_cast<unsigned>(options.reconstruction.method), options.reconstruction.colorIsHDR,
