@@ -14,8 +14,8 @@ inline Setup FromNeural(const SourceDLSSG::NeuralOptions& options, bool sharpeni
     setup.combat = options.combat;
     setup.reconstruction = options.reconstruction;
     setup.tuning = options.tuning;
-    // A linked Pass 2 takes Pass 1's values, so a preset that unlinks it changes only what it sets.
-    setup.second = NeuralRendering::EffectiveSecondPass(options.secondPass, options.reconstruction, options.tuning);
+    // A linked pass takes Pass 1's values, so a preset that unlinks it changes only what it sets.
+    setup.extra = NeuralRendering::EffectiveExtraPasses(options.extraPasses, options.reconstruction, options.tuning);
     setup.sharpening = sharpening;
     setup.sharpness = sharpness;
     return SanitizeSetup(setup);
@@ -31,7 +31,7 @@ inline void ApplySetup(SourceDLSSG::NeuralOptions& options, const Setup& setup)
     options.reconstruction = setup.reconstruction;
     options.reconstruction.producerColor = producerColor;
     options.tuning = setup.tuning;
-    options.secondPass = setup.second;
+    options.extraPasses = setup.extra;
 }
 struct Snapshot
 {
@@ -58,7 +58,7 @@ public:
         if (!configurationChanged_) { drawn_ = std::move(settings_); }
         settings_ = std::move(settings);
         claims_ = ResolveClaims(settings_);
-        twoPassAllocation_ = PresetsRequestTwoPasses(settings_);
+        presetPassAllocation_ = PresetPassAllocation(settings_);
         selectionDirty_ = true;
         configurationChanged_ = true;
     }
@@ -121,10 +121,11 @@ public:
         result.setup = smoother_.Update(result.setup, settings_.smoothingSeconds, elapsed, result.active);
         if (result.active) {
             ApplySetup(options, result.setup);
-            // One pass inside a two-pass allocation skips Pass 2 like the combat
-            // option, instead of retiring and recreating NR.
-            options.presetOnePass = result.setup.passes == 1 && (base.passes == 2 || twoPassAllocation_);
-            if (options.presetOnePass) { options.passes = 2; }
+            // Fewer passes than allocated skips the rest like the combat option,
+            // instead of retiring and recreating NR.
+            const int allocation = (std::max)(base.passes, presetPassAllocation_);
+            options.presetPasses = result.setup.passes < allocation ? result.setup.passes : 0;
+            if (options.presetPasses) { options.passes = allocation; }
             sharpening = result.setup.sharpening;
             sharpness = result.setup.sharpness;
             // Ordinary weather/time progress shares a revision. Manual edits,
@@ -139,7 +140,7 @@ private:
     // Point into settings_; rebuilt whenever it or the weather changes.
     Changes incoming_, outgoing_;
     bool selectionDirty_{true};
-    bool twoPassAllocation_{};
+    int presetPassAllocation_{1};
     std::uint64_t selectionResolutions_{};
     Settings settings_, drawn_;
     Claims claims_;

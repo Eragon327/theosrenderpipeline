@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <vector>
 
 static void Require(bool value, const char* why)
 {
@@ -123,34 +124,34 @@ int main()
 	StorePreferences(ini, old);
 	Require(!old.neuralCombat.Enabled() && old.neuralCombat.recoverySeconds == 5, "old INI keeps combat policy off");
 	old.neuralCombat = {true, true, 7.5f};
-	Require(old.neuralSecondPass.linked && old.neuralSecondPass.inputScale == .75f && old.neuralSecondPass.preset == 1 &&
-		old.neuralSecondPass.tuning.intensity == .4f, "old config inherits first pass and stays linked");
-	old.neuralSecondPass.linked = false;
-	old.neuralSecondPass.inputScale = .25f;
-	old.neuralSecondPass.preset = 0;
-	old.neuralSecondPass.tuning = { 7, .25f, 1.5f, .3f, -1, true, true };
+	Require(old.neuralExtraPasses[0].linked && old.neuralExtraPasses[0].inputScale == .75f && old.neuralExtraPasses[0].preset == 1 &&
+		old.neuralExtraPasses[0].tuning.intensity == .4f, "old config inherits first pass and stays linked");
+	old.neuralExtraPasses[0].linked = false;
+	old.neuralExtraPasses[0].inputScale = .25f;
+	old.neuralExtraPasses[0].preset = 0;
+	old.neuralExtraPasses[0].tuning = { 7, .25f, 1.5f, .3f, -1, true, true };
 	StorePreferences(ini, old);
 	Require(LoadPreferences(ini) == old, "all pass 2 settings round trip independently");
 	// Any custom style a runtime might accept survives; out-of-range values clamp.
 	ini.SetLongValue("SourceDLSSG", "NRStyle", 200);
 	ini.SetLongValue("SourceDLSSG", "NRPass2Style", -4);
 	const auto custom = LoadPreferences(ini);
-	Require(custom.neuralTuning.style == 200 && custom.neuralSecondPass.tuning.style == 0, "custom styles load within 0 to 255");
-	old.neuralSecondPass.linked = true;
+	Require(custom.neuralTuning.style == 200 && custom.neuralExtraPasses[0].tuning.style == 0, "custom styles load within 0 to 255");
+	old.neuralExtraPasses[0].linked = true;
 	StorePreferences(ini, old);
 	auto linked = LoadPreferences(ini);
 	Require(linked == old, "relink preserves saved overrides");
-	const auto effective = NeuralRendering::EffectiveSecondPass(linked.neuralSecondPass, linked.neuralReconstruction, linked.neuralTuning);
+	const auto effective = NeuralRendering::EffectivePass(linked.neuralExtraPasses[0], linked.neuralReconstruction, linked.neuralTuning);
 	Require(effective.inputScale == .75f && effective.preset == 1 && effective.tuning == linked.neuralTuning, "link overrides hidden custom values");
-	NeuralOptions options; options.enabled = true; options.passes = 2; options.secondPass = old.neuralSecondPass;
-	options.secondPass.linked = false; options.worldOnly = true;
-	Require(!options.EffectiveSecond().tuning.uiCorrection && options.secondPass.tuning.uiCorrection, "world-only adapter suppresses UI correction without changing preference");
+	NeuralOptions options; options.enabled = true; options.passes = 2; options.extraPasses[0] = old.neuralExtraPasses[0];
+	options.extraPasses[0].linked = false; options.worldOnly = true;
+	Require(!options.EffectiveExtra(0).tuning.uiCorrection && options.extraPasses[0].tuning.uiCorrection, "world-only adapter suppresses UI correction without changing preference");
 	NeuralHistory history;
 	Require(history.ResetFor(options, true, false), "initial history");
 	Require(!history.ResetFor(options, true, false), "stable history");
-	options.secondPass.tuning.intensity = .8f;
+	options.extraPasses[0].tuning.intensity = .8f;
 	Require(history.ResetFor(options, true, false), "second tuning resets history");
-	options.secondPass.linked = true;
+	options.extraPasses[0].linked = true;
 	Require(history.ResetFor(options, true, false), "relink resets history");
 	options.passOverride = NeuralRendering::PassOverride::Combat;
 	Require(options.passes == 2 && options.EffectivePasses() == 1 && history.ResetFor(options, true, false),
@@ -166,9 +167,134 @@ int main()
 	Require(options.EffectivePasses() == 2 && history.ResetFor(options, true, false), "restoration resets image history");
 	options.combat = {true, false, 2};
 	Require(!history.ResetFor(options, true, false), "policy settings alone do not reset image history");
-	old.neuralSecondPass.inputScale = std::numeric_limits<float>::quiet_NaN();
-	old.neuralSecondPass.preset = 99; old.neuralSecondPass.tuning.intensity = std::numeric_limits<float>::infinity();
+	old.neuralExtraPasses[0].inputScale = std::numeric_limits<float>::quiet_NaN();
+	old.neuralExtraPasses[0].preset = 99; old.neuralExtraPasses[0].tuning.intensity = std::numeric_limits<float>::infinity();
 	old = SanitizePreferences(old);
-	Require(old.neuralSecondPass.inputScale == 1 && old.neuralSecondPass.preset == 0 && old.neuralSecondPass.tuning.intensity == 1, "invalid custom settings sanitized");
+	Require(old.neuralExtraPasses[0].inputScale == 1 && old.neuralExtraPasses[0].preset == 0 && old.neuralExtraPasses[0].tuning.intensity == 1, "invalid custom settings sanitized");
 	std::puts("PASS: legacy defaults, independent INI persistence, relink preservation, sanitization and history/UI policy");
+
+	// Passes 3 to 5 follow Pass 2's pattern and keep Pass 2's released keys.
+	{
+		CSimpleIniA many;
+		Require(many.LoadData("[SourceDLSSG]\nNRPasses=4\nNRInputScale=0.75\nNRPreset=1\nNRIntensity=0.4\n"
+			"NRPass2UseSameSettings=false\nNRPass2InputScale=0.5\n") >= 0, "four-pass INI");
+		auto loaded = LoadPreferences(many);
+		Require(loaded.neuralPasses == 4, "four passes load");
+		Require(!loaded.neuralExtraPasses[0].linked && loaded.neuralExtraPasses[0].inputScale == .5f, "Pass 2 keys keep their names");
+		for (std::size_t i = 1; i < NeuralRendering::kExtraPasses; ++i) {
+			const auto& extra = loaded.neuralExtraPasses[i];
+			Require(extra.linked && extra.inputScale == .75f && extra.preset == 1 && extra.tuning.intensity == .4f,
+				"a missing later pass inherits Pass 1 and stays linked");
+		}
+		for (long requested : {0L, 1L, 3L, 5L, 6L, 99L}) {
+			many.SetLongValue("SourceDLSSG", "NRPasses", requested);
+			Require(LoadPreferences(many).neuralPasses == std::clamp(static_cast<int>(requested), 1, NeuralRendering::kMaxNeuralPasses),
+				"the pass count clamps to 1..5");
+		}
+		Require(SanitizePreferences(Preferences{ .neuralPasses = 7 }).neuralPasses == 5 &&
+			SanitizeNeuralOptions(NeuralOptions{ .passes = 9 }).passes == 5, "preferences and options clamp to five passes");
+		for (std::size_t i = 0; i < NeuralRendering::kExtraPasses; ++i) {
+			auto& extra = loaded.neuralExtraPasses[i];
+			extra.linked = i % 2 == 0;
+			extra.inputScale = .25f + .125f * float(i);
+			extra.preset = int(i % 2);
+			extra.tuning = { int(3 + i), .2f + .1f * float(i), 1.25f, .5f, -1, i == 2, i != 1 };
+		}
+		loaded.neuralPasses = 5;
+		StorePreferences(many, loaded);
+		Require(LoadPreferences(many) == loaded, "every extra pass's settings round trip independently");
+		for (const char* key : { "NRPass2UseSameSettings", "NRPass2InputScale", "NRPass3UseSameSettings", "NRPass4Style",
+			"NRPass5UICorrection", "NRPass5LocalStructure", "NRObjectPass5Group4Enabled", "NRObjectPass3Group1Strength" }) {
+			Require(many.KeyExists("SourceDLSSG", key), "extra-pass keys follow Pass 2's naming");
+		}
+		Require(!many.KeyExists("SourceDLSSG", "NRPass6InputScale") && !many.KeyExists("SourceDLSSG", "NRObjectPass6Group1Enabled"),
+			"no keys past Pass 5");
+		many.SetDoubleValue("SourceDLSSG", "NRPass4InputScale", std::numeric_limits<double>::quiet_NaN());
+		many.SetLongValue("SourceDLSSG", "NRPass5Preset", 42);
+		const auto sanitized = LoadPreferences(many);
+		Require(sanitized.neuralExtraPasses[2].inputScale == 1 && sanitized.neuralExtraPasses[3].preset == 0 &&
+			sanitized.neuralExtraPasses[1] == loaded.neuralExtraPasses[1], "a malformed later pass sanitizes alone");
+
+		// Each extra pass follows Pass 1, never the pass before it.
+		NeuralOptions chain; chain.enabled = true; chain.passes = 5;
+		chain.reconstruction.inputScale = .8f; chain.reconstruction.preset = 1; chain.tuning.intensity = .9f;
+		chain.extraPasses[0] = { false, .3f, 0, { 4, .2f } };
+		chain.extraPasses[1].linked = true;
+		chain.extraPasses[2] = { true, .4f, 0, { 6, .1f } }; // Stale values kept while linked.
+		chain.extraPasses[3] = { false, .6f, 0, { 5, .7f } };
+		for (std::size_t i = 1; i < 3; ++i) {
+			const auto extra = chain.EffectiveExtra(i);
+			Require(extra.linked && extra.inputScale == .8f && extra.preset == 1 && extra.tuning == chain.tuning,
+				"a linked later pass takes Pass 1's settings even after an unlinked Pass 2");
+		}
+		Require(chain.EffectiveExtra(3).inputScale == .6f && chain.EffectiveExtra(3).tuning.intensity == .7f,
+			"an unlinked Pass 5 keeps its own settings");
+		// Reset to Pass 1 relinks one pass and keeps its own values for later.
+		auto prefs = loaded;
+		prefs.neuralExtraPasses[1].linked = false;
+		prefs.neuralExtraPasses[2].linked = false;
+		auto reset = prefs;
+		reset.neuralExtraPasses[1].linked = true;
+		StorePreferences(many, reset);
+		const auto relinked = LoadPreferences(many);
+		Require(relinked.neuralExtraPasses[1].linked && relinked.neuralExtraPasses[1].inputScale == prefs.neuralExtraPasses[1].inputScale &&
+			relinked.neuralExtraPasses[1].tuning == prefs.neuralExtraPasses[1].tuning, "relinking Pass 3 keeps its own settings");
+		for (std::size_t i : { 0u, 2u, 3u }) {
+			Require(relinked.neuralExtraPasses[i] == prefs.neuralExtraPasses[i], "relinking one pass leaves the others");
+		}
+
+		// History follows every running pass, and pass reductions keep working with five.
+		NeuralHistory passHistory;
+		Require(passHistory.ResetFor(chain, true, false) && !passHistory.ResetFor(chain, true, false), "five-pass history");
+		chain.extraPasses[3].tuning.localToneStrength = .3f;
+		Require(passHistory.ResetFor(chain, true, false), "a Pass 5 tuning edit resets history");
+		chain.passOverride = NeuralRendering::PassOverride::Combat;
+		Require(chain.EffectivePasses() == 1 && passHistory.ResetFor(chain, true, false), "combat runs Pass 1 alone");
+		chain.passOverride = NeuralRendering::PassOverride::None;
+		chain.presetPasses = 3;
+		Require(chain.EffectivePasses() == 3 && passHistory.ResetFor(chain, true, false), "a preset runs fewer passes");
+		chain.passOverride = NeuralRendering::PassOverride::Preset;
+		Require(chain.EffectivePasses() == 3 && !passHistory.ResetFor(chain, true, false), "the preset label alone keeps history");
+		chain.passOverride = NeuralRendering::PassOverride::Combat;
+		Require(chain.EffectivePasses() == 1, "combat still runs one pass inside a preset's three");
+		chain.presetPasses = 7; chain.passOverride = NeuralRendering::PassOverride::None;
+		Require(chain.EffectivePasses() == 5, "a preset never adds passes past the allocation");
+
+		// Object rules exist per pass for all five.
+		NeuralRendering::ObjectMaskSettings masks;
+		masks.passes[3].groups[1] = { true, .5f, .25f, .75f };
+		masks.passes[4].groups[3] = { true, 0, 1, .5f };
+		Require(!NeuralRendering::ObjectsInUse(masks, 3) && NeuralRendering::ObjectsInUse(masks, 4) &&
+			NeuralRendering::ObjectsInUse(masks, 9), "capture follows the rules of passes 4 and 5 only when they run");
+		auto withMasks = loaded; withMasks.neuralObjectMasks = masks;
+		StorePreferences(many, withMasks);
+		Require(LoadPreferences(many).neuralObjectMasks == masks, "Pass 4 and 5 object rules round trip");
+	}
+
+	// Pass 1 and 2 start together as before; each later feature is created
+	// alone and runs from the next frame.
+	{
+		using NeuralRendering::FeatureRamp;
+		using NeuralRendering::NextFeatureRamp;
+		Require(NextFeatureRamp(0, 1) == FeatureRamp{ 1, 1 } && NextFeatureRamp(1, 1) == FeatureRamp{ 1, 1 }, "one pass");
+		Require(NextFeatureRamp(0, 2) == FeatureRamp{ 2, 2 } && NextFeatureRamp(2, 2) == FeatureRamp{ 2, 2 }, "two passes start together");
+		for (int passes = 3; passes <= NeuralRendering::kMaxNeuralPasses; ++passes) {
+			int created = 0, frames = 0;
+			std::vector<int> ready;
+			while (true) {
+				const auto step = NextFeatureRamp(created, passes);
+				Require(step.created - created <= (created ? 1 : 2), "at most one new feature per frame after the first");
+				Require(step.ready <= (std::max)(created, step.created) && (created == 0 || step.ready == created),
+					"a later feature never runs on its creation frame");
+				ready.push_back(step.ready);
+				created = step.created;
+				if (++frames > 10 || step.ready == passes) { break; }
+			}
+			// For five: 2, 2, 3, 4, 5 passes over five frames.
+			Require(created == passes && ready.front() == 2 && ready[1] == 2 && ready.back() == passes &&
+				frames == passes, "every pass becomes ready, one more each frame after the second");
+		}
+	}
+	std::puts("PASS: Pass 3-5 keys, 1..5 clamp, Pass 1 linking per pass, single-pass reset, five-pass history/overrides, "
+		"object rules per pass and the one-new-feature-per-frame ramp");
 }

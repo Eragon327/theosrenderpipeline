@@ -29,6 +29,8 @@ int main()
     external.passes = 2;
     Require(history.ResetFor(external, true, false), "multipass change resets history");
     Require(!history.ResetFor(external, true, false), "multipass history persists across completed frames");
+    external.passes = 5;
+    Require(history.ResetFor(external, true, false) && !history.ResetFor(external, true, false), "five-pass history");
     external.reconstruction.inputScale = 0.5f;
     Require(history.ResetFor(external, true, false), "reconstruction scale change resets history");
     Require(history.ResetFor(external, false, false), "missing world breaks history");
@@ -165,10 +167,15 @@ int main()
     request.reconstruction.inputScale = 0.5f;
     Require(availability.UnavailableReason(request, classify), "legacy reduced Auto requires unsupported residual reconstruction");
     request.reconstruction.inputScale = 1; request.passes = 2;
-    request.secondPass.linked = false; request.secondPass.inputScale = .5f;
+    request.extraPasses[0].linked = false; request.extraPasses[0].inputScale = .5f;
     Require(availability.UnavailableReason(request, classify), "legacy custom pass resolution rejected before GPU work");
-    request.secondPass.linked = true;
+    request.extraPasses[0].linked = true;
     Require(!availability.UnavailableReason(request, classify), "legacy linked passes recover without restart");
+    request.passes = 4; request.extraPasses[2].linked = false; request.extraPasses[2].inputScale = .5f;
+    Require(availability.UnavailableReason(request, classify), "legacy custom Pass 4 resolution rejected before GPU work");
+    request.passes = 3;
+    Require(!availability.UnavailableReason(request, classify), "an unused pass's resolution does not block legacy NR");
+    request.passes = 2; request.extraPasses[2].linked = true;
     request.reconstruction.inputScale = 1; request.reconstruction.method = ResolveMethod::Ratio;
     Require(availability.UnavailableReason(request, classify), "legacy explicit Ratio is rejected too");
     request.reconstruction.method = ResolveMethod::Auto; request.beforeUpscaling = true; request.worldOnly = false;
@@ -177,7 +184,7 @@ int main()
     request.reconstruction.producerColor = true;
     for (auto modern : {RuntimeBuild::Build14, RuntimeBuild::Nexus3108}) {
         build = modern; availability.Reset();
-        for (float scale : {1.0f, 0.5f}) for (int passes : {1, 2}) {
+        for (float scale : {1.0f, 0.5f}) for (int passes : {1, 2, 5}) {
             request.reconstruction.inputScale = scale; request.passes = passes;
             Require(!availability.UnavailableReason(request, classify), "modern early NR preserves resolution and multipass support");
         }

@@ -44,17 +44,13 @@ Texture2D<float> Objects:register(t0);Texture2D<float> Depth:register(t1);RWText
         if(FAILED(hr=D3DCompile(shader.data(),shader.size(),"NR-object-control",nullptr,nullptr,"main","cs_5_1",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&error)))return hr;
         D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};pd.pRootSignature=root.Get();pd.CS={code->GetBufferPointer(),code->GetBufferSize()};
         if(FAILED(hr=device->CreateComputePipelineState(&pd,IID_PPV_ARGS(&pipeline))))return hr;
-        for(auto& slot:heaps_)for(auto& heap:slot){
-            D3D12_DESCRIPTOR_HEAP_DESC hd{D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,3,D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,0};
-            if(FAILED(hr=device->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&heap))))return hr;
-        }
         root_=std::move(root);pipeline_=std::move(pipeline);return S_OK;
     }
     HRESULT ObjectControl::Record(ID3D12Device* device,ID3D12GraphicsCommandList* list,std::size_t slot,unsigned pass,
         const ObjectPassTuning& settings,const Tuning& tuning,ID3D12Resource* objects,ID3D12Resource* depth,
         UINT width,UINT height,bool peripheral,std::array<float,2> offset)
     {
-        if(!device||!list||slot>=heaps_.size()||pass>=2||!width||!height||!objects||!depth||objects==depth||
+        if(!device||!list||slot>=heaps_.size()||pass>=outputs_.size()||!width||!height||!objects||!depth||objects==depth||
             !std::isfinite(offset[0])||!std::isfinite(offset[1]))return E_INVALIDARG;
         const auto m=objects->GetDesc(),d=depth->GetDesc();
         for(const auto& v:{m,d})if(v.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D||!v.Width||!v.Height||v.Width>UINT_MAX||
@@ -73,6 +69,10 @@ Texture2D<float> Objects:register(t0);Texture2D<float> Depth:register(t1);RWText
         Constants c{width,height,static_cast<UINT>(d.Width),d.Height,offset,static_cast<UINT>(peripheral),0,
             {tuning.intensity,tuning.localToneStrength,tuning.localStructureStrength,1},{}};
         for(unsigned i=0;i<4;++i){const auto& g=settings.groups[i];if(g.enabled)c.enabled|=1u<<i;c.rules[i]={tuning.intensity,g.tone,g.structure,1};}
+        if(!heaps_[slot][pass]){
+            D3D12_DESCRIPTOR_HEAP_DESC hd{D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,3,D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,0};
+            if(FAILED(hr=device->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&heaps_[slot][pass]))))return hr;
+        }
         auto* heap=heaps_[slot][pass].Get();auto cpu=heap->GetCPUDescriptorHandleForHeapStart();
         const auto stride=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         for(auto* r:{objects,depth}){

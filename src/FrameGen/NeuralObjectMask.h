@@ -1,4 +1,5 @@
 #pragma once
+#include "NeuralRenderingPassSettings.h"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -34,7 +35,7 @@ namespace TheosRenderPipeline::NeuralRendering
     // inference is skipped.
     struct ObjectMaskSettings
     {
-        std::array<ObjectPassTuning,2> passes{};
+        std::array<ObjectPassTuning,kMaxNeuralPasses> passes{};
         // Session-only mask preview: bit g-1 shows group g; no bits is off.
         // Classes only blacks out everything that is not shown.
         unsigned previewGroups{};
@@ -66,7 +67,7 @@ namespace TheosRenderPipeline::NeuralRendering
     // mask preview is on. passes is the number of passes that run.
     inline bool ObjectsInUse(const ObjectMaskSettings& settings, int passes)
     {
-        const auto count = static_cast<std::size_t>(std::clamp(passes, 0, 2));
+        const auto count = static_cast<std::size_t>(std::clamp(passes, 0, kMaxNeuralPasses));
         return settings.previewGroups != 0 ||
                std::any_of(settings.passes.begin(), settings.passes.begin() + count, [](const auto& pass) { return pass.Active(); });
     }
@@ -75,7 +76,7 @@ namespace TheosRenderPipeline::NeuralRendering
     template<class Ini> ObjectMaskSettings LoadObjectMask(const Ini& ini, const char* section)
     {
         ObjectMaskSettings value;
-        for (unsigned pass=0;pass<2;++pass) for (unsigned group=0;group<4;++group) {
+        for (unsigned pass=0;pass<kMaxNeuralPasses;++pass) for (unsigned group=0;group<4;++group) {
             auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
             auto& rule=value.passes[pass].groups[group];
             rule.enabled=ini.GetBoolValue(section,(prefix+"Enabled").c_str(),false);
@@ -90,7 +91,7 @@ namespace TheosRenderPipeline::NeuralRendering
     {
         value = SanitizeObjectMask(value);
         // Released whole-chain keys (NRObjectMasks, NR*Strength) are no longer read or written.
-        for (unsigned pass=0;pass<2;++pass) for (unsigned group=0;group<4;++group) {
+        for (unsigned pass=0;pass<kMaxNeuralPasses;++pass) for (unsigned group=0;group<4;++group) {
             auto prefix=std::string("NRObjectPass")+std::to_string(pass+1)+"Group"+std::to_string(group+1);
             const auto& rule=value.passes[pass].groups[group];
             ini.SetBoolValue(section,(prefix+"Enabled").c_str(),rule.enabled);

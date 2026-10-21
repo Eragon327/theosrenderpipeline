@@ -1,5 +1,6 @@
 #pragma once
 #include "SourceDLSSGInterop.h"
+#include "NeuralRenderingPassSettings.h"
 #include <array>
 #include <span>
 
@@ -28,7 +29,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 	class NeuralResolveKernels
 	{
 	public:
-		static constexpr unsigned kStages = 16;
+		// Each extra pass takes four stages: resize, pack guides, UI and restore.
+		// Pass 2 keeps 7 to 10; Passes 3 to 5 follow the base stages, and their
+		// descriptor heaps are created on first use.
+		static constexpr unsigned kBaseStages = 16;
+		static constexpr unsigned kExtraPassSteps = 4;
+		static constexpr unsigned kStages = kBaseStages + kExtraPassSteps * (static_cast<unsigned>(NeuralRendering::kExtraPasses) - 1);
+		// pass is 1 for Pass 2 up to 4 for Pass 5.
+		static constexpr unsigned ExtraPassStage(unsigned pass, unsigned step)
+		{
+			return pass <= 1 ? 7 + step : kBaseStages + kExtraPassSteps * (pass - 2) + step;
+		}
 		HRESULT Initialize(ID3D12Device* device);
 		// The measured white point bound at t3 for this frame's dispatches, or null.
 		void SetExposure(ID3D12Resource* exposure) { exposure_ = exposure; }
@@ -40,6 +51,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Test observation: descriptor tables written since initialization.
 		std::uint64_t DescriptorWrites() const { return descriptorWrites_; }
 	private:
+		static HRESULT CreateHeap(ID3D12Device* device, Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>& heap);
 		struct DescriptorTable
 		{
 			// Retain identities so a released resource's address cannot be reused

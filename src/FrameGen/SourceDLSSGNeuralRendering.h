@@ -42,7 +42,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		{
 			return feature_.IsInitialized() && (runtimePath_ != options.runtimePath || beforeUpscaling_ != options.beforeUpscaling || worldOnly_ != options.WorldOnly() || passes_ != options.passes ||
 				!NeuralRendering::SameReconstructionResources(reconstruction_, options.reconstruction) ||
-				(options.passes == 2 && (secondSettings_.inputScale != options.EffectiveSecond().inputScale || secondSettings_.preset != options.EffectiveSecond().preset)) ||
+				ExtraPassesChanged(options) ||
 				((guideWidth || guideHeight) && (guideWidth != guideWidth_ || guideHeight != guideHeight_)));
 		}
 		const std::string& Status() const { return status_; }
@@ -50,21 +50,38 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// stops before Record writes to the frame's list, so the pass can be dropped.
 		std::uint32_t RefusedCreation() const
 		{
-			const auto first = feature_.RefusedCreation();
-			return first ? first : secondFeature_.RefusedCreation();
+			if (const auto first = feature_.RefusedCreation()) { return first; }
+			for (const auto& extra : extra_) {
+				if (const auto refused = extra.feature.RefusedCreation()) { return refused; }
+			}
+			return 0;
 		}
+		// Passes whose feature was created on an earlier frame; at most these run.
+		int ReadyPasses() const { return readyPasses_; }
 	private:
+		bool ExtraPassesChanged(const NeuralOptions& options) const
+		{
+			for (std::size_t i = 0; i + 1 < static_cast<std::size_t>(options.passes) && i < extra_.size(); ++i) {
+				const auto wanted = options.EffectiveExtra(i);
+				if (extra_[i].settings.inputScale != wanted.inputScale || extra_[i].settings.preset != wanted.preset) { return true; }
+			}
+			return false;
+		}
 		bool Initialize(ID3D12Device* device, const NeuralOptions& options,
 			ID3D12Resource* motion, ID3D12Resource* hudless, ID3D12Resource* composed);
-		bool RecordSecond(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
+		// pass is 1 for Pass 2 up to 4 for Pass 5. source is the previous pass's
+		// result on Pass 1's grid: Pass 1's writable output for Pass 2, otherwise
+		// an earlier FinishExtra's result in COMMON.
+		bool RecordExtra(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot, unsigned pass,
 			const NeuralOptions& options, const NeuralRendering::FeatureSession::EvaluationInput& first,
-			const ResolveConstants& constants, ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
-			NeuralRendering::FeatureSession::EvaluationInput& second);
-		// With directResult, the final pass-2 result is returned in COMMON for the
-		// resolve to read; otherwise it is copied back to first.output in UAV state.
-		bool FinishSecond(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
-			const NeuralRendering::FeatureSession::EvaluationInput& first,
-			const NeuralRendering::FeatureSession::EvaluationInput& second, const ResolveConstants& originalConstants,
+			ID3D12Resource* source, const ResolveConstants& constants, ID3D12Resource* motion, ID3D12Resource* depth,
+			ID3D12Resource* ui, NeuralRendering::FeatureSession::EvaluationInput& evaluation);
+		// With directResult, the pass's result on Pass 1's grid is returned in COMMON,
+		// for the next pass or the resolve to read; otherwise it is copied back to
+		// first.output in UAV state.
+		bool FinishExtra(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot, unsigned pass,
+			const NeuralRendering::FeatureSession::EvaluationInput& first, ID3D12Resource* source,
+			const NeuralRendering::FeatureSession::EvaluationInput& evaluation, const ResolveConstants& originalConstants,
 			ID3D12Resource** directResult);
 		// Every field shown by the success status. The text is formatted only when one changes.
 		struct StatusKey
@@ -73,13 +90,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 			int passes{};
 			bool worldOnly{}, beforeUpscaling{}, producerColor{}, peripheral{}, fusionRequested{}, fusedColor{};
 			NeuralRendering::ResolveMethod method{};
-			UINT secondWidth{}, secondHeight{};
-			int secondPreset{};
-			bool secondLinked{};
-			float secondIntensity{};
+			struct Extra
+			{
+				UINT width{}, height{};
+				int preset{};
+				bool linked{};
+				float intensity{};
+				bool operator==(const Extra&) const = default;
+			};
+			std::array<Extra, NeuralRendering::kExtraPasses> extra{};
 			NeuralRendering::PassOverride passOverride{};
-			int requestedPasses{};
-			std::array<bool,2> objectControls{};
+			int requestedPasses{}, readyPasses{};
+			std::array<bool, NeuralRendering::kMaxNeuralPasses> objectControls{};
 			bool objectControlsUnavailable{};
 			bool operator==(const StatusKey&) const = default;
 		};
@@ -93,11 +115,22 @@ namespace TheosRenderPipeline::SourceDLSSG
 			bool pending{};
 		};
 		NeuralRendering::FeatureSession feature_;
-		// Each session owns a runtime reference, including failed creation work.
-		NeuralRendering::FeatureSession secondFeature_;
-		Microsoft::WRL::ComPtr<ID3D12Resource> secondOutput_, secondInput_, secondRestored_;
-		Microsoft::WRL::ComPtr<ID3D12Resource> secondMotion_, secondDepth_, secondUI_;
-		NeuralRendering::SecondPassSettings secondSettings_;
+		// Passes 2 to 5. Each runs the model on the previous pass's result with its
+		// own feature, history and model raster, and is restored to Pass 1's grid
+		// before the next pass reads it.
+		struct ExtraPass
+		{
+			// Each session owns a runtime reference, including failed creation work.
+			NeuralRendering::FeatureSession feature;
+			Microsoft::WRL::ComPtr<ID3D12Resource> output, input, restored;
+			Microsoft::WRL::ComPtr<ID3D12Resource> motion, depth, ui;
+			NeuralRendering::ExtraPassSettings settings;
+			ID3D12Resource* controlMask{}; // frame-only, owned by objectControl_
+			bool historyInvalid{true};
+		};
+		std::array<ExtraPass, NeuralRendering::kExtraPasses> extra_;
+		// Features created so far, Pass 1 included, and how many of them may run.
+		int createdPasses_{}, readyPasses_{};
 		Microsoft::WRL::ComPtr<ID3D12Resource> corrected_, composed_;
 		Microsoft::WRL::ComPtr<ID3D12Resource> encoded_, workColor_, workOutput_, residual_;
 		Microsoft::WRL::ComPtr<ID3D12Resource> packedMotion_, packedDepth_, packedUI_;
@@ -119,11 +152,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Records the hold; returns false only on a failure that leaves the frame unusable.
 		bool HoldFrame(ID3D12Device* device, ID3D12GraphicsCommandList* list, bool freeze,
 			ID3D12Resource*& motion, ID3D12Resource*& depth, ID3D12Resource* hudless, ID3D12Resource*& objectMask, bool& reset);
-        std::array<NeuralRendering::ObjectBlend,2> passObjectBlend_;
-        std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,2> passObjectResult_;
+        std::array<NeuralRendering::ObjectBlend,NeuralRendering::kMaxNeuralPasses> passObjectBlend_;
+        std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,NeuralRendering::kMaxNeuralPasses> passObjectResult_;
         NeuralRendering::ObjectControl objectControl_;
-        std::array<bool,2> objectControlActive_{};
-        ID3D12Resource* secondControlMask_{}; // frame-only, owned by objectControl_
+        std::array<bool,NeuralRendering::kMaxNeuralPasses> objectControlActive_{};
 		bool fusedColor_{};
 		NeuralRendering::Reconstruction reconstruction_;
 		std::filesystem::path runtimePath_;
@@ -131,7 +163,6 @@ namespace TheosRenderPipeline::SourceDLSSG
 		bool beforeUpscaling_{};
 		bool worldOnly_{};
 		int passes_{1};
-		bool secondHistoryInvalid_{true};
 		Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
 		Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline_;
 		std::array<Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>, kCommandSlots> heaps_;

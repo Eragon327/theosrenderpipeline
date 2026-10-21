@@ -118,7 +118,7 @@ Settings Runtime::Load(const CSimpleIniA& ini)
     base.combat = nr.neuralCombat;
     base.reconstruction = nr.neuralReconstruction;
     base.tuning = nr.neuralTuning;
-    base.second = NeuralRendering::EffectiveSecondPass(nr.neuralSecondPass, nr.neuralReconstruction, nr.neuralTuning);
+    base.extra = NeuralRendering::EffectiveExtraPasses(nr.neuralExtraPasses, nr.neuralReconstruction, nr.neuralTuning);
     base.sharpening = ini.GetBoolValue("Settings", "Sharpening", false);
     base.sharpness = static_cast<float>(ini.GetDoubleValue("Settings", "Sharpness", 0.3));
     auto settings = LoadSettings(ini, views, &base);

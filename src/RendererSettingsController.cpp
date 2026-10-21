@@ -174,7 +174,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         options.tuning = frameGen_.settings.sourceDLSSG.neuralTuning;
         options.objectMasks = frameGen_.settings.sourceDLSSG.neuralObjectMasks;
         options.reconstruction = frameGen_.settings.sourceDLSSG.neuralReconstruction;
-        options.secondPass = frameGen_.settings.sourceDLSSG.neuralSecondPass;
+        options.extraPasses = frameGen_.settings.sourceDLSSG.neuralExtraPasses;
         options.beforeUpscaling = frameGen_.settings.sourceDLSSG.neuralBeforeUpscaling;
         options.passes = frameGen_.settings.sourceDLSSG.neuralPasses;
         options.combat = frameGen_.settings.sourceDLSSG.neuralCombat;

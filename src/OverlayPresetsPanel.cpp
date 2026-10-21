@@ -28,8 +28,8 @@ Appearance::Setup DraftSetup(const RendererSettingsDraft& draft)
     setup.combat = nr.neuralCombat;
     setup.reconstruction = nr.neuralReconstruction;
     setup.tuning = nr.neuralTuning;
-    // Matches the runtime: a linked Pass 2 takes Pass 1's values.
-    setup.second = NeuralRendering::EffectiveSecondPass(nr.neuralSecondPass, nr.neuralReconstruction, nr.neuralTuning);
+    // Matches the runtime: a linked pass takes Pass 1's values.
+    setup.extra = NeuralRendering::EffectiveExtraPasses(nr.neuralExtraPasses, nr.neuralReconstruction, nr.neuralTuning);
     setup.sharpening = draft.sharpening;
     setup.sharpness = draft.sharpness;
     return setup;
@@ -42,7 +42,7 @@ void WriteSetup(const Appearance::Setup& setup, SourceDLSSG::Preferences& nr, bo
     nr.neuralCombat = setup.combat;
     nr.neuralReconstruction = setup.reconstruction;
     nr.neuralTuning = setup.tuning;
-    nr.neuralSecondPass = setup.second;
+    nr.neuralExtraPasses = setup.extra;
     sharpening = setup.sharpening;
     sharpness = setup.sharpness;
 }
@@ -102,8 +102,13 @@ std::string FieldValue(const Appearance::Field& field, const Appearance::Setup& 
     const float value = field.get(setup);
     const std::string_view key = field.key;
     if (key == "BeforeUpscaling") { return value != 0 ? "before upscaling" : "after upscaling"; }
-    if (key == "Passes") { return value == 2 ? "two passes" : "one pass"; }
-    if (key == "Pass2SameAsPass1") { return value != 0 ? "follows Pass 1" : "own settings"; }
+    if (key == "Passes")
+    {
+        static constexpr const char* counts[]{"one pass", "two passes", "three passes", "four passes", "five passes"};
+        static_assert(std::size(counts) == NeuralRendering::kMaxNeuralPasses);
+        return counts[std::clamp(static_cast<int>(value), 1, NeuralRendering::kMaxNeuralPasses) - 1];
+    }
+    if (key.ends_with("SameAsPass1")) { return value != 0 ? "follows Pass 1" : "own settings"; }
     if (key == "ReconstructionMethod") { return value == 2 ? "Ratio" : value == 1 ? "Residual" : "Auto"; }
     if (key.ends_with("Network")) { return NeuralNetworkName(value != 0 ? 1 : 0); }
     if (key.ends_with("Style")) { return NeuralStyleName(static_cast<int>(value)); }
@@ -177,6 +182,7 @@ struct EditorDecor final : PresetDecor
     }
     void Reset(const char* key) override { restore.emplace_back(key); }
     const char* EditingTime() const override { return time; }
+    int ReferencePasses() const override { return base.passes; }
 };
 }
 
@@ -208,9 +214,11 @@ void OverlayUI::DrawPresetList(const FrameView& view)
             const auto& setup = state.result.setup;
             ImGui::Text("Pass 1: intensity %.2f | tone %.2f | structure %.2f", setup.tuning.intensity,
                 setup.tuning.localToneStrength, setup.tuning.localStructureStrength);
-            if (setup.passes == 2 && !setup.second.linked) {
-                ImGui::Text("Pass 2: intensity %.2f | tone %.2f | structure %.2f", setup.second.tuning.intensity,
-                    setup.second.tuning.localToneStrength, setup.second.tuning.localStructureStrength);
+            for (int pass = 2; pass <= setup.passes; ++pass) {
+                const auto& extra = setup.extra[pass - 2];
+                if (extra.linked) { continue; }
+                ImGui::Text("Pass %d: intensity %.2f | tone %.2f | structure %.2f", pass, extra.tuning.intensity,
+                    extra.tuning.localToneStrength, extra.tuning.localStructureStrength);
             }
             if (!cs) { ImGui::Text("Sharpening strength %.3f", setup.sharpness); }
             ImGui::EndTooltip();
@@ -545,7 +553,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
     edited.combat = nr.neuralCombat;
     edited.reconstruction = nr.neuralReconstruction;
     edited.tuning = nr.neuralTuning;
-    edited.second = nr.neuralSecondPass;
+    edited.extra = nr.neuralExtraPasses;
     edited.sharpening = sharpening;
     edited.sharpness = sharpness;
     for (const auto& field : Appearance::Fields()) {
@@ -562,10 +570,12 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
             Appearance::SetChange(profile, field.key, value);
         }
     }
-    if (edited.second.linked && !shown.second.linked) {
-        // Match Pass 1 drops Pass 2's own settings from this preset.
-        std::erase_if(profile.changes, [](const auto& change) {
-            return change.key.starts_with("Pass2") && change.key != "Pass2SameAsPass1";
+    for (std::size_t i = 0; i < edited.extra.size(); ++i) {
+        if (!edited.extra[i].linked || shown.extra[i].linked) { continue; }
+        // Reset to Pass 1 drops only this pass's own settings from this preset.
+        const auto prefix = std::format("Pass{}", i + 2);
+        std::erase_if(profile.changes, [&](const auto& change) {
+            return change.key.starts_with(prefix) && change.key != prefix + "SameAsPass1";
         });
     }
     for (const auto& key : restore) { Appearance::ClearChange(profile, key); }

@@ -11,12 +11,12 @@ static void ObjectMaskCases(GPU& gpu)
         options.runtimePath="fixture.dll"; options.tuning.intensity=.8f; options.tuning.uiCorrection=!world;
         options.reconstruction.method=ResolveMethod::Ratio; options.reconstruction.inputScale=.75f;
         options.reconstruction.peripheralCompression=peripheral;
-        options.secondPass.linked=false; options.secondPass.inputScale=.5f; options.secondPass.preset=1;
-        options.secondPass.tuning.intensity=.6f; options.secondPass.tuning.uiCorrection=!world;
+        options.extraPasses[0].linked=false; options.extraPasses[0].inputScale=.5f; options.extraPasses[0].preset=1;
+        options.extraPasses[0].tuning.intensity=.6f; options.extraPasses[0].tuning.uiCorrection=!world;
         options.objectMasks={};
         options.objectMasks.passes[0].groups[0]={true,.25f,.75f};
         options.objectMasks.passes[1].groups[1]={true,.75f,.25f};
-        options.tuning.useAutoSkinMask=true;options.secondPass.tuning.useAutoSkinMask=true;
+        options.tuning.useAutoSkinMask=true;options.extraPasses[0].tuning.useAutoSkinMask=true;
         Fixture::peripheral=peripheral; Fixture::worldOnly=world; Fixture::sourceWidth=w; Fixture::sourceHeight=h;
         Fixture::guideWidth=gw; Fixture::guideHeight=gh; Fixture::transform=true;
         Fixture::workWidth=ModelExtent(w,options.reconstruction); Fixture::workHeight=ModelExtent(h,options.reconstruction);
@@ -79,13 +79,13 @@ static void PassObjectStrengthCases(GPU& gpu)
         NeuralOptions options; options.enabled=true; options.beforeUpscaling=world; options.passes=2;
         options.runtimePath="fixture.dll"; options.tuning.intensity=.8f;
         options.reconstruction.inputScale=peripheral?.75f:1; options.reconstruction.peripheralCompression=peripheral;
-        options.secondPass.linked=false; options.secondPass.inputScale=resized?.5f:options.reconstruction.inputScale;
-        options.secondPass.tuning.intensity=.6f; options.secondPass.preset=1;
+        options.extraPasses[0].linked=false; options.extraPasses[0].inputScale=resized?.5f:options.reconstruction.inputScale;
+        options.extraPasses[0].tuning.intensity=.6f; options.extraPasses[0].preset=1;
         for (auto& pass:options.objectMasks.passes) { pass.groups[0].enabled=true; }
         Fixture::peripheral=peripheral; Fixture::worldOnly=world; Fixture::sourceWidth=w; Fixture::sourceHeight=h;
         Fixture::guideWidth=gw; Fixture::guideHeight=gh; Fixture::transform=true;
         Fixture::workWidth=ModelExtent(w,options.reconstruction); Fixture::workHeight=ModelExtent(h,options.reconstruction);
-        auto reconstruction=options.reconstruction; reconstruction.inputScale=options.secondPass.inputScale;
+        auto reconstruction=options.reconstruction; reconstruction.inputScale=options.extraPasses[0].inputScale;
         Fixture::secondWidth=ModelExtent(w,reconstruction); Fixture::secondHeight=ModelExtent(h,reconstruction);
         auto motion=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{}),DXGI_FORMAT_R32G32_FLOAT);
         auto depth=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{.4f,0,0,0}),DXGI_FORMAT_R32_FLOAT);

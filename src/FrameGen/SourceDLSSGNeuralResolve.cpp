@@ -35,14 +35,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(hr)) { return hr; }
 		}
 		for (auto& slot : heaps_) {
-			for (auto& heap : slot) {
-				D3D12_DESCRIPTOR_HEAP_DESC h{ D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 7, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0 };
-				hr = device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&heap));
+			for (unsigned stage = 0; stage < kBaseStages; ++stage) {
+				hr = CreateHeap(device, slot[stage]);
 				if (FAILED(hr)) { return hr; }
 			}
 		}
 		root_ = std::move(root);
 		return S_OK;
+	}
+	HRESULT NeuralResolveKernels::CreateHeap(ID3D12Device* device, ComPtr<ID3D12DescriptorHeap>& heap)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC h{ D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 7, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0 };
+		return device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&heap));
 	}
 	HRESULT NeuralResolveKernels::Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
 		unsigned stage, ResolveKernel kernel, const ResolveConstants& constants, ID3D12Resource* a,
@@ -59,6 +63,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		auto& table = tables_[slot][stage];
 		bool unchanged = table.valid;
 		for (std::size_t i = 0; unchanged && i < bound.size(); ++i) { unchanged = table.resources[i].Get() == bound[i]; }
+		// Only Passes 3 to 5 use the later stages; one and two passes never allocate them.
+		if (!heaps_[slot][stage]) {
+			if (const auto hr = CreateHeap(device, heaps_[slot][stage]); FAILED(hr)) { return hr; }
+		}
 		auto* heap = heaps_[slot][stage].Get();
 		if (!unchanged) {
 			// Resource descriptions are immutable, so a retained identity needs no revalidation.

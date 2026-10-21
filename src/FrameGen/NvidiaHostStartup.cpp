@@ -83,7 +83,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     options.tuning = settings.sourceDLSSG.neuralTuning;
     options.objectMasks = settings.sourceDLSSG.neuralObjectMasks;
     options.reconstruction = settings.sourceDLSSG.neuralReconstruction;
-    options.secondPass = settings.sourceDLSSG.neuralSecondPass;
+    options.extraPasses = settings.sourceDLSSG.neuralExtraPasses;
     options.beforeUpscaling = settings.sourceDLSSG.neuralBeforeUpscaling;
     options.passes = settings.sourceDLSSG.neuralPasses;
     options.combat = settings.sourceDLSSG.neuralCombat;

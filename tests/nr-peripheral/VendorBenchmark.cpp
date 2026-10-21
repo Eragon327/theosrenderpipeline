@@ -54,12 +54,12 @@ int wmain(int argc,wchar_t** argv){
             options.passes=2;options.reconstruction.inputScale=frame==20?.5f:.75f;
             options.reconstruction.peripheralCompression=frame>=20;
             options.reconstruction.fusedPreparation=frame>=30;
-            options.secondPass.linked=frame==0;
-            options.secondPass.inputScale=frame==10 || frame==30?.25f:1.f;
-            options.secondPass.preset=frame>=30?1:0;
-            options.secondPass.tuning.intensity=.7f;
+            options.extraPasses[0].linked=frame==0;
+            options.extraPasses[0].inputScale=frame==10 || frame==30?.25f:1.f;
+            options.extraPasses[0].preset=frame>=30?1:0;
+            options.extraPasses[0].tuning.intensity=.7f;
             options.tuning.uiCorrection=!options.beforeUpscaling;
-            options.secondPass.tuning.uiCorrection=!options.beforeUpscaling;
+            options.extraPasses[0].tuning.uiCorrection=!options.beforeUpscaling;
             pass=std::make_unique<NeuralPass>(); // Last GPU.End completed every submission.
         }
         gpu.Begin();Check(Interop::RecordCopy(gpu.list.Get(),original.Get(),scene.Get()),"fresh scene");

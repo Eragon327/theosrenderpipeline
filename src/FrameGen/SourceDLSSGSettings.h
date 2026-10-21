@@ -47,7 +47,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralRendering::Tuning neuralTuning{};
         NeuralRendering::ObjectMaskSettings neuralObjectMasks{};
 		NeuralRendering::Reconstruction neuralReconstruction{};
-		NeuralRendering::SecondPassSettings neuralSecondPass{};
+		// Passes 2 to 5, used up to neuralPasses.
+		NeuralRendering::ExtraPasses neuralExtraPasses{};
 		HDROutput::Settings hdrOutput{};
 		bool operator==(const Preferences&) const = default;
 	};
@@ -67,10 +68,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.neuralTuning = NeuralRendering::SanitizeBuild14Tuning(value.neuralTuning);
         value.neuralObjectMasks = NeuralRendering::SanitizeObjectMask(value.neuralObjectMasks);
 		if (value.neuralRuntime.empty()) { value.neuralRuntime = kAutomaticNeuralRuntime; }
-		value.neuralPasses = std::clamp(value.neuralPasses, 1, 2);
+		value.neuralPasses = std::clamp(value.neuralPasses, 1, NeuralRendering::kMaxNeuralPasses);
 		value.neuralCombat = NeuralRendering::SanitizeCombatSettings(value.neuralCombat);
 		value.neuralReconstruction = NeuralRendering::SanitizeReconstruction(value.neuralReconstruction);
-		value.neuralSecondPass = NeuralRendering::SanitizeSecondPass(value.neuralSecondPass);
+		value.neuralExtraPasses = NeuralRendering::SanitizeExtraPasses(value.neuralExtraPasses);
 		value.hdrOutput = HDROutput::Sanitize(value.hdrOutput);
 		return value;
 	}
@@ -118,7 +119,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		nr.useAutoSkinMask = ini.GetBoolValue(section, "NRAutoSkinMask", false);
 		nr.uiCorrection = ini.GetBoolValue(section, "NRUICorrection", false);
 		value.neuralReconstruction = NeuralRendering::LoadReconstruction(ini, section);
-		value.neuralSecondPass = NeuralRendering::LoadSecondPass(ini, section, value.neuralReconstruction, value.neuralTuning);
+		value.neuralExtraPasses = NeuralRendering::LoadExtraPasses(ini, section, value.neuralReconstruction, value.neuralTuning);
         value.neuralObjectMasks = NeuralRendering::LoadObjectMask(ini, section);
 		value.hdrOutput = HDROutput::Load(ini);
 		return SanitizePreferences(value);
@@ -162,7 +163,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ini.SetBoolValue(section, "NRAutoSkinMask", nr.useAutoSkinMask);
 		ini.SetBoolValue(section, "NRUICorrection", nr.uiCorrection);
 		NeuralRendering::StoreReconstruction(ini, section, value.neuralReconstruction);
-		NeuralRendering::StoreSecondPass(ini, section, value.neuralSecondPass);
+		NeuralRendering::StoreExtraPasses(ini, section, value.neuralExtraPasses);
         NeuralRendering::StoreObjectMask(ini, section, value.neuralObjectMasks);
 		HDROutput::Store(ini, value.hdrOutput);
 	}

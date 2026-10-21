@@ -253,15 +253,17 @@ inline bool UsesPresets(const Settings& settings)
 {
     return std::ranges::any_of(settings.presets, [](const auto& preset) { return preset.profile.enabled; });
 }
-// Presets that request two passes keep two allocated, so dropping to one never
-// recreates NR. A preset that applies nowhere does not.
-inline bool PresetsRequestTwoPasses(const Settings& settings)
+// The most passes a used preset requests stay allocated, so running fewer never
+// recreates NR. A preset that applies nowhere does not count; 1 when none asks.
+inline int PresetPassAllocation(const Settings& settings)
 {
-    return std::ranges::any_of(settings.presets, [](const auto& preset) {
-        const auto* passes = FindChange(preset.profile, "Passes");
+    int passes = 1;
+    for (const auto& preset : settings.presets) {
+        const auto* change = FindChange(preset.profile, "Passes");
         const bool used = std::ranges::any_of(preset.groups, std::identity{}) || !preset.weathers.empty();
-        return preset.profile.enabled && used && passes && passes->points[0] == 2;
-    });
+        if (preset.profile.enabled && used && change) { passes = (std::max)(passes, static_cast<int>(change->points[0])); }
+    }
+    return std::clamp(passes, 1, NeuralRendering::kMaxNeuralPasses);
 }
 inline bool ValidHours(const std::array<float, 6>& hours)
 {

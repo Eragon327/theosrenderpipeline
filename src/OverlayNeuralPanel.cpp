@@ -40,11 +40,11 @@ void DrawNRAppliedPasses(const OverlayUI::FrameView& view, const TheosRenderPipe
         DrawSettingsValue("Network", NeuralNetworkName(preset));
     };
     pass("Pass 1", applied.reconstruction.inputScale, applied.reconstruction.preset);
-    if (applied.passes == 2)
+    for (int index = 2; index <= applied.passes; ++index)
     {
-        const auto second = applied.EffectiveSecond();
-        pass("Pass 2", second.inputScale, second.preset);
-        DrawSettingsValue("Settings", second.linked ? "Linked" : "Independent");
+        const auto extra = applied.EffectiveExtra(static_cast<std::size_t>(index - 2));
+        pass(std::format("Pass {}", index).c_str(), extra.inputScale, extra.preset);
+        DrawSettingsValue("Settings", extra.linked ? "Linked" : "Independent");
     }
 }
 
@@ -166,7 +166,7 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     DrawSettingsHelp(locked ? lockedReason
         : "Tick a group to override it in this pass. Strength blends this pass's result with its input: 0 keeps "
           "the input, 1 the full result, so Pass 2 at 0 keeps Pass 1's work. Tone and structure replace this "
-          "pass's values for the group and pause its automatic skin mask. Rules are independent of the other pass "
+          "pass's values for the group and pause its automatic skin mask. Rules are independent of the other passes "
           "and of weather overrides. Inference still runs at any strength.");
     ImGui::TableNextColumn();
     const float left = ImGui::GetCursorPosX() + check + style.ItemSpacing.x;
@@ -254,12 +254,12 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     const auto shownText = masks.previewGroups ? "showing " + ShownGroups(masks.previewGroups, names) + " | not saved"
                                                : std::string("open an eye to preview a group | not saved");
     ImGui::TextDisabled("%s", shownText.c_str());
-    DrawSettingsHelp("The preview covers the whole finished image, so it is the same on both pass tabs.");
+    DrawSettingsHelp("The preview covers the whole finished image, so it is the same on every pass tab.");
     ImGui::EndDisabled();
     ImGui::EndTable();
 
     // What capture is doing now, when it matters.
-    const bool inUse = NR::ObjectsInUse(masks, 2);
+    const bool inUse = NR::ObjectsInUse(masks, NR::kMaxNeuralPasses);
     if (!view.neuralObjectsAvailable || inUse)
     {
         ImGui::Indent(Px(14.0f));
@@ -277,34 +277,39 @@ int& SelectedPass()
     return selected;
 }
 
-// Pass 2's settings compared with Pass 1's, for the state column.
+// An extra pass's settings compared with Pass 1's, for the state column.
 struct PassDecor final : PresetDecor
 {
-    TheosRenderPipeline::NeuralRendering::SecondPassSettings& shown;
+    TheosRenderPipeline::NeuralRendering::ExtraPassSettings& shown;
     const TheosRenderPipeline::NeuralRendering::Reconstruction& first;
     const TheosRenderPipeline::NeuralRendering::Tuning& tuning;
-    PassDecor(TheosRenderPipeline::NeuralRendering::SecondPassSettings& shown,
+    // This pass's key prefix, "Pass2" to "Pass5".
+    std::string prefix;
+    PassDecor(TheosRenderPipeline::NeuralRendering::ExtraPassSettings& shown,
         const TheosRenderPipeline::NeuralRendering::Reconstruction& first,
-        const TheosRenderPipeline::NeuralRendering::Tuning& tuning)
-        : shown(shown), first(first), tuning(tuning) {}
+        const TheosRenderPipeline::NeuralRendering::Tuning& tuning, int pass)
+        : shown(shown), first(first), tuning(tuning), prefix(std::format("Pass{}", pass)) {}
 
-    static constexpr const char* kKeys[]{"Pass2Style", "Pass2Intensity", "Pass2LocalTone", "Pass2LocalStructure",
-        "Pass2SkinStructure", "Pass2AutoSkinMask", "Pass2UICorrection", "Pass2InputScale", "Pass2Network"};
+    // Each pass's own settings, after its "PassN" prefix.
+    static constexpr const char* kKeys[]{"Style", "Intensity", "LocalTone", "LocalStructure",
+        "SkinStructure", "AutoSkinMask", "UICorrection", "InputScale", "Network"};
     enum class Kind { Style, Value, Percent, Toggle, Network };
 
-    // Calls visit(pass2 value, pass1 value, kind) for key; false for other keys.
+    // Calls visit(this pass's value, Pass 1's value, kind) for key; false for other keys.
     template <class Visit> bool With(std::string_view key, Visit&& visit) const
     {
+        if (!key.starts_with(prefix)) { return false; }
+        key.remove_prefix(prefix.size());
         auto& own = shown.tuning;
-        if (key == "Pass2Style") { visit(own.style, tuning.style, Kind::Style); }
-        else if (key == "Pass2Intensity") { visit(own.intensity, tuning.intensity, Kind::Value); }
-        else if (key == "Pass2LocalTone") { visit(own.localToneStrength, tuning.localToneStrength, Kind::Value); }
-        else if (key == "Pass2LocalStructure") { visit(own.localStructureStrength, tuning.localStructureStrength, Kind::Value); }
-        else if (key == "Pass2SkinStructure") { visit(own.skinStructureStrength, tuning.skinStructureStrength, Kind::Value); }
-        else if (key == "Pass2AutoSkinMask") { visit(own.useAutoSkinMask, tuning.useAutoSkinMask, Kind::Toggle); }
-        else if (key == "Pass2UICorrection") { visit(own.uiCorrection, tuning.uiCorrection, Kind::Toggle); }
-        else if (key == "Pass2InputScale") { visit(shown.inputScale, first.inputScale, Kind::Percent); }
-        else if (key == "Pass2Network") { visit(shown.preset, first.preset, Kind::Network); }
+        if (key == "Style") { visit(own.style, tuning.style, Kind::Style); }
+        else if (key == "Intensity") { visit(own.intensity, tuning.intensity, Kind::Value); }
+        else if (key == "LocalTone") { visit(own.localToneStrength, tuning.localToneStrength, Kind::Value); }
+        else if (key == "LocalStructure") { visit(own.localStructureStrength, tuning.localStructureStrength, Kind::Value); }
+        else if (key == "SkinStructure") { visit(own.skinStructureStrength, tuning.skinStructureStrength, Kind::Value); }
+        else if (key == "AutoSkinMask") { visit(own.useAutoSkinMask, tuning.useAutoSkinMask, Kind::Toggle); }
+        else if (key == "UICorrection") { visit(own.uiCorrection, tuning.uiCorrection, Kind::Toggle); }
+        else if (key == "InputScale") { visit(shown.inputScale, first.inputScale, Kind::Percent); }
+        else if (key == "Network") { visit(shown.preset, first.preset, Kind::Network); }
         else { return false; }
         return true;
     }
@@ -338,7 +343,7 @@ struct PassDecor final : PresetDecor
     const char* Reference() const override { return "Pass 1"; }
     int Differences() const
     {
-        return static_cast<int>(std::ranges::count_if(kKeys, [&](const char* key) { return Changed(key); }));
+        return static_cast<int>(std::ranges::count_if(kKeys, [&](const char* key) { return Changed((prefix + key).c_str()); }));
     }
 };
 
@@ -362,27 +367,35 @@ void FillRect(ImDrawList* draw, float x0, float y0, float x1, float y1, ImU32 co
     draw->AddRectFilled(ImVec2(std::floor(x0), std::floor(y0)), ImVec2(std::floor(x1), std::floor(y1)), color);
 }
 
-// Pass tabs, then + to add Pass 2. note is drawn at the right, muted.
+// Pass tabs, then + to add the next pass. note is drawn at the right, muted.
 // changed[pass] tints a tab's name amber: it differs from Base in a preset, or
-// Pass 2 differs from Pass 1.
-// How the strip's right end offers "Reset all to Pass 1": not at all (Pass 1),
-// greyed while Pass 2 follows Pass 1, or usable.
+// an extra pass differs from Pass 1.
+// How the strip's right end offers "Reset to Pass 1" for the selected extra
+// pass: not at all (Pass 1), greyed while it follows Pass 1, or usable.
 enum class PassReset { None, Nothing, Available };
 
 PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int passes, bool editable, const std::string& note,
-    const bool (&changed)[2], PassReset reset)
+    const bool (&changed)[TheosRenderPipeline::NeuralRendering::kMaxNeuralPasses], PassReset reset)
 {
+    constexpr int kMaxPasses = TheosRenderPipeline::NeuralRendering::kMaxNeuralPasses;
     auto* draw = ImGui::GetWindowDrawList();
     const auto& style = ImGui::GetStyle();
     const auto origin = ImGui::GetCursorScreenPos();
     const float available = ImGui::GetContentRegionAvail().x;
     const float height = ImGui::GetFrameHeight() + Px(6.0f);
     const float lift = Px(4.0f);
-    const float tabWidth = Px(132.0f);
     const float addWidth = ImGui::GetFrameHeight() + Px(4.0f);
     const float line = std::round((std::max)(1.0f, Px(1.0f)));
     const auto border = ImGui::GetColorU32(ImGuiCol_Border);
     const auto& live = view.sourceNeural;
+    const char* resetLabel = "Reset to Pass 1";
+    const float resetWidth = reset != PassReset::None ? ImGui::CalcTextSize(resetLabel).x + style.FramePadding.x * 3 : 0.0f;
+    // Tabs narrow from their usual width so five, + and the reset tab share the
+    // strip; never below the name and its state dot.
+    const float dot = ImGui::GetTextLineHeight() * 0.18f;
+    const float tabMinimum = ImGui::CalcTextSize("Pass 5").x + dot * 2 + style.ItemInnerSpacing.x + style.FramePadding.x * 2;
+    const float tabSpace = available - (passes < kMaxPasses ? addWidth : 0.0f) - (resetWidth > 0 ? resetWidth + style.ItemSpacing.x : 0.0f);
+    const float tabWidth = std::floor(std::clamp((tabSpace + line * (passes - 1)) / passes, tabMinimum, Px(132.0f)));
     PassAction action = PassAction::None;
 
     ImGui::PushID("passTabs");
@@ -400,11 +413,25 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         ImGui::SetNextItemAllowOverlap();
         if (ImGui::InvisibleButton("tab", ImVec2(tabWidth, bottom - top))) { selected = pass; }
         const bool hovered = ImGui::IsItemHovered();
+        // Live state: whether this pass is running now.
+        const char* badge = nullptr;
+        ImVec4 badgeColor = kSage;
+        const bool running = pass < (std::max)(1, live.effectivePasses);
+        if (live.active && pass < view.neuralApplied.passes)
+        {
+            badge = running ? "ON" : "PAUSED";
+            if (!running) { badgeColor = kOchre; }
+        }
         if (hovered)
         {
-            ImGui::SetTooltip("%s", pass == 0 ? "Runs on the scene."
-                                              : "Processes Pass 1's result with its own history. Adds GPU time and "
-                                                "memory; weather overrides switch it on and off without restarting NR.");
+            // The tooltip also names the state, which a narrow tab shows only as a dot.
+            const auto state = badge ? std::format(" Now {}.", running ? "running" : "paused") : std::string();
+            if (pass == 0) { ImGui::SetTooltip("Runs on the scene.%s", state.c_str()); }
+            else
+            {
+                ImGui::SetTooltip("Processes Pass %d's result with its own history. Adds GPU time and memory; weather "
+                                  "overrides switch it on and off without restarting NR.%s", pass, state.c_str());
+            }
         }
         FillRect(draw, x, top, x + tabWidth, bottom + (active ? line : 0.0f),
                  ImGui::GetColorU32(active ? kPassPanel : hovered ? ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered) : kPassBehind));
@@ -418,38 +445,41 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         draw->AddText(ImVec2(x + style.FramePadding.x, textY), ImGui::GetColorU32(nameColor), name.c_str());
 
         float right = x + tabWidth - style.FramePadding.x;
-        if (pass == 1 && editable && (active || hovered))
+        if (pass > 0 && pass == passes - 1 && editable && (active || hovered))
         {
-            // Remove Pass 2. Its own settings are kept for when it is added again.
+            // Remove the last pass. Its own settings are kept for when it is added again.
             const float size = ImGui::GetTextLineHeight();
             ImGui::SetCursorScreenPos(ImVec2(right - size, textY));
             if (ImGui::InvisibleButton("remove", ImVec2(size, size))) { action = PassAction::Remove; }
             const bool over = ImGui::IsItemHovered();
-            if (over) { ImGui::SetTooltip("Remove Pass 2. Its own settings are kept for later."); }
+            if (over) { ImGui::SetTooltip("Remove Pass %d. Its own settings are kept for later.", pass + 1); }
             const float inset = size * 0.28f;
             const auto color = ImGui::GetColorU32(over ? kAmber : kMuted);
             draw->AddLine(ImVec2(right - size + inset, textY + inset), ImVec2(right - inset, textY + size - inset), color, Px(1.5f));
             draw->AddLine(ImVec2(right - inset, textY + inset), ImVec2(right - size + inset, textY + size - inset), color, Px(1.5f));
             right -= size + style.ItemInnerSpacing.x;
         }
-        // Live state: whether this pass is running now.
-        const char* badge = nullptr;
-        ImVec4 badgeColor = kSage;
-        if (live.active && pass < view.neuralApplied.passes)
-        {
-            badge = pass == 0 || live.effectivePasses == 2 ? "ON" : "PAUSED";
-            if (pass == 1 && live.effectivePasses != 2) { badgeColor = kOchre; }
-        }
         if (badge)
         {
             const float badgeWidth = ImGui::CalcTextSize(badge).x;
-            draw->AddText(ImVec2(right - badgeWidth, textY), ImGui::GetColorU32(badgeColor), badge);
+            const float nameRight = x + style.FramePadding.x + ImGui::CalcTextSize(name.c_str()).x + style.ItemInnerSpacing.x;
+            if (right - badgeWidth >= nameRight)
+            {
+                draw->AddText(ImVec2(right - badgeWidth, textY), ImGui::GetColorU32(badgeColor), badge);
+            }
+            else if (right - dot * 2 >= nameRight)
+            {
+                // Too narrow for the word: a dot in the same colour. Beside the
+                // remove mark there may be no room at all; the tooltip names the state.
+                draw->AddCircleFilled(ImVec2(right - dot, textY + ImGui::GetTextLineHeight() * 0.5f), dot,
+                                      ImGui::GetColorU32(badgeColor));
+            }
         }
         if (active) { g_passGeometry.tabLeft = x; g_passGeometry.tabRight = x + tabWidth; }
         ImGui::PopID();
         x += tabWidth - line;
     }
-    if (passes < 2)
+    if (passes < kMaxPasses)
     {
         const float top = origin.y + lift, bottom = origin.y + height;
         ImGui::SetCursorScreenPos(ImVec2(x, top));
@@ -457,7 +487,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         if (ImGui::InvisibleButton("add", ImVec2(addWidth, bottom - top))) { action = PassAction::Add; }
         ImGui::EndDisabled();
         const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
-        if (hovered) { ImGui::SetTooltip("Add Pass 2. It starts out following Pass 1."); }
+        if (hovered) { ImGui::SetTooltip("Add Pass %d. It starts out following Pass 1.", passes + 1); }
         FillRect(draw, x, top, x + addWidth, bottom,
                  ImGui::GetColorU32(hovered && editable ? ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered) : kPassBehind));
         FillRect(draw, x, top, x + line, bottom, border);
@@ -471,21 +501,26 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
     if (reset != PassReset::None)
     {
         // A tab on the page's own background at the strip's right end, open into
-        // the panel like the selected tab, so it reads as part of Pass 2's page.
-        const char* label = "Reset all to Pass 1";
-        const float width = ImGui::CalcTextSize(label).x + style.FramePadding.x * 3;
+        // the panel like the selected tab, so it reads as part of that pass's page.
+        // It relinks only the selected pass.
+        const char* label = resetLabel;
+        const float width = resetWidth;
         const float left = right - width;
         const float top = origin.y + lift, bottom = origin.y + height;
         const bool usable = editable && reset == PassReset::Available;
         ImGui::SetCursorScreenPos(ImVec2(left, top));
         ImGui::BeginDisabled(!usable);
-        if (ImGui::InvisibleButton("resetAll", ImVec2(width, bottom - top))) { action = PassAction::FollowPass1; }
+        if (ImGui::InvisibleButton("reset", ImVec2(width, bottom - top))) { action = PassAction::FollowPass1; }
         ImGui::EndDisabled();
         const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         if (hovered)
         {
-            ImGui::SetTooltip("%s", usable ? "Pass 2 follows Pass 1 again. Its own settings are kept for later."
-                                           : "Pass 2 already follows Pass 1; nothing to reset.");
+            if (usable)
+            {
+                ImGui::SetTooltip("Pass %d follows Pass 1 again. Its own settings are kept for later. Other passes are "
+                                  "unchanged.", selected + 1);
+            }
+            else { ImGui::SetTooltip("Pass %d already follows Pass 1; nothing to reset.", selected + 1); }
         }
         FillRect(draw, left, top, right, bottom + line, ImGui::GetColorU32(kPassPanel));
         FillRect(draw, left, top, left + line, bottom, border);
@@ -552,10 +587,8 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
 {
     namespace NR = TheosRenderPipeline::NeuralRendering;
     auto& reconstruction = draft.neuralReconstruction;
-    auto& second = draft.neuralSecondPass;
     const bool cs = view.communityShaders;
     const bool producerColor = cs && draft.neuralBeforeUpscaling;
-    const bool twoPasses = draft.neuralPasses == 2;
     const float label = LabelWidth({"Scene normalization"});
     const auto grid = NeuralRowsGrid();
     const GridScope gridScope(grid);
@@ -591,7 +624,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 {"Before upscaling", true, "NR runs on the render-resolution scene, before DLSS or XeSS."},
                 {"After upscaling", true, "NR runs on the output-resolution image, after upscaling."}});
             if (changed) { draft.neuralBeforeUpscaling = placement == 0; }
-            DrawSettingsHelp("Both passes use the selected side of upscaling. UI is composed afterwards.");
+            DrawSettingsHelp("Every pass uses the selected side of upscaling. UI is composed afterwards.");
             return changed;
         });
         if (base && g_setCompare)
@@ -639,63 +672,87 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         ImGui::EndTable();
     }
     auto* decor = ActivePresetDecor();
-    // Pass 2 follows Pass 1 until one of its own settings changes.
-    auto shown = NR::EffectiveSecondPass(second, reconstruction, draft.neuralTuning);
-    const auto before = shown;
+    constexpr int kMaxPasses = NR::kMaxNeuralPasses;
     auto& selected = SelectedPass();
-    if (!twoPasses) { selected = 0; }
+    selected = std::clamp(selected, 0, std::clamp(draft.neuralPasses, 1, kMaxPasses) - 1);
     ImGui::Spacing();
-    PassDecor passDecor{shown, reconstruction, draft.neuralTuning};
-    bool tabChanged[2]{};
-    if (decor)
+    // Keys that turn passes on or off, or make one follow Pass 1.
+    static const auto linkKeys = [] {
+        std::array<std::string, kMaxPasses - 1> keys;
+        for (std::size_t i = 0; i < keys.size(); ++i) { keys[i] = std::format("Pass{}SameAsPass1", i + 2); }
+        return keys;
+    }();
+    const auto passesDiffer = [&] {
+        return decor && (decor->Changed("Passes") ||
+                         std::ranges::any_of(linkKeys, [&](const auto& key) { return decor->Changed(key.c_str()); }));
+    };
+    // Each extra pass follows Pass 1 until one of its own settings changes.
+    auto effective = NR::EffectiveExtraPasses(draft.neuralExtraPasses, reconstruction, draft.neuralTuning);
+    bool tabChanged[kMaxPasses]{};
+    for (int pass = 0; pass < kMaxPasses; ++pass)
     {
-        for (int pass = 0; pass < 2; ++pass)
+        const auto prefix = std::format("Pass{}", pass + 1);
+        if (decor)
         {
-            const std::string prefix = pass ? "Pass2" : "Pass1";
             tabChanged[pass] = std::ranges::any_of(PassDecor::kKeys, [&](const char* key) {
-                return decor->Changed((prefix + (key + 5)).c_str());
+                return decor->Changed((prefix + key).c_str());
             });
+            if (pass > 0)
+            {
+                // A pass the preset adds, or one it relinks or unlinks.
+                tabChanged[pass] |= decor->Changed(linkKeys[pass - 1].c_str()) ||
+                                    (decor->Changed("Passes") && pass >= decor->ReferencePasses());
+            }
         }
-        tabChanged[1] |= AnyChanged({"Passes", "Pass2SameAsPass1"});
+        else if (pass > 0)
+        {
+            tabChanged[pass] = PassDecor{effective[pass - 1], reconstruction, draft.neuralTuning, pass + 1}.Differences() > 0;
+        }
     }
-    else
-    {
-        tabChanged[1] = passDecor.Differences() > 0;
-    }
-    const bool showingPass2 = selected == 1 && twoPasses;
-    // Pass 2 always shows the reset tab; it is greyed while nothing differs.
-    const auto reset = !showingPass2 ? PassReset::None
-                       : !second.linked && (decor || passDecor.Differences() > 0) ? PassReset::Available
-                                                                                   : PassReset::Nothing;
+    // The selected extra pass, index 0 for Pass 2, or -1 for Pass 1.
+    const int extraIndex = selected - 1;
+    // Each extra pass always shows the reset tab; it is greyed while nothing differs.
+    const auto reset = extraIndex < 0 ? PassReset::None
+                       : !draft.neuralExtraPasses[extraIndex].linked && (decor || tabChanged[selected]) ? PassReset::Available
+                                                                                                         : PassReset::Nothing;
     const auto action = DrawPassTabs(view, selected, draft.neuralPasses, !unavailable,
         decor && decor->EditingTime() ? std::format("editing {}", decor->EditingTime()) : std::string(), tabChanged,
         reset);
-    if (action == PassAction::Add) { draft.neuralPasses = 2; selected = 1; }
-    if (action == PassAction::Remove) { draft.neuralPasses = 1; selected = 0; }
-    const bool pass2 = selected == 1 && draft.neuralPasses == 2;
+    // + adds the next pass and the remove mark takes off the last; a removed
+    // pass keeps its own settings for when it is added again.
+    if (action == PassAction::Add && draft.neuralPasses < kMaxPasses) { selected = draft.neuralPasses++; }
+    if (action == PassAction::Remove && draft.neuralPasses > 1) { selected = --draft.neuralPasses - 1; }
+    const int shownExtra = selected - 1;
+    const bool extraPass = shownExtra >= 0;
+    // What this tab edits: a copy of an extra pass's effective settings, written
+    // back and unlinked only when one of them changes.
+    auto shown = extraPass ? effective[shownExtra] : NR::ExtraPassSettings{};
+    const auto before = shown;
+    PassDecor passDecor{shown, reconstruction, draft.neuralTuning, selected + 1};
 
-    // In Base, Pass 2's rows compare with Pass 1 as a preset's compare with Base.
+    // In Base, an extra pass's rows compare with Pass 1 as a preset's compare with Base.
     // A preset keeps its own comparison with Base.
-    const bool comparePasses = pass2 && !decor;
+    const bool comparePasses = extraPass && !decor;
     if (comparePasses) { ActivePresetDecor() = &passDecor; }
     const auto panel = BeginPassPanel();
-    if (decor && AnyChanged({"Passes", "Pass2SameAsPass1"}))
+    if (passesDiffer())
     {
-        // A preset that turns Pass 2 on or off, or makes it follow Pass 1.
+        // A preset that turns passes on or off, or makes one follow Pass 1.
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(kAmber, "Passes differ from %s", decor->Reference());
         ImGui::SameLine();
         if (ImGui::SmallButton("Reset##passes"))
         {
-            for (const auto* key : {"Passes", "Pass2SameAsPass1"}) { if (decor->Changed(key)) { decor->Reset(key); } }
+            if (decor->Changed("Passes")) { decor->Reset("Passes"); }
+            for (const auto& key : linkKeys) { if (decor->Changed(key.c_str())) { decor->Reset(key.c_str()); } }
         }
     }
 
-    const std::string prefix = pass2 ? "Pass2" : "Pass1";
+    const std::string prefix = std::format("Pass{}", selected + 1);
     const auto key = [&](const char* name) { return prefix + name; };
-    auto& tuning = pass2 ? shown.tuning : draft.neuralTuning;
-    float& scale = pass2 ? shown.inputScale : reconstruction.inputScale;
-    int& network = pass2 ? shown.preset : reconstruction.preset;
+    auto& tuning = extraPass ? shown.tuning : draft.neuralTuning;
+    float& scale = extraPass ? shown.inputScale : reconstruction.inputScale;
+    int& network = extraPass ? shown.preset : reconstruction.preset;
     const float passLabel = label;
     if (BeginSettingRows("passLook", passLabel))
     {
@@ -706,7 +763,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             const bool legacy = LegacyNeuralRuntime(view);
             // One editor per override and pass, so a number being typed cannot land in another.
             ImGui::PushID(static_cast<int>(ActiveEditScope()));
-            ImGui::PushID(pass2 ? 2 : 1);
+            ImGui::PushID(selected + 1);
             auto* storage = ImGui::GetStateStorage();
             const ImGuiID editId = ImGui::GetID("customEdit"), draftId = ImGui::GetID("customDraft"),
                           frameId = ImGui::GetID("customFrame");
@@ -818,13 +875,13 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             bool changed = ImGui::Checkbox("##peripheral", &reconstruction.peripheralCompression);
             DrawSettingsHelp("Peripheral compression preserves sampling density across the central 80% of each axis and "
                              "compresses the edges. Uses about 19% fewer model pixels at the same input resolution. Pass 1 "
-                             "compresses the image once and Pass 2 works on it, so it applies to both passes. Inspect "
-                             "edge quality when moving.");
+                             "compresses the image once and the later passes work on it, so it applies to every pass. "
+                             "Inspect edge quality when moving.");
             ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
             changed |= ImGui::Checkbox("Combined preparation", &reconstruction.fusedPreparation);
             DrawSettingsHelp("Combines colour encoding with downsampling where needed, and depth/motion packing with "
-                             "peripheral compression. Some configurations have no passes to combine. Applies to both "
-                             "passes.");
+                             "peripheral compression. Some configurations have no passes to combine. Applies to every "
+                             "pass.");
             return changed;
         });
         // UI correction applies only after upscaling without Community Shaders.
@@ -840,18 +897,19 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         ImGui::EndTable();
     }
     ImGui::Spacing();
-    ImGui::PushID(pass2 ? 2 : 1);
-    DrawPassObjects(view, draft.neuralObjectMasks, pass2 ? 1u : 0u, unavailable, decor != nullptr);
+    ImGui::PushID(selected + 1);
+    DrawPassObjects(view, draft.neuralObjectMasks, static_cast<unsigned>(selected), unavailable, decor != nullptr);
     ImGui::PopID();
-    if (pass2)
+    if (extraPass)
     {
-        // When to skip Pass 2. They only ever turn Pass 2 off, so they live in its tab.
+        // When to run Pass 1 alone. They only ever turn the extra passes off, so
+        // every extra pass's tab shows the same shared settings.
         ImGui::Spacing();
         if (BeginSettingRows("passSkip", passLabel))
         {
             SettingRowFor("Skip during", {"OnePassInCombat", "OnePassWeaponsDrawn"}, false, unavailable, [&] {
-                const char* help = "Temporarily skips Pass 2 while the condition is active. Keeps your NR resolution, "
-                                   "tuning and saved two-pass setting. The image may change when switching.";
+                const char* help = "Temporarily runs Pass 1 alone while the condition is active. Keeps your NR "
+                                   "resolution, tuning and saved pass count. The image may change when switching.";
                 bool changed = ImGui::Checkbox("Combat", &draft.neuralCombat.inCombat);
                 DrawSettingsHelp(help);
                 ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
@@ -862,8 +920,8 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             SettingRow("Resume after", "ReturnDelay", false, unavailable || !draft.neuralCombat.Enabled(), [&] {
                 const bool changed = ImGui::SliderFloat("##v", &draft.neuralCombat.recoverySeconds, 0.0f, 30.0f, "%.1f s");
                 DrawSettingsHelp(draft.neuralCombat.Enabled()
-                                     ? "Waits this long after the conditions clear before running Pass 2 again. Pausing "
-                                       "the game pauses the delay."
+                                     ? "Waits this long after the conditions clear before running the other passes "
+                                       "again. Pausing the game pauses the delay."
                                      : "Tick Combat or Weapons drawn first.");
                 return changed;
             });
@@ -872,12 +930,14 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     }
     EndPassPanel(panel);
     if (comparePasses) { ActivePresetDecor() = nullptr; }
-    if (shown != before)
+    if (extraPass && shown != before)
     {
-        second = shown;
-        second.linked = false;
+        auto& own = draft.neuralExtraPasses[shownExtra];
+        own = shown;
+        own.linked = false;
     }
-    if (action == PassAction::FollowPass1) { second.linked = true; }
+    // Reset to Pass 1 relinks only the pass whose tab offered it.
+    if (action == PassAction::FollowPass1 && extraIndex >= 0) { draft.neuralExtraPasses[extraIndex].linked = true; }
 
     ImGui::Spacing();
     if (BeginSettingRows("sharpening", label))
@@ -1114,15 +1174,15 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
         DrawSettingsValue("Inference", state.active && timing.gpuSamples
                                            ? std::format("{:.2f} ms", timing.AverageGPUMicroseconds() / 1000.0).c_str()
                                            : "unavailable");
-        DrawSettingsHelp("Combined model inference and inter-pass preparation. Excludes input preparation, final Pass "
-                         "2 restoration, reconstruction, UI composition and the D3D11/D3D12 handoff.");
+        DrawSettingsHelp("Combined model inference and inter-pass preparation. Excludes input preparation, the last "
+                         "pass's restoration, reconstruction, UI composition and the D3D11/D3D12 handoff.");
         if (state.active)
             DrawStageMeasurements(view, SettingsPage::NeuralRendering);
         DrawNRAppliedPasses(view, applied);
         if (state.active) {
-            const auto execution = state.passOverride == TheosRenderPipeline::NeuralRendering::PassOverride::None ?
-                std::format("{} pass(es)", state.effectivePasses) :
-                std::format("1 pass - {}", TheosRenderPipeline::NeuralRendering::PassOverrideName(state.passOverride));
+            const auto count = std::format("{} {}", state.effectivePasses, state.effectivePasses == 1 ? "pass" : "passes");
+            const auto execution = state.passOverride == TheosRenderPipeline::NeuralRendering::PassOverride::None ? count :
+                std::format("{} - {}", count, TheosRenderPipeline::NeuralRendering::PassOverrideName(state.passOverride));
             DrawSettingsValue("Running", execution.c_str());
         }
         if (state.failed || (applied.enabled && !state.active))

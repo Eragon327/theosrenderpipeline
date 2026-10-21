@@ -282,6 +282,30 @@ PreviewScenario Objects()
     return scenario;
 }
 
+// The widest pass strip: five tabs, Passes 2-5 paused by combat, Pass 3 and 5
+// with their own settings and Pass 4 with an object rule.
+PreviewScenario FivePasses()
+{
+    auto scenario = Healthy();
+    scenario.name = "five-passes";
+    scenario.summary = "Five NR passes paused to one in combat; Pass 3 and 5 independent";
+    auto& nr = scenario.applied.sourceDLSSG;
+    nr.neuralPasses = 5;
+    nr.neuralCombat.inCombat = true;
+    nr.neuralExtraPasses[1] = {false, 0.5f, 1, nr.neuralTuning};
+    nr.neuralExtraPasses[1].tuning.intensity = 0.7f;
+    nr.neuralExtraPasses[3] = {false, 0.75f, 0, nr.neuralTuning};
+    nr.neuralExtraPasses[3].tuning.style = 2;
+    nr.neuralObjectMasks.passes[3].groups[2] = {true, 1.0f, 1.0f, 0.5f};
+    scenario.draft = scenario.applied;
+    auto& view = scenario.view;
+    view.neuralApplied.passes = 5;
+    view.neuralApplied.extraPasses = nr.neuralExtraPasses;
+    view.neuralState.effectivePasses = 1;
+    view.neuralState.passOverride = TheosRenderPipeline::NeuralRendering::PassOverride::Combat;
+    return scenario;
+}
+
 // NR after upscaling with the live comparison on: Split at 60% and a held frame.
 PreviewScenario Compare()
 {
@@ -389,5 +413,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Intel(), TensorRefused(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), FivePasses(), Compare(), Exposure(), Intel(), TensorRefused(), Lab()};
 }

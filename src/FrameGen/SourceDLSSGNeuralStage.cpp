@@ -166,10 +166,10 @@ namespace TheosRenderPipeline::SourceDLSSG
             options.beforeUpscaling ? "before DLSS" : "after DLSS", options.passes, options.reconstruction.preset,
             options.reconstruction.inputScale, static_cast<unsigned>(options.reconstruction.method), options.reconstruction.colorIsHDR,
             options.reconstruction.producerColor, options.reconstruction.peripheralCompression, options.reconstruction.fusedPreparation);
-        if (options.passes == 2) {
-            const auto second = options.EffectiveSecond();
-            logger::info("[SourceDLSSG NR] pass2 linked={} preset={} inputScale={} intensity={}",
-                options.secondPass.linked, second.preset, second.inputScale, second.tuning.intensity);
+        for (std::size_t i = 0; i + 1 < static_cast<std::size_t>(options.passes); ++i) {
+            const auto extra = options.EffectiveExtra(i);
+            logger::info("[SourceDLSSG NR] pass{} linked={} preset={} inputScale={} intensity={}",
+                i + 2, options.extraPasses[i].linked, extra.preset, extra.inputScale, extra.tuning.intensity);
         }
         return true;
     }
