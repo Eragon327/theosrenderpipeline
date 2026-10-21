@@ -13,7 +13,8 @@ Rendering (NR), and native-resolution menus and HUD. Current version:
   GPUs. See [XeSS and XeFG](#xess-and-xefg-experimental).
 - NR before or after DLSS/DLAA, one or two independently configured passes,
   input scaling and tuning, in both editions. NR defaults off.
-- Optional peripheral compression and combined NR preparation, both off by default.
+- Optional peripheral compression, combined NR preparation and an every-other-frame
+  NR model rate, all off by default.
 - Optional weather overrides for NR appearance settings and sharpening: change
   settings for chosen weathers and places, with smooth transitions and optional
   values by time of day. Overrides are shareable files. See
@@ -41,6 +42,15 @@ clear and pauses with the game. Your saved pass count, resolution and tuning rem
 unchanged. The extra passes stay allocated and their histories reset when they
 resume. These options default off; their effect on responsiveness depends on the
 workload.
+
+NR's **Model rate** can run the model on **Every other frame**. The frames between
+reuse its last change, moved with the game's motion vectors and checked against
+depth (and object groups while object rules capture them), which roughly halves
+NR's GPU cost. Expect some ghosting in fast motion and on newly revealed areas.
+Resets, setting changes and Freeze frame run the model on that frame. Frame times
+alternate, so **Frame generation > Frame limit > Steady** is recommended with it.
+The rate applies to every pass, switches live, is a weather override setting
+(`ModelRate`) and defaults to every frame (INI `NRModelRate`).
 
 
 ### Experimental NR object masks

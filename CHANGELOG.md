@@ -5,12 +5,21 @@
   resolution, network, tuning and object rules, and follows Pass 1 until one of
   its own settings changes. New keys follow Pass 2's (`NRPass3InputScale`,
   `NRObjectPass4Group1Enabled`, weather override `Pass5Style` and so on); Pass 2's
-  keys are unchanged. Passes 3 to 5 start one per frame.
+  keys are unchanged. Passes 3 to 5 start one per frame. If NVIDIA's runtime
+  refuses to start one of them, the passes before it keep running and the NR tab
+  says which pass could not start.
 - The pass strip's **Reset all to Pass 1** is now **Reset to Pass 1**: it relinks
   only the selected pass and keeps its own settings for later.
 - Frame generation > Frame limit replaces Output FPS limit: Off, Fixed (the output
   cap, as before) or Steady, which measures recent frame times and caps rendered
   frames just below what the slower frames manage, so frames arrive evenly.
+- Add NR Model rate. Every other frame runs NR's model on alternate frames and
+  carries its change to the frames between with motion vectors and depth, roughly
+  halving NR's GPU cost, with some ghosting in fast motion and on newly revealed
+  areas. It applies to every pass, switches live and is a weather override setting
+  (`ModelRate`; INI `NRModelRate`). The NR tab recommends the Steady frame limit
+  with it. Thanks to cavy8, whose Alternate Frames for Community Shaders NR showed
+  the approach.
 
 # 0.5.1
 
