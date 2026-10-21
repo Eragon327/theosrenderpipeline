@@ -8,6 +8,9 @@
   keys are unchanged. Passes 3 to 5 start one per frame.
 - The pass strip's **Reset all to Pass 1** is now **Reset to Pass 1**: it relinks
   only the selected pass and keeps its own settings for later.
+- Frame generation > Frame limit replaces Output FPS limit: Off, Fixed (the output
+  cap, as before) or Steady, which measures recent frame times and caps rendered
+  frames just below what the slower frames manage, so frames arrive evenly.
 
 # 0.5.1
 

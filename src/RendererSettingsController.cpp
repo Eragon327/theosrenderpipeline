@@ -161,6 +161,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         // A running XeFG presenter is recreated on the other SDK copy.
         source.ConfigureXeFGTensor(frameGen_.settings.sourceDLSSG.xefgTensorCores);
         source.ConfigureOutputFPSLimit(frameGen_.settings.sourceDLSSG.outputFPSLimit);
+        source.ConfigureFrameLimit(frameGen_.settings.sourceDLSSG.frameLimit);
         source.ConfigureGeneration(frameGen_.settings.sourceDLSSG.generation);
         source.ConfigureXeFG(frameGen_.settings.sourceDLSSG.xefg);
         // The backend applies Enabled at the next present boundary.
