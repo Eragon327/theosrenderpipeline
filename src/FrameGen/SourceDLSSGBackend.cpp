@@ -849,6 +849,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			neuralSnapshot_.effectivePasses = active && neuralPass_ ?
 				(std::max)(1, (std::min)(options.EffectivePasses(), neuralPass_->ReadyPasses())) : options.EffectivePasses();
 			neuralSnapshot_.passOverride = active ? options.passOverride : NeuralRendering::PassOverride::None;
+			neuralSnapshot_.passNote = active && neuralPass_ ? neuralPass_->PassNote() : std::string{};
 			if (active) { ++neuralSnapshot_.evaluations; }
 			if (reset) { ++neuralSnapshot_.resets; }
 			if (active) { neuralSnapshot_.telemetry = neuralPass_->Telemetry(); }

@@ -1184,6 +1184,13 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
             const auto execution = state.passOverride == TheosRenderPipeline::NeuralRendering::PassOverride::None ? count :
                 std::format("{} - {}", count, TheosRenderPipeline::NeuralRendering::PassOverrideName(state.passOverride));
             DrawSettingsValue("Running", execution.c_str());
+            // A later pass NGX would not start; the passes before it keep running.
+            if (!state.passNote.empty())
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, kOchre);
+                ImGui::TextWrapped("%s", state.passNote.c_str());
+                ImGui::PopStyleColor();
+            }
         }
         if (state.failed || (applied.enabled && !state.active))
             ImGui::TextWrapped("%s", state.status.c_str());

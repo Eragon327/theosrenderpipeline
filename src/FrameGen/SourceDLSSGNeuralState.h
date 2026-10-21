@@ -85,6 +85,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::string status{ "standard DLSS; source NR is off" };
 		// Set when a runtime known not to work on this GPU was replaced; kept for the session.
 		std::string fallback;
+		// Set while a later pass could not start and fewer passes run than requested.
+		std::string passNote;
 	};
 
 	inline bool SameHistoryOptions(NeuralOptions current, const NeuralOptions& previous)

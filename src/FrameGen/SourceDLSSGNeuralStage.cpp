@@ -88,7 +88,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const auto result = neuralPass_ ? neuralPass_->RefusedCreation() : 0u;
 		if (!result) { return false; }
 		const auto status = neuralPass_->Status();
-		// NGX refused before NR recorded anything; this pass has no GPU work in flight.
+		// Only Pass 1's creation reports a refusal, and it stops before Record
+		// writes to the open list. Earlier frames of this pass may still be running
+		// in other command slots, so retire them before releasing its resources.
+		// The open list is unsubmitted and Drain waits only for submitted work.
+		if (!Check(interop_.Drain(), "retire NR before dropping a refused runtime")) { return false; }
 		neuralPass_.reset();
 		std::scoped_lock lock(neuralMutex_);
 		RefuseNeuralRuntime(runtime, std::format("could not start NR ({})", status), "");

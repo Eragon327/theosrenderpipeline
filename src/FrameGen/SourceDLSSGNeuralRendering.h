@@ -46,18 +46,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 				((guideWidth || guideHeight) && (guideWidth != guideWidth_ || guideHeight != guideHeight_)));
 		}
 		const std::string& Status() const { return status_; }
-		// NGX refused to create a feature with this runtime. Initialization then
-		// stops before Record writes to the frame's list, so the pass can be dropped.
-		std::uint32_t RefusedCreation() const
-		{
-			if (const auto first = feature_.RefusedCreation()) { return first; }
-			for (const auto& extra : extra_) {
-				if (const auto refused = extra.feature.RefusedCreation()) { return refused; }
-			}
-			return 0;
-		}
+		// NGX refused to create Pass 1 with this runtime. Initialization then stops
+		// before Record writes to the frame's list. A refused later pass is not a
+		// runtime refusal: the passes before it keep running (see PassNote).
+		std::uint32_t RefusedCreation() const { return feature_.RefusedCreation(); }
 		// Passes whose feature was created on an earlier frame; at most these run.
 		int ReadyPasses() const { return readyPasses_; }
+		// Why fewer passes run than requested for the rest of this pass's life, or empty.
+		const std::string& PassNote() const { return passNote_; }
 	private:
 		bool ExtraPassesChanged(const NeuralOptions& options) const
 		{
@@ -100,7 +96,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			};
 			std::array<Extra, NeuralRendering::kExtraPasses> extra{};
 			NeuralRendering::PassOverride passOverride{};
-			int requestedPasses{}, readyPasses{};
+			int requestedPasses{}, readyPasses{}, startablePasses{};
 			std::array<bool, NeuralRendering::kMaxNeuralPasses> objectControls{};
 			bool objectControlsUnavailable{};
 			bool operator==(const StatusKey&) const = default;
@@ -131,6 +127,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::array<ExtraPass, NeuralRendering::kExtraPasses> extra_;
 		// Features created so far, Pass 1 included, and how many of them may run.
 		int createdPasses_{}, readyPasses_{};
+		// Lowered when NGX refuses a later pass's feature; fixed until recreation.
+		int startablePasses_{NeuralRendering::kMaxNeuralPasses};
+		std::string passNote_;
 		Microsoft::WRL::ComPtr<ID3D12Resource> corrected_, composed_;
 		Microsoft::WRL::ComPtr<ID3D12Resource> encoded_, workColor_, workOutput_, residual_;
 		Microsoft::WRL::ComPtr<ID3D12Resource> packedMotion_, packedDepth_, packedUI_;

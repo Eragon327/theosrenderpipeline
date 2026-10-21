@@ -234,14 +234,29 @@ namespace TheosRenderPipeline::SourceDLSSG
 		info.networkPreset = reconstruction.preset == 0 ? -1 : reconstruction.preset;
 		if (!feature_.EnsureInitialized(info)) { status_ = feature_.Status(); return false; }
 		// Pass 1 and 2 start together as before; Passes 3 to 5 follow one per frame.
-		const auto ramp = NeuralRendering::NextFeatureRamp(createdPasses_, options.passes);
+		auto ramp = NeuralRendering::NextFeatureRamp(createdPasses_, options.passes, startablePasses_);
 		for (std::size_t i = 0; i + 1 < static_cast<std::size_t>(ramp.created); ++i) {
 			const auto& plan = plans[i];
 			auto& feature = extra_[i].feature;
 			info.displayWidth = plan.width; info.displayHeight = plan.height;
 			info.networkPreset = plan.settings.preset == 0 ? -1 : plan.settings.preset;
 			if (reconstruction.peripheralCompression) { info.renderWidth = plan.width; info.renderHeight = plan.height; }
-			if (!feature.EnsureInitialized(info)) { status_ = std::format("NR pass {} feature: {}", i + 2, feature.Status()); return false; }
+			if (!feature.EnsureInitialized(info)) {
+				// NGX refusing a later pass is not a reason to drop the runtime: the
+				// passes before it keep running, and this one is not tried again
+				// until NR is recreated. Nothing was recorded for it.
+				if (feature.RefusedCreation()) {
+					const int running = static_cast<int>(i) + 1;
+					startablePasses_ = running;
+					ramp.created = running;
+					ramp.ready = (std::min)(ramp.ready, running);
+					passNote_ = std::format("Pass {} could not start: {}; running {} pass{}", running + 1,
+						feature.Status(), running, running == 1 ? "" : "es");
+					logger::warn("[DLSSNR Source] {}", passNote_);
+					break;
+				}
+				status_ = std::format("NR pass {} feature: {}", i + 2, feature.Status()); return false;
+			}
 			if (plan.resize && !NeuralRendering::UsesReconstructionContract(feature.Build())) {
 				status_ = "Independent NR pass resolutions require the reconstruction runtime"; return false;
 			}
@@ -630,6 +645,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				extra.settings.preset, options.extraPasses[i].linked, extra.settings.tuning.intensity };
 		}
 		key.passOverride = options.passOverride; key.requestedPasses = options.passes; key.readyPasses = readyPasses_;
+		key.startablePasses = startablePasses_;
 		key.objectControls=objectControlActive_;
 		key.objectControlsUnavailable=
 			std::any_of(options.objectMasks.passes.begin(),options.objectMasks.passes.begin()+options.passes,
@@ -787,7 +803,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 					NeuralRendering::PassOverrideName(key.passOverride), key.requestedPasses);
 			}
 			// A new pass runs from the frame after its feature's creation.
-			if (key.readyPasses < key.requestedPasses) {
+			if (key.startablePasses < key.requestedPasses) {
+				successStatus_ += "; " + passNote_;
+			} else if (key.readyPasses < key.requestedPasses) {
 				successStatus_ += std::format("; starting passes {}-{}", key.readyPasses + 1, key.requestedPasses);
 			}
 			if(std::ranges::any_of(key.objectControls,std::identity{})){

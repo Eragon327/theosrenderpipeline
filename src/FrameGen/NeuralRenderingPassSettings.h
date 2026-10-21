@@ -106,10 +106,12 @@ namespace TheosRenderPipeline::NeuralRendering
 	// pass's feature is created alone, at most one per frame, and first evaluated
 	// on a later frame: creating and evaluating several new features in one
 	// command list has hung the GPU in other NR tools. Until the rest are ready,
-	// only the ready prefix of passes runs.
-	inline FeatureRamp NextFeatureRamp(int created, int passes)
+	// only the ready prefix of passes runs. startable caps the chain below a later
+	// pass whose feature NGX refused: the passes before it keep running, and that
+	// pass is not tried again until NR is recreated. Pass 1 always counts.
+	inline FeatureRamp NextFeatureRamp(int created, int passes, int startable = kMaxNeuralPasses)
 	{
-		passes = std::clamp(passes, 1, kMaxNeuralPasses);
+		passes = std::clamp((std::min)(passes, startable), 1, kMaxNeuralPasses);
 		if (created <= 0) {
 			const int first = (std::min)(passes, 2);
 			return { first, first };

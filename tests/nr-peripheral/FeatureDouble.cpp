@@ -21,11 +21,15 @@ struct FeatureSession::State {
     Microsoft::WRL::ComPtr<ID3D12RootSignature> root;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap;
-    bool initialized{}; std::uint64_t evaluations{}; std::string status{"scripted identity NR"}; };
+    bool initialized{}, refused{}; std::uint64_t evaluations{}; std::string status{"scripted identity NR"}; };
 FeatureSession::FeatureSession() : state_(new State) {}
 FeatureSession::~FeatureSession() = default;
 void FeatureSession::StateDeleter::operator()(State* s) const { delete s; }
 bool FeatureSession::EnsureInitialized(const CreateInfo& info) {
+    if (state_->refused) { return false; }
+    if (!state_->initialized && Fixture::creations==Fixture::refuseIndex) {
+        state_->refused=true; state_->status="feature creation failed (0xBAD00002)"; return false;
+    }
     if (!state_->initialized) {
         state_->index=Fixture::creations;
         state_->w=state_->index && Fixture::secondWidth?Fixture::secondWidth:Fixture::workWidth;
@@ -126,6 +130,7 @@ bool FeatureSession::RecordEvaluation(const EvaluationInput& in) {
     return true;
 }
 bool FeatureSession::IsInitialized() const {return state_->initialized;}
+std::uint32_t FeatureSession::RefusedCreation() const {return state_->refused?0xBAD00002u:0u;}
 RuntimeBuild FeatureSession::Build() const {return RuntimeBuild::Nexus3108;}
 std::uint64_t FeatureSession::EvaluationsRecorded() const {return state_->evaluations;}
 const std::string& FeatureSession::Status() const {return state_->status;}

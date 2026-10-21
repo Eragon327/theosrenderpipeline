@@ -294,7 +294,12 @@ int main()
 			Require(created == passes && ready.front() == 2 && ready[1] == 2 && ready.back() == passes &&
 				frames == passes, "every pass becomes ready, one more each frame after the second");
 		}
+		// A refused later pass caps the chain at the passes before it; they keep running.
+		Require(NextFeatureRamp(1, 2, 1) == FeatureRamp{ 1, 1 }, "refused Pass 2 leaves Pass 1 running");
+		Require(NextFeatureRamp(3, 5, 3) == FeatureRamp{ 3, 3 } && NextFeatureRamp(2, 5, 3) == FeatureRamp{ 3, 2 },
+			"refused Pass 4 stops the ramp at three passes");
+		Require(NextFeatureRamp(0, 5, 0) == FeatureRamp{ 1, 1 }, "Pass 1 is always attempted");
 	}
 	std::puts("PASS: Pass 3-5 keys, 1..5 clamp, Pass 1 linking per pass, single-pass reset, five-pass history/overrides, "
-		"object rules per pass and the one-new-feature-per-frame ramp");
+		"object rules per pass, the one-new-feature-per-frame ramp and its refused-pass cap");
 }

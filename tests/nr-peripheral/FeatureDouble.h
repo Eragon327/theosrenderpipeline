@@ -18,4 +18,6 @@ inline unsigned controlEvaluations{};
 // and first evaluated on a later frame.
 inline unsigned frame{};
 inline unsigned lateCreationFrame{~0u};
+// The feature index NGX refuses to create, as for an unsupported runtime; ~0u none.
+inline unsigned refuseIndex{~0u};
 }
