@@ -87,6 +87,7 @@ public:
 	// Ultrawide investigation: log stage/viewport/scale metrics for every
 	// menu that opens ([Debug] LogMenuMetrics).
 	bool mLogMenuMetrics{ false };
+	bool mScreenshotDiagnostics{ false }; // [Debug], read only, never saved
 	// Session-only MagicMenu preview draw isolation. Zero submits every draw;
 	// the developer menu exposes individual include/exclude modes.
 	int mInventory3DDrawIsolationMode{ 0 };

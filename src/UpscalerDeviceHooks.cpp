@@ -14,6 +14,7 @@
 #include "CommunityShaderIntegration.h"
 #include "HookInstallation.h"
 #include "StartupHints.h"
+#include "ScreenshotDiagnostics.h"
 
 decltype(&D3D11CreateDeviceAndSwapChain) ptrD3D11CreateDeviceAndSwapChain;
 decltype(&IDXGIFactory::CreateSwapChain) ptrFactoryCreateSwapChain;
@@ -42,6 +43,8 @@ void BeforeGameSwapChainPresent(IDXGISwapChain* a_swapChain)
     lastPresent = now;
 
     auto* nvidiaHost = NvidiaHost::GetSingleton();
+    TheosRenderPipeline::ScreenshotDiagnostics::OnPresent(RenderPipeline::GetSingleton()->mContext,
+        RenderPipeline::GetSingleton()->mScreenshotDiagnostics);
     if (TheosRenderPipeline::CommunityShaders::Active()) {
         nvidiaHost->PrepareCommunityFrameForPresent();
         PerformanceTuning::GetSingleton()->EndD3D11Frame(RenderPipeline::GetSingleton()->mContext);

@@ -8,6 +8,8 @@ set(ARP_BASELINE_SOURCES
     compatibility/Shared/FileHash.h
     compatibility/Shared/ModuleInfo.h
     include/PCH.h
+    src/ScreenshotDiagnostics.cpp
+    src/ScreenshotDiagnostics.h
     include/SolFGLateOverlayAPI.h
     include/SolFGStartupOverlayAPI.h
     include/SolFGTextureProviderAPI.h
