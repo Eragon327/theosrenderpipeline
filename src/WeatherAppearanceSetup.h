@@ -62,6 +62,8 @@ inline const auto& Fields()
         TRP_APPEARANCE_FIELD("MaximumRatio", false, 0.01f, 16, false, reconstruction.maxRatio),
         TRP_APPEARANCE_FIELD("WhitePoint", false, 0.0001f, 10000, false, reconstruction.whitePoint),
         TRP_APPEARANCE_FIELD("InputHDR", false, 0, 1, true, reconstruction.colorIsHDR),
+        TRP_APPEARANCE_FIELD("AdaptiveExposure", false, 0, 1, true, reconstruction.adaptiveExposure),
+        TRP_APPEARANCE_FIELD("ExposureBias", false, -2, 2, false, reconstruction.exposureBias),
         TRP_APPEARANCE_FIELD("Pass1InputScale", false, 0.25f, 1, false, reconstruction.inputScale),
         TRP_APPEARANCE_FIELD("Pass1Network", false, 0, 1, true, reconstruction.preset),
         TRP_APPEARANCE_FIELD("Pass1Intensity", true, 0, 2, false, tuning.intensity),

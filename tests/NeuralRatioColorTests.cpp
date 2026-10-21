@@ -76,6 +76,9 @@ static std::vector<Pixel> Readback(ID3D11DeviceContext* context, ID3D11Texture2D
     return result;
 }
 
+// Bound at t3 by every dispatch: the measured white point, or null.
+static ID3D11ShaderResourceView* g_exposure{};
+
 static void Dispatch(ID3D11DeviceContext* context, ID3D11ComputeShader* shader, ID3D11Buffer* constants,
     const ResolveConstants& params, const std::array<ID3D11ShaderResourceView*, 3>& inputs,
     ID3D11UnorderedAccessView* output, UINT width, UINT height)
@@ -88,12 +91,13 @@ static void Dispatch(ID3D11DeviceContext* context, ID3D11ComputeShader* shader, 
     context->CSSetShader(shader, nullptr, 0);
     context->CSSetConstantBuffers(0, 1, &constants);
     context->CSSetShaderResources(0, static_cast<UINT>(inputs.size()), inputs.data());
+    context->CSSetShaderResources(3, 1, &g_exposure);
     context->CSSetUnorderedAccessViews(0, 1, &output, nullptr);
     // Dispatch over the larger allocation so the active-extent guard is exercised.
     context->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
-    ID3D11ShaderResourceView* nullInputs[3]{};
+    ID3D11ShaderResourceView* nullInputs[4]{};
     ID3D11UnorderedAccessView* nullOutput{};
-    context->CSSetShaderResources(0, 3, nullInputs);
+    context->CSSetShaderResources(0, 4, nullInputs);
     context->CSSetUnorderedAccessViews(0, 1, &nullOutput, nullptr);
 }
 
@@ -342,6 +346,184 @@ static void SplitCompare(ID3D11Device* device, ID3D11DeviceContext* context,
     std::puts("Split compare: original left, NR right, divider, alpha and active-region guard passed.");
 }
 
+struct Exposure
+{
+    ComPtr<ID3D11Texture2D> texture;
+    ComPtr<ID3D11ShaderResourceView> srv;
+    ComPtr<ID3D11UnorderedAccessView> uav;
+};
+static Exposure ExposureTexture(ID3D11Device* device, float value)
+{
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = desc.Height = desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+    desc.Format = DXGI_FORMAT_R32_FLOAT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+    D3D11_SUBRESOURCE_DATA data{&value, sizeof(float), 0};
+    Exposure result;
+    Check(device->CreateTexture2D(&desc, &data, &result.texture), "exposure texture");
+    Check(device->CreateShaderResourceView(result.texture.Get(), nullptr, &result.srv), "exposure SRV");
+    Check(device->CreateUnorderedAccessView(result.texture.Get(), nullptr, &result.uav), "exposure UAV");
+    return result;
+}
+static float ReadExposure(ID3D11DeviceContext* context, ID3D11Texture2D* texture)
+{
+    ComPtr<ID3D11Device> device; context->GetDevice(&device);
+    D3D11_TEXTURE2D_DESC desc{}; texture->GetDesc(&desc);
+    desc.BindFlags = 0; desc.Usage = D3D11_USAGE_STAGING; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    ComPtr<ID3D11Texture2D> staging;
+    Check(device->CreateTexture2D(&desc, nullptr, &staging), "exposure readback texture");
+    context->CopyResource(staging.Get(), texture);
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    Check(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped), "exposure readback");
+    const float value = *static_cast<const float*>(mapped.pData);
+    context->Unmap(staging.Get(), 0);
+    return value;
+}
+
+// Adaptive exposure: the geometric mean luminance maps to mid-grey (0.18),
+// shifted by the bias; a reset snaps, otherwise it moves in log space at the
+// given rate. Encoding and Ratio with that measured white point match the same
+// fixed white point exactly.
+static void AdaptiveExposure(ID3D11Device* device, ID3D11DeviceContext* context,
+    ID3D11ComputeShader* measure, ID3D11ComputeShader* ratio, ID3D11Buffer* constants)
+{
+    constexpr UINT width = 37, height = 23;
+    const auto close = [](float a, double b) { return std::abs(a - b) <= 1e-4 * std::abs(b); };
+    const auto uniform = [&](float luma) {
+        return Texture(device, width, height, std::vector<Pixel>(size_t(width) * height, Pixel{luma, luma, luma, 1}));
+    };
+    auto exposure = ExposureTexture(device, 0);
+    ResolveConstants params{};
+    params.sourceWidth = width; params.sourceHeight = height;
+    params.exposureReset = 1; params.exposureRate = 0.5f;
+    // FP16-exact luminances: 3/32 and 29/4.
+    auto dim = uniform(0.09375f);
+    g_exposure = nullptr;
+    Dispatch(context, measure, constants, params, {dim.srv.Get(), nullptr, nullptr}, exposure.uav.Get(), 1, 1);
+    Require(close(ReadExposure(context, exposure.texture.Get()), 0.09375 / 0.18), "reset snaps to the mean over mid-grey");
+    auto bright = uniform(7.25f);
+    params.exposureReset = 0;
+    Dispatch(context, measure, constants, params, {bright.srv.Get(), nullptr, nullptr}, exposure.uav.Get(), 1, 1);
+    // Halfway in log space between the two targets.
+    Require(close(ReadExposure(context, exposure.texture.Get()), std::sqrt(0.09375 / 0.18 * (7.25 / 0.18))), "adaptation moves in log space");
+    params.exposureReset = 1; params.exposureBias = 1;
+    Dispatch(context, measure, constants, params, {bright.srv.Get(), nullptr, nullptr}, exposure.uav.Get(), 1, 1);
+    Require(close(ReadExposure(context, exposure.texture.Get()), 7.25 / 0.18 / 2), "a positive bias brightens the model view");
+    // A non-finite pixel counts as black instead of poisoning the mean.
+    std::vector<Pixel> spotted(size_t(width) * height, Pixel{0.09375f, 0.09375f, 0.09375f, 1});
+    spotted[0] = {std::numeric_limits<float>::infinity(), 0, 0, 1};
+    auto withInf = Texture(device, width, height, spotted);
+    params.exposureBias = 0;
+    Dispatch(context, measure, constants, params, {withInf.srv.Get(), nullptr, nullptr}, exposure.uav.Get(), 1, 1);
+    const float measured = ReadExposure(context, exposure.texture.Get());
+    Require(std::isfinite(measured) && measured > 0 && measured <= 0.09375f / 0.18f, "a non-finite pixel is ignored");
+
+    // The encode and the resolve read the measured value exactly as a fixed one.
+    std::vector<Pixel> scene(size_t(width) * height);
+    for (size_t i = 0; i < scene.size(); ++i) { scene[i] = {float(i % 13) * 0.75f, 1.5f, float(i % 5) * 4, 0.5f}; }
+    auto original = Texture(device, width, height, scene);
+    const auto run = [&](bool adaptive, float white) {
+        auto encoded = Texture(device, width, height, std::vector<Pixel>(scene.size()));
+        auto resolved = Texture(device, width, height, std::vector<Pixel>(scene.size()));
+        auto measuredWhite = ExposureTexture(device, white);
+        g_exposure = adaptive ? measuredWhite.srv.Get() : nullptr;
+        ResolveConstants p{};
+        p.sourceWidth = p.targetWidth = p.workWidth = width;
+        p.sourceHeight = p.targetHeight = p.workHeight = height;
+        p.passthrough = 0; p.whitePoint = adaptive ? 1234.0f : white; p.adaptiveExposure = adaptive;
+        Dispatch(context, ratio, constants, p, {original.srv.Get(), nullptr, nullptr}, encoded.uav.Get(), width, height);
+        // A model that brightens by a quarter, so the resolve has work to do.
+        auto pixels = Readback(context, encoded.texture.Get());
+        for (auto& pixel : pixels) { for (int c = 0; c < 3; ++c) { pixel[c] = (std::min)(pixel[c] * 1.25f, 1.0f); } }
+        auto model = Texture(device, width, height, pixels);
+        p.mode = 1;
+        Dispatch(context, ratio, constants, p, {encoded.srv.Get(), model.srv.Get(), original.srv.Get()},
+            resolved.uav.Get(), width, height);
+        g_exposure = nullptr;
+        return std::pair{Readback(context, encoded.texture.Get()), Readback(context, resolved.texture.Get())};
+    };
+    for (const float white : {0.5f, 3.0f, 40.0f}) {
+        const auto fixed = run(false, white), adaptive = run(true, white);
+        Require(std::memcmp(fixed.first.data(), adaptive.first.data(), fixed.first.size() * sizeof(Pixel)) == 0,
+            "the encode reads the measured white point like a fixed one");
+        Require(std::memcmp(fixed.second.data(), adaptive.second.data(), fixed.second.size() * sizeof(Pixel)) == 0,
+            "the resolve reads the measured white point like a fixed one");
+    }
+    std::puts("Adaptive exposure: mid-grey mapping, bias, log-space adaptation, non-finite input and exact encode/resolve parity passed.");
+}
+
+// Before upscaling, the frame position u was rendered at u + jitter. The encode
+// moves a jittered ramp onto the steady grid exactly (Catmull-Rom reproduces a
+// linear ramp), and the resolve samples NR's change back at p - jitter, so an
+// unchanged model returns the original jittered frame. Zero jitter keeps the
+// direct per-pixel path.
+static void SteadyGrid(ID3D11Device* device, ID3D11DeviceContext* context,
+    ID3D11ComputeShader* ratio, ID3D11Buffer* constants)
+{
+    constexpr UINT width = 41, height = 29;
+    constexpr float jitterX = 0.37f, jitterY = -0.21f;
+    // A smooth scene in 0..1, sampled at each jittered pixel centre.
+    const auto scene = [](float x, float y) {
+        return Pixel{0.2f + 0.012f * x, 0.6f - 0.009f * y, 0.3f + 0.004f * x + 0.006f * y, 1};
+    };
+    std::vector<Pixel> jittered(size_t(width) * height);
+    for (UINT y = 0; y < height; ++y) {
+        for (UINT x = 0; x < width; ++x) { jittered[size_t(y) * width + x] = scene(x + 0.5f - jitterX, y + 0.5f - jitterY); }
+    }
+    auto original = Texture(device, width, height, jittered);
+    auto encoded = Texture(device, width, height, std::vector<Pixel>(jittered.size()));
+    ResolveConstants p{};
+    p.sourceWidth = p.targetWidth = p.workWidth = width;
+    p.sourceHeight = p.targetHeight = p.workHeight = height;
+    p.passthrough = 1; p.jitterX = jitterX; p.jitterY = jitterY;
+    g_exposure = nullptr;
+    Dispatch(context, ratio, constants, p, {original.srv.Get(), nullptr, nullptr}, encoded.uav.Get(), width, height);
+    const auto steady = Readback(context, encoded.texture.Get());
+    float encodeError = 0;
+    for (UINT y = 2; y + 2 < height; ++y) {
+        for (UINT x = 2; x + 2 < width; ++x) {
+            const auto expected = scene(x + 0.5f, y + 0.5f);
+            for (int c = 0; c < 3; ++c) {
+                encodeError = (std::max)(encodeError, std::abs(steady[size_t(y) * width + x][c] - expected[c]));
+            }
+        }
+    }
+    Require(encodeError < 0.002f, "the encode moves the jittered frame onto the steady grid");
+
+    // An unchanged model: the resolve must return the jittered original.
+    auto resolved = Texture(device, width, height, std::vector<Pixel>(jittered.size()));
+    p.mode = 1;
+    Dispatch(context, ratio, constants, p, {encoded.srv.Get(), encoded.srv.Get(), original.srv.Get()},
+        resolved.uav.Get(), width, height);
+    const auto result = Readback(context, resolved.texture.Get());
+    float resolveError = 0;
+    for (UINT y = 3; y + 3 < height; ++y) {
+        for (UINT x = 3; x + 3 < width; ++x) {
+            const size_t i = size_t(y) * width + x;
+            for (int c = 0; c < 3; ++c) { resolveError = (std::max)(resolveError, std::abs(result[i][c] - jittered[i][c])); }
+            Require(result[i][3] == jittered[i][3], "the resolve keeps the original alpha");
+        }
+    }
+    Require(resolveError < 0.004f, "an unchanged model returns the jittered original");
+
+    // NR brightening by a quarter shows up at the matching jittered pixels.
+    std::vector<Pixel> brighter = steady;
+    for (auto& pixel : brighter) { for (int c = 0; c < 3; ++c) { pixel[c] *= 1.25f; } }
+    auto model = Texture(device, width, height, brighter);
+    Dispatch(context, ratio, constants, p, {encoded.srv.Get(), model.srv.Get(), original.srv.Get()},
+        resolved.uav.Get(), width, height);
+    const auto brightened = Readback(context, resolved.texture.Get());
+    const auto luma = [](const Pixel& c) { return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2]; };
+    for (UINT y = 3; y + 3 < height; ++y) {
+        for (UINT x = 3; x + 3 < width; ++x) {
+            const size_t i = size_t(y) * width + x;
+            Require(std::abs(luma(brightened[i]) / luma(jittered[i]) - 1.25f) < 0.01f, "NR's change lands on the jittered pixel");
+        }
+    }
+    std::printf("Steady grid: encode error %.5f, unchanged-model error %.5f, brightening and alpha passed.\n",
+        encodeError, resolveError);
+}
+
 int main()
 {
     ComPtr<ID3D11Device> device;
@@ -382,6 +564,13 @@ int main()
         "Split", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors), "compile production split shader");
     Check(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &split), "split compute shader");
     SplitCompare(device.Get(), context.Get(), split.Get(), constants.Get());
+    ComPtr<ID3D11ComputeShader> measure;
+    code.Reset(); errors.Reset();
+    Check(D3DCompile(source, sizeof(source) - 1, "TRP-exposure-test", nullptr, nullptr,
+        "MeasureExposure", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors), "compile production exposure shader");
+    Check(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &measure), "exposure compute shader");
+    AdaptiveExposure(device.Get(), context.Get(), measure.Get(), shader.Get(), constants.Get());
+    SteadyGrid(device.Get(), context.Get(), shader.Get(), constants.Get());
     context->ClearState();
     std::puts("Ratio color: FP16 HDR/SDR identity, bounded input, channel order, alpha and active-region guards passed.");
 }

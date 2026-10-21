@@ -4,6 +4,14 @@
   saved. Split shows the frame without NR left of a movable line. Freeze frame
   (after upscaling only) keeps NR working on one held frame while the game runs
   on, so setting changes compare on identical content.
+- Add NR Exposure for Ratio reconstruction of linear HDR input: Fixed keeps the
+  white point; Adaptive measures the frame's average brightness and adapts over
+  about a second, with a bias in EV, so NR sees interiors and exteriors at a
+  similar brightness. Only NR's view changes. Both are weather override settings
+  (`AdaptiveExposure`, `ExposureBias`; INI `NRAdaptiveExposure`, `NRExposureBias`).
+- Before upscaling, Ratio reconstruction now shows NR the frame on the steady,
+  unjittered grid and moves its change back to each jittered pixel. DLSS still
+  receives the jittered frame. Community Shaders and Auto/Residual are unchanged.
 
 # 0.5.0
 

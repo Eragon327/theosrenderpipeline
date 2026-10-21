@@ -7,6 +7,7 @@
 #include "SourceDLSSGNeuralTelemetry.h"
 #include "NeuralObjectBlend.h"
 #include "NeuralObjectControl.h"
+#include <chrono>
 #include <array>
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -24,7 +25,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 			ID3D12Resource* hudless, ID3D12Resource* composed,
 			std::uint64_t timestampFrequency = 0, const D3D12StageMarks& marks = {}, ID3D12Resource* objectMask = nullptr,
-            std::array<float,2> objectMaskGuideOffset = {});
+            std::array<float,2> objectMaskGuideOffset = {},
+			std::array<float,2> colorJitter = {});
 		ID3D12Resource* Composed() const { return composed_.Get(); }
 		ID3D12Resource* Corrected() const { return corrected_.Get(); }
 		NeuralTelemetrySnapshot Telemetry() const { return telemetry_.Snapshot(); }
@@ -107,6 +109,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// field that is never written, so stays zero.
 		Microsoft::WRL::ComPtr<ID3D12Resource> heldColor_, heldDepth_, heldMask_, stillMotion_;
 		bool frozen_{};
+		// Adaptive exposure: the measured white point (1x1 R32_FLOAT) and when it
+		// was last updated, for a frame-rate independent adaptation speed.
+		Microsoft::WRL::ComPtr<ID3D12Resource> exposure_;
+		std::chrono::steady_clock::time_point exposureTime_{};
+		bool exposureValid_{};
 		// Records the hold; returns false only on a failure that leaves the frame unusable.
 		bool HoldFrame(ID3D12Device* device, ID3D12GraphicsCommandList* list, bool freeze,
 			ID3D12Resource*& motion, ID3D12Resource*& depth, ID3D12Resource* hudless, ID3D12Resource*& objectMask, bool& reset);

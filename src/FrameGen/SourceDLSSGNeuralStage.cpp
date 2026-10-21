@@ -227,7 +227,9 @@ namespace TheosRenderPipeline::SourceDLSSG
             motion_.texture12.Get(), depth_.texture12.Get(), nullptr, earlyNeuralColor_.texture12.Get(), nullptr,
             neuralTimestampFrequency_, interop_.Marks(Work::Upscaling), objectMaskCurrent_ ? objectMask_.texture12.Get() : nullptr,
             frameNeuralOptions_.beforeUpscaling ? std::array<float,2>{} :
-                std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y})) {
+                std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y},
+            frameNeuralOptions_.beforeUpscaling ? std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y} :
+                std::array<float,2>{})) {
             if (!RefuseNeuralCreation(frameNeuralOptions_.runtimePath)) { return FailNeuralRecording(); }
             // Nothing was recorded: retire the empty list and run DLSS on the original
             // colour this frame. The next frame uses the next runtime.

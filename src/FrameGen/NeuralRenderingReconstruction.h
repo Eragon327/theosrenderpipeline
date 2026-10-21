@@ -12,6 +12,10 @@ namespace TheosRenderPipeline::NeuralRendering
 		ResolveMethod method{ ResolveMethod::Auto };
 		float inputScale{ 1 }, transferStrength{ 1 }, colourStrength{ 1 }, maxRatio{ 2 }, whitePoint{ 1 };
 		bool colorIsHDR{};
+		// Linear HDR input: measure the white point each frame instead of using
+		// whitePoint. exposureBias (EV) brightens NR's view when positive.
+		bool adaptiveExposure{};
+		float exposureBias{ 0 };
 		// Experimental fixed 80% centre / 90% work extent, in addition to inputScale.
 		bool peripheralCompression{};
 		bool fusedPreparation{};
@@ -35,6 +39,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		value.colourStrength = strength(value.colourStrength);
 		value.maxRatio = std::isfinite(value.maxRatio) && value.maxRatio > 0 ? std::clamp(value.maxRatio, 0.01f, 16.0f) : 2.0f;
 		value.whitePoint = std::isfinite(value.whitePoint) && value.whitePoint > 0 ? std::clamp(value.whitePoint, 0.0001f, 10000.0f) : 1.0f;
+		value.exposureBias = std::isfinite(value.exposureBias) ? std::clamp(value.exposureBias, -2.0f, 2.0f) : 0.0f;
 		return value;
 	}
 	inline ResolveMethod EffectiveResolve(const Reconstruction& value)
@@ -50,7 +55,7 @@ namespace TheosRenderPipeline::NeuralRendering
 	// the paired producer proxy normalized to that white instead.
 	inline Reconstruction CompletedSceneContract(Reconstruction value, bool extendedRange)
 	{
-		if (extendedRange) { value.producerColor = true; value.whitePoint = 1; }
+		if (extendedRange) { value.producerColor = true; value.whitePoint = 1; value.adaptiveExposure = false; }
 		return value;
 	}
 	inline std::uint32_t WorkExtent(std::uint32_t extent, float scale)
@@ -84,6 +89,8 @@ namespace TheosRenderPipeline::NeuralRendering
 		value.maxRatio = static_cast<float>(ini.GetDoubleValue(section, "NRMaxRatio", 2));
 		value.whitePoint = static_cast<float>(ini.GetDoubleValue(section, "NRWhitePoint", 1));
 		value.colorIsHDR = ini.GetBoolValue(section, "NRColorIsHDR", false);
+		value.adaptiveExposure = ini.GetBoolValue(section, "NRAdaptiveExposure", false);
+		value.exposureBias = static_cast<float>(ini.GetDoubleValue(section, "NRExposureBias", 0));
 		value.peripheralCompression = ini.GetBoolValue(section, "NRPeripheralCompression", false);
 		value.fusedPreparation = ini.GetBoolValue(section, "NRFusedPreparation", false);
 		return SanitizeReconstruction(value);
@@ -98,6 +105,8 @@ namespace TheosRenderPipeline::NeuralRendering
 		ini.SetDoubleValue(section, "NRColourStrength", value.colourStrength);
 		ini.SetDoubleValue(section, "NRMaxRatio", value.maxRatio);
 		ini.SetDoubleValue(section, "NRWhitePoint", value.whitePoint);
+		ini.SetBoolValue(section, "NRAdaptiveExposure", value.adaptiveExposure);
+		ini.SetDoubleValue(section, "NRExposureBias", value.exposureBias);
 		ini.SetBoolValue(section, "NRColorIsHDR", value.colorIsHDR);
 		ini.SetBoolValue(section, "NRPeripheralCompression", value.peripheralCompression);
 		ini.SetBoolValue(section, "NRFusedPreparation", value.fusedPreparation);

@@ -926,7 +926,53 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         });
         SettingRow(producerColor ? "Maximum scene gain" : "Maximum luma ratio", "MaximumRatio", false, ratioOff,
                    [&] { return ImGui::SliderFloat("##v", &reconstruction.maxRatio, producerColor ? 1.0f : 0.01f, 16); });
-        SettingRowFor(producerColor ? "Scene normalization" : "HDR input", {"InputHDR", "WhitePoint"}, true, ratioOff, [&] {
+        if (!producerColor)
+        {
+            SettingRow("HDR input", "InputHDR", true, ratioOff, [&] {
+                const bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
+                DrawSettingsHelp("Input colour is linear HDR. Used by Ratio reconstruction; it does not change "
+                                 "the display HDR mode.");
+                ImGui::SameLine();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("linear HDR");
+                return changed;
+            });
+            // How linear HDR is scaled for NR's view. Ratio's result is applied to
+            // the untouched frame, so neither choice changes its brightness.
+            const bool exposureOff = ratioOff || !reconstruction.colorIsHDR;
+            SettingRow("Exposure", "AdaptiveExposure", false, exposureOff, [&] {
+                int mode = reconstruction.adaptiveExposure ? 1 : 0;
+                bool changed = Segmented("exposure", mode, {
+                    {"Fixed", true, "Divides linear HDR input by the white point before NR sees it."},
+                    {"Adaptive", true, "TRP measures the frame's average brightness and adapts over about a second, so "
+                                       "NR sees interiors and exteriors at a similar brightness. Only NR's view "
+                                       "changes; its effect is carried back onto the untouched frame."}});
+                if (changed) { reconstruction.adaptiveExposure = mode == 1; }
+                DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
+                                             : "How linear HDR input is scaled for NR's view.");
+                return changed;
+            });
+            // The value row follows the choice: a fixed white point or an EV bias.
+            if (reconstruction.adaptiveExposure)
+            {
+                SettingRow("Bias", "ExposureBias", false, exposureOff, [&] {
+                    const bool changed = ImGui::SliderFloat("##bias", &reconstruction.exposureBias, -2, 2, "%+.1f EV");
+                    DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
+                                                 : "Brightens NR's view when positive, darkens it when negative.");
+                    return changed;
+                });
+            }
+            else
+            {
+                SettingRow("White point", "WhitePoint", false, exposureOff, [&] {
+                    const bool changed = ImGui::InputFloat("##white", &reconstruction.whitePoint, 0, 0, "%.4f");
+                    DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
+                                                 : "White point for encoding linear HDR input before model evaluation.");
+                    return changed;
+                });
+            }
+        }
+        else SettingRowFor("Scene normalization", {"InputHDR", "WhitePoint"}, true, ratioOff, [&] {
             ImGui::BeginDisabled(producerColor);
             bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
             ImGui::EndDisabled();

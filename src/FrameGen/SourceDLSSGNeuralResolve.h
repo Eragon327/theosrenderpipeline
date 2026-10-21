@@ -5,7 +5,7 @@
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
-	enum class ResolveKernel : unsigned { Downsample, Residual, Ratio, PackDepth, PackMotion, PrepareColor, PackGuides, ResizeColor, RestoreSecond, Split };
+	enum class ResolveKernel : unsigned { Downsample, Residual, Ratio, PackDepth, PackMotion, PrepareColor, PackGuides, ResizeColor, RestoreSecond, Split, MeasureExposure };
 	struct ResolveConstants
 	{
 		UINT sourceWidth{}, sourceHeight{}, targetWidth{}, targetHeight{};
@@ -16,15 +16,20 @@ namespace TheosRenderPipeline::SourceDLSSG
 		UINT guideWidth{}, guideHeight{};
 		float motionScaleX{ 1 }, motionScaleY{ 1 };
 		UINT splitX{};
+		float exposureBias{}, exposureRate{ 1 };
+		UINT adaptiveExposure{}, exposureReset{};
+		float jitterX{}, jitterY{};
 	};
-	static_assert(sizeof(ResolveConstants) == 84);
+	static_assert(sizeof(ResolveConstants) == 108);
 	// All resources enter and leave COMMON. Slot retirement is the caller's
 	// responsibility. Each dispatch in a frame needs a distinct stage index.
 	class NeuralResolveKernels
 	{
 	public:
-		static constexpr unsigned kStages = 12;
+		static constexpr unsigned kStages = 13;
 		HRESULT Initialize(ID3D12Device* device);
+		// The measured white point bound at t3 for this frame's dispatches, or null.
+		void SetExposure(ID3D12Resource* exposure) { exposure_ = exposure; }
 		HRESULT Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot, unsigned stage,
 			ResolveKernel kernel, const ResolveConstants& constants, ID3D12Resource* a, ID3D12Resource* b,
 			ID3D12Resource* original, ID3D12Resource* output, ID3D12Resource* secondOutput = nullptr);
@@ -35,14 +40,15 @@ namespace TheosRenderPipeline::SourceDLSSG
 		{
 			// Retain identities so a released resource's address cannot be reused
 			// and mistaken for an unchanged table. Rewrite only a retired slot.
-			std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, 5> resources;
+			std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, 6> resources;
 			UINT width{}, height{};
 			bool valid{};
 		};
 		std::array<std::array<DescriptorTable, kStages>, kCommandSlots> tables_;
 		std::uint64_t descriptorWrites_{};
 		Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
-		std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, 10> pipelines_;
+		std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>, 11> pipelines_;
+		ID3D12Resource* exposure_{}; // Owned by the pass.
 		std::array<std::array<Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>, kStages>, kCommandSlots> heaps_;
 	};
 }

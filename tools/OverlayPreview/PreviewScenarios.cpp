@@ -296,6 +296,22 @@ PreviewScenario Compare()
     return scenario;
 }
 
+// Ratio reconstruction of linear HDR input with adaptive exposure at +0.5 EV.
+PreviewScenario Exposure()
+{
+    auto scenario = Healthy();
+    scenario.name = "exposure";
+    scenario.summary = "Ratio reconstruction, linear HDR input, adaptive exposure +0.5 EV";
+    auto& reconstruction = scenario.applied.sourceDLSSG.neuralReconstruction;
+    reconstruction.method = TheosRenderPipeline::NeuralRendering::ResolveMethod::Ratio;
+    reconstruction.colorIsHDR = true;
+    reconstruction.adaptiveExposure = true;
+    reconstruction.exposureBias = 0.5f;
+    scenario.draft = scenario.applied;
+    scenario.view.neuralApplied.reconstruction = reconstruction;
+    return scenario;
+}
+
 // A non-NVIDIA GPU: XeSS upscaling and XeFG x2, with NR unavailable.
 PreviewScenario Intel()
 {
@@ -351,5 +367,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Intel(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Intel(), Lab()};
 }

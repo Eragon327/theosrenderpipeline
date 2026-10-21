@@ -190,7 +190,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 					auto residualDesc = workDesc; residualDesc.Width = sceneDesc.Width;
 					residualDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 					if (!create(residualDesc, residual_)) { return false; }
-				} else if (!fusedColor_ && (reconstruction.colorIsHDR || reconstruction.producerColor) && !create(sceneDesc, encoded_)) { return false; }
+				} else if (!fusedColor_ && (reconstruction.colorIsHDR || reconstruction.producerColor ||
+					(options.beforeUpscaling && method == NeuralRendering::ResolveMethod::Ratio)) && !create(sceneDesc, encoded_)) { return false; }
 			}
 			if (!options.WorldOnly()) {
 				D3D12_DESCRIPTOR_RANGE ranges[2]{};
@@ -294,7 +295,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const NeuralOptions& options, bool reset, bool depthInverted, float scaleX, float scaleY,
 		ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 		ID3D12Resource* hudless, ID3D12Resource* composed, std::uint64_t timestampFrequency,
-		const D3D12StageMarks& marks, ID3D12Resource* objectMask, std::array<float,2> objectMaskGuideOffset)
+		const D3D12StageMarks& marks, ID3D12Resource* objectMask, std::array<float,2> objectMaskGuideOffset,
+		std::array<float,2> colorJitter)
 	{
 		if (!device || !list || slot >= heaps_.size() || options.passes < 1 || options.passes > 2 || !SameSize(motion, depth) ||
 			!Texture(hudless) || (options.WorldOnly() ? (ui || composed || options.tuning.uiCorrection) :
@@ -342,15 +344,58 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(hr)) { status_ = std::format("NR reconstruction recording failed 0x{:08X}", static_cast<UINT>(hr)); }
 			return SUCCEEDED(hr);
 		};
+		// Adaptive exposure measures the original scene before anything encodes it.
+		const bool adaptive = resolving && reconstruction.adaptiveExposure && reconstruction.colorIsHDR &&
+			!reconstruction.producerColor;
+		constants.adaptiveExposure = adaptive;
+		constants.exposureBias = reconstruction.exposureBias;
+		if (adaptive) {
+			if (!exposure_) {
+				D3D12_RESOURCE_DESC desc{};
+				desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = desc.Height = 1;
+				desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
+				desc.Format = DXGI_FORMAT_R32_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+				if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+					D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&exposure_)))) {
+					status_ = "NR exposure allocation failed"; return false;
+				}
+			}
+			// Half the remaining difference every quarter second: about a second to settle.
+			const auto now = std::chrono::steady_clock::now();
+			const float seconds = std::clamp(std::chrono::duration<float>(now - exposureTime_).count(), 0.0f, 0.25f);
+			constants.exposureRate = 1.0f - std::exp2(-seconds / 0.25f);
+			constants.exposureReset = reset || !exposureValid_;
+			resolve_.SetExposure(exposure_.Get());
+			if (!dispatch(12, ResolveKernel::MeasureExposure, hudless, nullptr, nullptr, exposure_.Get())) { return false; }
+			exposureTime_ = now; exposureValid_ = true;
+			constants.exposureReset = false;
+		} else {
+			resolve_.SetExposure(nullptr);
+			exposureValid_ = false;
+		}
+		// Before upscaling, Ratio shows NR the frame on the steady grid and moves its
+		// change back to the jittered one; DLSS still receives the jittered pixels.
+		// Only the passes that read the raw frame, and the final resolve, use it.
+		const bool steady = method == NeuralRendering::ResolveMethod::Ratio && !reconstruction.producerColor &&
+			options.beforeUpscaling && std::isfinite(colorJitter[0]) && std::isfinite(colorJitter[1]) &&
+			(colorJitter[0] != 0 || colorJitter[1] != 0);
+		const auto setJitter = [&](bool on) {
+			constants.jitterX = on ? colorJitter[0] : 0; constants.jitterY = on ? colorJitter[1] : 0;
+		};
 		if (resolving) {
 			if (encoded_) {
 				constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
+				setJitter(steady);
 				if (!dispatch(0, ResolveKernel::Ratio, hudless, nullptr, nullptr, encoded_.Get())) { return false; }
+				setJitter(false);
 				featureColor = encoded_.Get();
 			}
 			if (workColor_) {
 				constants.targetWidth = constants.workWidth; constants.targetHeight = constants.workHeight;
+				setJitter(steady && featureColor == hudless);
 				if (!dispatch(1, fusedColor_ ? ResolveKernel::PrepareColor : ResolveKernel::Downsample, featureColor, nullptr, nullptr, workColor_.Get())) { return false; }
+				setJitter(false);
 				featureColor = workColor_.Get();
 			}
 		}
@@ -515,7 +560,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 				if (!dispatch(3, ResolveKernel::Residual, hudless, residual_.Get(), nullptr, corrected_.Get())) { return false; }
 			} else {
 				constants.mode = 1; constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
+				setJitter(steady);
 				if (!dispatch(3, ResolveKernel::Ratio, featureColor, modelResult, hudless, corrected_.Get())) { return false; }
+				setJitter(false);
 			}
 		}
 
