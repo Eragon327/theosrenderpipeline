@@ -4,6 +4,7 @@
 #include "ImGuiIntegration.h"
 #include "NativeInput.h"
 #include "NativeUIBridge.h"
+#include "RenderDrawDataScan.h"
 
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
@@ -247,6 +248,42 @@ namespace
 	{
 		const auto allEnabled = ::GetPrivateProfileIntW(L"Adapters", L"EnableAll", 1, kIniPath) != 0;
 		return allEnabled && ::GetPrivateProfileIntW(L"Adapters", a_profile.iniKey, 1, kIniPath) != 0;
+	}
+
+	// An updated build of a supported mod has no exact profile. Unless this is
+	// switched off, find its RenderDrawData by signature instead of rejecting it.
+	bool DiscoveryEnabled()
+	{
+		return ::GetPrivateProfileIntW(L"Adapters", L"DiscoverUnknownBuilds", 1, kIniPath) != 0;
+	}
+
+	// The RVA of the module's only RenderDrawData candidate in its loaded,
+	// executable sections, or nothing when there is none or more than one.
+	std::optional<std::uintptr_t> DiscoverRenderDrawData(HMODULE a_module, std::size_t& a_candidates)
+	{
+		a_candidates = 0;
+		const auto base = reinterpret_cast<const std::uint8_t*>(a_module);
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+		if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+			return std::nullopt;
+		}
+		const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+		if (nt->Signature != IMAGE_NT_SIGNATURE) {
+			return std::nullopt;
+		}
+		std::optional<std::uintptr_t> found;
+		const auto* section = IMAGE_FIRST_SECTION(nt);
+		for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section) {
+			if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE) || !section->Misc.VirtualSize) {
+				continue;
+			}
+			const std::span code{ base + section->VirtualAddress, section->Misc.VirtualSize };
+			for (const auto offset : TheosRenderPipeline::Compatibility::FindRenderDrawData(code)) {
+				++a_candidates;
+				found = section->VirtualAddress + offset;
+			}
+		}
+		return a_candidates == 1 ? found : std::nullopt;
 	}
 
 	bool VanityTextDiagnosticsEnabled()
@@ -889,25 +926,42 @@ namespace
 				}
 			}
 		}
-		if ((a_index == kVanityIndex && !vanityBinary) || (a_index != kVanityIndex && actualHash != profile.sha256)) {
-			logger::warn("{} adapter rejected: unsupported DLL sha256={}", profile.name, actualHash);
-			return false;
+		const bool profiled = a_index == kVanityIndex ? vanityBinary != nullptr : actualHash == profile.sha256;
+		const auto range = GetModuleRange(module);
+		std::optional<std::uintptr_t> discovered;
+		if (!profiled) {
+			std::size_t candidates = 0;
+			if (DiscoveryEnabled() && range) {
+				discovered = DiscoverRenderDrawData(module, candidates);
+			}
+			if (!discovered) {
+				logger::warn("{} adapter rejected: unsupported DLL sha256={}; {}", profile.name, actualHash,
+					!DiscoveryEnabled() ? "signature discovery is off"s :
+					std::format("signature discovery found {} RenderDrawData candidates, need exactly one", candidates));
+				return false;
+			}
 		}
 
-		const auto range = GetModuleRange(module);
-		const auto renderDrawDataRva = vanityBinary ? vanityBinary->renderDrawDataRva : profile.renderDrawDataRva;
-		const auto& renderDrawDataEntryBytes = vanityBinary ? vanityBinary->renderDrawDataEntryBytes : profile.entryBytes;
+		const auto renderDrawDataRva = discovered ? *discovered : vanityBinary ? vanityBinary->renderDrawDataRva : profile.renderDrawDataRva;
 		const auto entry = range ? range->base + renderDrawDataRva : 0;
-		if (!range || !range->Contains(entry, renderDrawDataEntryBytes.size()) ||
-			std::memcmp(reinterpret_cast<const void*>(entry), renderDrawDataEntryBytes.data(), renderDrawDataEntryBytes.size()) != 0) {
+		bool guarded = range && range->Contains(entry, kGuardSize);
+		if (guarded && discovered) {
+			// The discovered entry must be the relocatable large-frame prologue.
+			guarded = TheosRenderPipeline::Compatibility::MatchesRenderDrawDataPrologue(
+				std::span{ reinterpret_cast<const std::uint8_t*>(entry), kGuardSize });
+		} else if (guarded) {
+			const auto& renderDrawDataEntryBytes = vanityBinary ? vanityBinary->renderDrawDataEntryBytes : profile.entryBytes;
+			guarded = std::memcmp(reinterpret_cast<const void*>(entry), renderDrawDataEntryBytes.data(), renderDrawDataEntryBytes.size()) == 0;
+		}
+		if (!guarded) {
 			logger::error("{} adapter rejected: RenderDrawData entry guard mismatch at RVA 0x{:X}", profile.name, renderDrawDataRva);
 			return false;
 		}
 
 		std::uintptr_t vanityMouseCall = 0;
 		std::uintptr_t vanityProcessMessageEntry = 0;
-		const bool vanityTextDiagnostics = a_index == kVanityIndex && VanityTextDiagnosticsEnabled();
-		if (a_index == kVanityIndex) {
+		const bool vanityTextDiagnostics = a_index == kVanityIndex && vanityBinary && VanityTextDiagnosticsEnabled();
+		if (a_index == kVanityIndex && vanityBinary) {
 			if (!vanityBinary->sourceNormalizesMouse) {
 				const auto& mouseUpdateCall = vanityBinary->mouseUpdateCall;
 				vanityMouseCall = range->base + mouseUpdateCall.rva;
@@ -974,7 +1028,10 @@ namespace
 		}
 		state.original = reinterpret_cast<RenderDrawData>(trampoline);
 
-		if (a_index == kVanityIndex) {
+		if (a_index == kVanityIndex && !vanityBinary) {
+			logger::warn("{} build without a profile: drawing is native, but its mouse and text adapters stay off", profile.name);
+		}
+		if (a_index == kVanityIndex && vanityBinary) {
 			if (vanityBinary->sourceNormalizesMouse) {
 				logger::info(
 					"{} uses source-normalized mouse coordinates for {}; mouse adapter skipped",
@@ -1026,7 +1083,8 @@ namespace
 				std::filesystem::path(kIniPath).string());
 		}
 
-		logger::info("{} adapter installed; sha256={}, RenderDrawData RVA=0x{:X}", profile.name, actualHash, renderDrawDataRva);
+		logger::info("{} adapter installed; sha256={}, RenderDrawData RVA=0x{:X}{}", profile.name, actualHash, renderDrawDataRva,
+			discovered ? " (found by signature; this build has no exact profile)" : "");
 		return true;
 	}
 
