@@ -312,6 +312,18 @@ PreviewScenario Exposure()
     return scenario;
 }
 
+// Frame limit Steady, holding rendered frames at 58 FPS.
+PreviewScenario Steady()
+{
+    auto scenario = Healthy();
+    scenario.name = "steady";
+    scenario.summary = "Frame limit Steady at 58 rendered FPS";
+    scenario.applied.sourceDLSSG.frameLimit = TheosRenderPipeline::SourceDLSSG::FrameLimitMode::Steady;
+    scenario.draft = scenario.applied;
+    scenario.view.steadyRenderedFPS = 58.2f;
+    return scenario;
+}
+
 // A non-NVIDIA GPU: XeSS upscaling and XeFG x2, with NR unavailable.
 PreviewScenario Intel();
 // Universal on NVIDIA: the tensor model was asked for x5 and safely refused, so
@@ -389,5 +401,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Intel(), TensorRefused(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Steady(), Intel(), TensorRefused(), Lab()};
 }

@@ -1,3 +1,9 @@
+# Unreleased
+
+- Frame generation > Frame limit replaces Output FPS limit: Off, Fixed (the output
+  cap, as before) or Steady, which measures recent frame times and caps rendered
+  frames just below what the slower frames manage, so frames arrive evenly.
+
 # 0.5.1
 
 Game-tested on an RTX 4080 SUPER with ENB. The Community Shaders changes (the grey
