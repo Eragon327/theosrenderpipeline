@@ -1,4 +1,4 @@
-#include "FrameGen/NativeUIBlend.h"
+#include "FrameGen/NativeUIComposition.h"
 #include "FrameGen/NativeUIBlendCoverage.h"
 #include "FrameGen/NativeUIPass.h"
 #include <d3d11sdklayers.h>
@@ -122,7 +122,7 @@ float4 PS(float4 p : SV_Position) : SV_Target { return colour; }
         D3D11_MAPPED_SUBRESOURCE m{}; Check(c->Map(s.Get(), 0, D3D11_MAP_READ, 0, &m), "map");
         std::array<float, 4> p{}; std::memcpy(p.data(), m.pData, sizeof(p)); c->Unmap(s.Get(), 0); return p;
     };
-    NativeUIBlend compose; Require(compose.Initialize(d.Get(), c.Get(), td.Format), "compositor");
+    NativeUIComposition compose; Require(compose.Initialize(d.Get(), c.Get(), scene.Get(), td, true) && compose.Dedicated(), "compositor");
     const std::array<float, 4> world{0.2f, 0.6f, 0.4f, 1.0f};
     const std::array<float, 4> panel{0.9f, 0.3f, 0.1f, 0.7f}, text{0.1f, 0.8f, 0.5f, 0.5f}, glow{0.3f, 0.2f, 0.6f, 0.4f};
     NativeUIBlendCoverage coverage;
@@ -139,7 +139,7 @@ float4 PS(float4 p : SV_Position) : SV_Target { return colour; }
             draw(t, ui ? sp : p.Get(), panel); draw(t, ui ? sp : p.Get(), text); draw(t, ui ? sa : a.Get(), glow);
         }
         c->OMSetRenderTargets(0, nullptr, nullptr);
-        Require(compose.Compose(c.Get(), scene.Get(), layerSRV.Get(), W, H), "compose");
+        Require(compose.ComposeOverlay(c.Get(), scene.Get(), layerSRV.Get()), "compose");
         return std::pair{read(direct.Get()), read(scene.Get())};
     };
     auto close = [](const std::array<float, 4>& x, const std::array<float, 4>& y) {

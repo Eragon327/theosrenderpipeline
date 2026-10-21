@@ -187,7 +187,6 @@ void main(uint3 id : SV_DispatchThreadID)
 	}
 
 	const float transparent[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
-	if (nativeUITextureMode_) { (void)blend_.Initialize(a_device, a_context, format_); }
 	a_context->ClearUnorderedAccessViewFloat(nativeUIColorAndAlphaUAV_.Get(), transparent);
 	nativeUIExtractionAvailable_ = true;
 	spdlog::info(
@@ -284,7 +283,10 @@ bool NativeUIComposition::ComposeOverlay(ID3D11DeviceContext* context, ID3D11Tex
 bool NativeUIComposition::ComposeLayer(ID3D11DeviceContext* a_context, ID3D11Texture2D* a_presentation,
     ID3D11ShaderResourceView* layer)
 {
-	if (!blend_.Compose(a_context, a_presentation, layer, outputWidth_, outputHeight_)) {
+	// SwapDeviceContextState can rewrite a native immediate context's dispatch
+	// table, discarding the game's installed UI-routing hooks. Compose through
+	// the compute bindings instead so subsequent frames keep their redirection.
+	{
 		// Preserve drawing performed after the upscaler copied its result. A separate
 		// snapshot avoids reading and writing the presentation texture simultaneously.
 		a_context->CopyResource(nativeComposedSnapshot_.Get(), a_presentation);
@@ -337,7 +339,6 @@ bool NativeUIComposition::ComposeLayer(ID3D11DeviceContext* a_context, ID3D11Tex
 
 void NativeUIComposition::ResetAfterRetirement()
 {
-	blend_.ResetAfterRetirement();
 	outputWidth_ = outputHeight_ = 0;
 	format_ = DXGI_FORMAT_UNKNOWN;
 	nativeUIExtractionAvailable_ = false;
