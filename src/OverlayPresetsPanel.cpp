@@ -110,6 +110,7 @@ std::string FieldValue(const Appearance::Field& field, const Appearance::Setup& 
     }
     if (key.ends_with("SameAsPass1")) { return value != 0 ? "follows Pass 1" : "own settings"; }
     if (key == "ReconstructionMethod") { return value == 2 ? "Ratio" : value == 1 ? "Residual" : "Auto"; }
+    if (key == "ModelRate") { return value != 0 ? "every other frame" : "every frame"; }
     if (key.ends_with("Network")) { return NeuralNetworkName(value != 0 ? 1 : 0); }
     if (key.ends_with("Style")) { return NeuralStyleName(static_cast<int>(value)); }
     if (key.ends_with("InputScale")) { return std::format("{:.1f}%", value * 100); }

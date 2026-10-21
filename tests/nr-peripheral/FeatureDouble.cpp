@@ -126,7 +126,7 @@ bool FeatureSession::RecordEvaluation(const EvaluationInput& in) {
     for (auto& v:b) std::swap(v.Transition.StateBefore,v.Transition.StateAfter);
     in.commandList->ResourceBarrier(2,b);
     }
-    ++state_->evaluations; ++Fixture::evaluations; Fixture::resets+=in.reset;
+    ++state_->evaluations; ++Fixture::evaluations; Fixture::resets+=in.reset; Fixture::motions.push_back(in.motionVectors);
     return true;
 }
 bool FeatureSession::IsInitialized() const {return state_->initialized;}

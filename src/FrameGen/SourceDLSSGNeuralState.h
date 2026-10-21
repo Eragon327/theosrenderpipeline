@@ -97,6 +97,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		current.compare=previousComparable.compare={};
 		current.reconstruction.broadStrength=previousComparable.reconstruction.broadStrength=1;
 		current.reconstruction.detailStrength=previousComparable.reconstruction.detailStrength=1;
+		// The model rate changes when the model runs, not what its history holds.
+		current.reconstruction.modelRate=previousComparable.reconstruction.modelRate={};
 		if (current.appearanceRevision && current.appearanceRevision == previous.appearanceRevision) {
 			const auto retain = [](NeuralRendering::Tuning& value, const NeuralRendering::Tuning& old) {
 				value.intensity = old.intensity;
@@ -109,6 +111,24 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 		}
 		return current == previousComparable;
+	}
+
+	// Model rate: whether NR's change stored on the previous frame still stands
+	// for this one. Anything that changes NR's output does not, except the look
+	// settings weather and time of day blend each frame under one appearance
+	// revision. The comparison and mask preview are drawn after the change is
+	// stored, and only how many passes run matters, not why.
+	inline bool SameModelOutputOptions(NeuralOptions current, NeuralOptions previous)
+	{
+		for (auto* options : { &current, &previous }) {
+			options->presetPasses = options->EffectivePasses();
+			options->passOverride = NeuralRendering::PassOverride::None;
+			options->combat = {};
+		}
+		const bool blending = current.appearanceRevision && current.appearanceRevision == previous.appearanceRevision;
+		const bool bands = current.reconstruction.broadStrength == previous.reconstruction.broadStrength &&
+			current.reconstruction.detailStrength == previous.reconstruction.detailStrength;
+		return SameHistoryOptions(current, previous) && (blending || bands);
 	}
 
 	// A frame decision, not a generation policy. NR continues when FG is off.

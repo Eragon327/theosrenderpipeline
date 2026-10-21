@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <vector>
+struct ID3D12Resource;
 #include <cstdint>
 namespace Fixture {
 inline bool peripheral{}, worldOnly{};
@@ -20,4 +22,6 @@ inline unsigned frame{};
 inline unsigned lateCreationFrame{~0u};
 // The feature index NGX refuses to create, as for an unsupported runtime; ~0u none.
 inline unsigned refuseIndex{~0u};
+// Each evaluation's motion input, in order.
+inline std::vector<ID3D12Resource*> motions;
 }

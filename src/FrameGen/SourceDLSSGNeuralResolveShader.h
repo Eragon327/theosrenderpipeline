@@ -26,6 +26,12 @@ cbuffer NRParams : register(b0) {
     // Broad and Detail: scale NR's region-wide relighting and its local detail.
     float Broad, Detail;
     uint ToneBands;
+    // Model rate: camera jitter now and on the previous frame (render pixels),
+    // whether only the guides are jittered (after upscaling), depth direction,
+    // whether both frames classified objects, and the stored change's floor.
+    float CameraJitterX, CameraJitterY, PreviousJitterX, PreviousJitterY;
+    uint GuidesJittered, DepthInverted, Categories;
+    float ChangeFloor;
 };
 Texture2D<float4> Tex0 : register(t0);
 Texture2D<float4> Tex1 : register(t1);
@@ -478,6 +484,139 @@ groupshared float ExposureSum[256];
         sum+=tap.y*w; weight+=w;
     }
     OutputMotion[p.xy]=float2(centre.x,sum/max(weight,0.000001));
+}
+)"
+R"(// Model rate: every other frame. After cavy8's Alternate Frames for Community
+// Shaders NR (Bottled Shaders PR #6): reuse the previous evaluation along the
+// game's motion, reject it by depth and object group, and give the model two
+// frames of motion after a skipped one.
+//
+// Guides, one RGBA16F texel per guide texel: motion in guide pixels (an offset,
+// so FP16 keeps it within 1/16 pixel below 128 pixels), log2 distance from the
+// far plane (about reciprocal view depth; the log keeps FP16's relative
+// precision for distant terrain) and the object group (0 world, 1-4 objects).
+Texture2D<float4> PreviousGuides : register(t3);
+static const int2 kRing[8]={int2(-1,-1),int2(0,-1),int2(1,-1),int2(-1,0),int2(1,0),int2(-1,1),int2(0,1),int2(1,1)};
+float FarDistanceLog(float depth) {
+    float s=DepthInverted ? depth : 1-depth;
+    return log2(clamp(isfinite(s) ? s : 0,0.0000000596,1));
+}
+// The object classification's packing and depth test (NeuralObjectMask.h).
+float ObjectGroupOf(float objects, float depth) {
+    uint packed=asuint(objects), group=packed&7u; float objectDepth=asfloat(packed&~7u);
+    return isfinite(objectDepth)&&isfinite(depth)&&group>=1&&group<=4&&
+        abs(objectDepth-depth)<=max(0.00000024,abs(depth)*0.000002) ? group : 0;
+}
+// 1 where a stored guide shows the same surface as this frame's: reciprocal
+// depth within about 10%, fully rejected beyond about 30%, so foreground and
+// background swaps fail while ordinary camera moves pass; and the same object
+// group when both frames classified objects.
+float SameSurface(float4 current, float4 previous) {
+    if (!all(isfinite(previous)) || (Categories && current.w!=previous.w)) return 0;
+    return 1-smoothstep(0.15,0.4,abs(current.z-previous.z));
+}
+// The guide texel under a colour-raster position (pixel centres at +0.5).
+int2 GuideTexel(float2 position, float2 jitter) {
+    float2 g=position*float2(GuideWidth,GuideHeight)/float2(SourceWidth,SourceHeight);
+    if (GuidesJittered) g+=jitter;
+    return ClampPixel(int2(floor(g)),uint2(GuideWidth,GuideHeight));
+}
+// Tex0 motion, Tex1 depth, Tex2 the object classification or nothing.
+[numthreads(8,8,1)] void CaptureGuides(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=GuideWidth || p.y>=GuideHeight) return;
+    float2 motion=Tex0.Load(int3(p.xy,0)).rg*float2(MotionScaleX,MotionScaleY);
+    float limit=4.0*max(GuideWidth,GuideHeight);
+    motion=all(isfinite(motion)) ? clamp(motion,-limit,limit) : limit;
+    float depth=Tex1.Load(int3(p.xy,0)).r;
+    OutputColor[p.xy]=float4(motion,FarDistanceLog(depth),ObjectGroupOf(Tex2.Load(int3(p.xy,0)).r,depth));
+}
+// The model's motion on an evaluation after a skipped frame, whose history is
+// two frames old: mv2(p) = mv(p) + mv'(p + mv(p)), where mv' is the skipped
+// frame's motion found where this surface was on it, across the jitter
+// difference of the two guide rasters. A surface the skipped frame did not
+// show has no history; it points off screen. Output in the raw motion units.
+// Tex0 this frame's raw motion, Tex1 its guides, Tex2 the skipped frame's.
+[numthreads(8,8,1)] void ComposeMotion(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=GuideWidth || p.y>=GuideHeight) return;
+    float2 scale=float2(MotionScaleX,MotionScaleY);
+    float2 motion=Tex0.Load(int3(p.xy,0)).rg*scale;
+    float2 composed=2*float2(GuideWidth,GuideHeight);
+    if (all(isfinite(motion))) {
+        float2 position=p.xy+0.5+motion+float2(PreviousJitterX-CameraJitterX,PreviousJitterY-CameraJitterY);
+        int2 q=int2(floor(position));
+        if (all(position>=0) && all(q<int2(GuideWidth,GuideHeight))) {
+            float4 skipped=Tex2.Load(int3(q,0));
+            if (SameSurface(Tex1.Load(int3(p.xy,0)),skipped)>0.5) composed=motion+skipped.xy;
+        }
+    }
+    OutputMotion[p.xy]=composed/scale;
+}
+// Brightness code shared by StoreChange and Reproject: display-encoded luma,
+// or linear HDR luma relative to the white point with a 2.2 gamma.
+float ChangeCode(float3 c) {
+    float y=Luma(Swizzle(max(c,0)));
+    if (ProducerColor) return y/max(WhitePoint,0.0001);
+    return Passthrough ? y : pow(y/max(WhitePoint,0.0001),0.454545468);
+}
+// NR's change at source resolution relative to its input, per channel:
+// (result + floor) / (input + floor), clamped to 1/64..64. A ratio carries the
+// change onto a frame whose brightness differs a little, display-encoded UNORM
+// and linear FP16 alike; the floor makes it additive near black, where a plain
+// ratio would amplify noise. FP16 stores it within about 0.05%. Alpha keeps
+// the input's brightness code for Reproject. Tex0 the input, Tex1 NR's result.
+[numthreads(8,8,1)] void StoreChange(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=SourceWidth || p.y>=SourceHeight) return;
+    float4 input=Tex0.Load(int3(p.xy,0)), result=Tex1.Load(int3(p.xy,0));
+    float3 ratio=(result.rgb+ChangeFloor)/(input.rgb+ChangeFloor);
+    ratio=input.rgb>=0 && isfinite(ratio) ? clamp(ratio,0.015625,64) : 1;
+    OutputColor[p.xy]=float4(ratio,all(isfinite(input.rgb)) ? ChangeCode(input.rgb) : 0);
+}
+// A frame without the model: this frame's input with the previous frame's
+// change, read where this surface was on the previous frame (its motion, and
+// the jitter difference before upscaling). Taps showing another surface are
+// rejected by depth and object group. When none of the four bilinear taps
+// remains (newly revealed or off screen), the best matching tap within three
+// guide texels is used, else the input is shown unchanged. The change fades
+// where the input's brightness no longer matches (lights, animated surfaces).
+// Tex0 this frame's input, Tex1 the stored change, Tex2 this frame's guides,
+// PreviousGuides the previous frame's.
+[numthreads(8,8,1)] void Reproject(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=SourceWidth || p.y>=SourceHeight) return;
+    float4 input=Tex0.Load(int3(p.xy,0));
+    const float2 jitter=float2(CameraJitterX,CameraJitterY), previousJitter=float2(PreviousJitterX,PreviousJitterY);
+    float4 current=Tex2.Load(int3(GuideTexel(p.xy+0.5,jitter),0));
+    float2 scale=float2(SourceWidth,SourceHeight)/float2(GuideWidth,GuideHeight);
+    // Before upscaling the colour raster itself moves with the jitter.
+    float2 position=p.xy+0.5+current.xy*scale+(GuidesJittered ? float2(0,0) : previousJitter-jitter);
+    float4 change=float4(1,1,1,0); bool found=false;
+    if (all(isfinite(position))) {
+        float2 b=position-0.5; int2 base=int2(floor(b)); float2 f=b-base;
+        float4 sum=0; float weight=0;
+        [unroll] for (int y=0;y<2;++y) [unroll] for (int x=0;x<2;++x) {
+            int2 t=base+int2(x,y);
+            float w=(x?f.x:1-f.x)*(y?f.y:1-f.y);
+            if (w<=0 || any(t<0) || any(t>=int2(SourceWidth,SourceHeight))) continue;
+            w*=SameSurface(current,PreviousGuides.Load(int3(GuideTexel(t+0.5,previousJitter),0)));
+            sum+=Tex1.Load(int3(t,0))*w; weight+=w;
+        }
+        if (weight>0.05) { change=sum/weight; found=true; }
+        else {
+            float best=0.5;
+            [loop] for (int ring=1; ring<=3 && !found; ++ring) {
+                [unroll] for (int i=0;i<8;++i) {
+                    int2 t=ClampPixel(int2(floor(position+kRing[i]*ring*scale)),uint2(SourceWidth,SourceHeight));
+                    float s=SameSurface(current,PreviousGuides.Load(int3(GuideTexel(t+0.5,previousJitter),0)));
+                    if (s>best) { best=s; change=Tex1.Load(int3(t,0)); found=true; }
+                }
+            }
+        }
+    }
+    float code=all(isfinite(input.rgb)) ? ChangeCode(input.rgb) : 0;
+    float match=1-smoothstep(0.1,0.3,abs(code-change.a)/(code+change.a+0.05));
+    float3 ratio=found ? lerp(1,change.rgb,match) : 1;
+    float3 result=(input.rgb+ChangeFloor)*ratio-ChangeFloor;
+    result=input.rgb>=0 && ratio!=1 && isfinite(result) ? min(max(result,0),65504) : input.rgb;
+    OutputColor[p.xy]=float4(result,input.a);
 }
 )";
 }

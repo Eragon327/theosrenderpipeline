@@ -30,6 +30,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::uint64_t cpuSamples{};
 		std::uint64_t cpuRecordNanosecondsTotal{};
 		std::uint64_t cpuRecordNanosecondsMaximum{};
+		// Model rate: recorded frames that reused the previous change instead of
+		// running the model, and the recent share of frames that ran it (0 to 1).
+		std::uint64_t skippedFrames{};
+		double modelRunShare{ 1 };
 
 		double AverageGPUMicroseconds() const
 		{
@@ -89,6 +93,14 @@ namespace TheosRenderPipeline::SourceDLSSG
 			++gpuQueryFailures_;
 		}
 
+		// Once per recorded frame. GPU and CPU samples above cover model runs only.
+		void RecordModelRun(bool a_ran)
+		{
+			if (!a_ran) { ++skippedFrames_; }
+			// A moving average over roughly the last 16 frames.
+			modelRunShare_ += ((a_ran ? 1.0 : 0.0) - modelRunShare_) / 16.0;
+		}
+
 		NeuralTelemetrySnapshot Snapshot() const
 		{
 			NeuralTelemetrySnapshot result{};
@@ -102,6 +114,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			result.cpuSamples = cpuSamples_;
 			result.cpuRecordNanosecondsTotal = cpuRecordNanosecondsTotal_;
 			result.cpuRecordNanosecondsMaximum = cpuRecordNanosecondsMaximum_;
+			result.skippedFrames = skippedFrames_;
+			result.modelRunShare = modelRunShare_;
 			for (std::size_t i = 0; i < count_; ++i) {
 				result.newestFirst[i] = points_[(head_ + NeuralTelemetryCapacity - i) % NeuralTelemetryCapacity];
 			}
@@ -134,5 +148,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::uint64_t cpuSamples_{};
 		std::uint64_t cpuRecordNanosecondsTotal_{};
 		std::uint64_t cpuRecordNanosecondsMaximum_{};
+		std::uint64_t skippedFrames_{};
+		double modelRunShare_{ 1 };
 	};
 }

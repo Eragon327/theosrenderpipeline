@@ -336,4 +336,5 @@ static void RefusedLaterPass(GPU& gpu){
     std::printf("PASS: %u refused later-pass cases; the ready prefix keeps running without a runtime refusal\n",cases);
 }
 #include "ObjectMaskCases.h"
-int main(){GPU gpu;ObjectMaskCases(gpu);PassObjectStrengthCases(gpu);Kernels(gpu);DescriptorCache(gpu);Passes(gpu);CombinedPreparation(gpu);PreparationRecorder(gpu);IndependentPasses(gpu);IndependentPasses(gpu,true);ManyPasses(gpu);RefusedLaterPass(gpu);}
+#include "ModelRateCases.h"
+int main(){GPU gpu;ObjectMaskCases(gpu);PassObjectStrengthCases(gpu);Kernels(gpu);DescriptorCache(gpu);Passes(gpu);CombinedPreparation(gpu);PreparationRecorder(gpu);IndependentPasses(gpu);IndependentPasses(gpu,true);ManyPasses(gpu);RefusedLaterPass(gpu);ModelRateKernels(gpu);ModelRatePasses(gpu);}

@@ -627,6 +627,32 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             DrawSettingsHelp("Every pass uses the selected side of upscaling. UI is composed afterwards.");
             return changed;
         });
+        {
+            // Live, unlike the other ! rows: the mark carries the image caveat.
+            const RestartHelpScope caveat("The model runs on alternate frames. NR's change is carried to the frames "
+                                          "between using motion vectors and depth, which roughly halves NR's GPU cost. "
+                                          "Expect some ghosting in fast motion and on newly revealed areas.");
+            SettingRow("Model rate", "ModelRate", true, unavailable, [&] {
+                using NR::ModelRate;
+                int rate = reconstruction.modelRate == ModelRate::EveryOtherFrame ? 1 : 0;
+                const bool changed = Segmented("modelRate", rate, {
+                    {"Every frame", true, "NR's model runs on every frame."},
+                    {"Every other frame", true, "The model runs on alternate frames; the frames between reuse its change, "
+                                                "moved with the scene. Applies to every pass. Freeze frame runs it on "
+                                                "every frame."}});
+                if (changed) { reconstruction.modelRate = rate == 1 ? ModelRate::EveryOtherFrame : ModelRate::EveryFrame; }
+                DrawSettingsHelp("How often NR's model runs, for every pass. Apply switches it live.");
+                // Alternating cost makes frame times uneven; Steady evens them.
+                if (reconstruction.modelRate == ModelRate::EveryOtherFrame &&
+                    draft.frameLimit != TheosRenderPipeline::SourceDLSSG::FrameLimitMode::Steady)
+                {
+                    ImGui::TextDisabled("Steady frame limit recommended (Frame generation tab)");
+                    DrawSettingsHelp("Frames with and without the model take different times. Frame generation > "
+                                     "Frame limit > Steady evens them out.");
+                }
+                return changed;
+            });
+        }
         if (base && g_setCompare)
         {
             // Applies at once and is never saved, so it is not a draft change.
@@ -1171,11 +1197,26 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
                         : state.active ? UIHealth::kHealthy
                                        : UIHealth::kIdle);
         const auto& timing = state.telemetry;
+        const bool alternate =
+            applied.reconstruction.modelRate == TheosRenderPipeline::NeuralRendering::ModelRate::EveryOtherFrame;
         DrawSettingsValue("Inference", state.active && timing.gpuSamples
-                                           ? std::format("{:.2f} ms", timing.AverageGPUMicroseconds() / 1000.0).c_str()
+                                           ? std::format("{:.2f} ms{}", timing.AverageGPUMicroseconds() / 1000.0,
+                                                         alternate ? " per run" : "").c_str()
                                            : "unavailable");
-        DrawSettingsHelp("Combined model inference and inter-pass preparation. Excludes input preparation, the last "
-                         "pass's restoration, reconstruction, UI composition and the D3D11/D3D12 handoff.");
+        DrawSettingsHelp(alternate ? "Combined model inference and inter-pass preparation, per frame the model runs on. "
+                                     "Frames between skip it, so the average per frame is about half. Excludes input "
+                                     "preparation, the last pass's restoration, reconstruction, UI composition and the "
+                                     "D3D11/D3D12 handoff."
+                                   : "Combined model inference and inter-pass preparation. Excludes input preparation, the "
+                                     "last pass's restoration, reconstruction, UI composition and the D3D11/D3D12 handoff.");
+        if (alternate)
+        {
+            DrawSettingsValue("Model rate", state.active ? std::format("Every other frame | {:.0f}% of frames",
+                                                                       timing.modelRunShare * 100.0).c_str()
+                                                         : "Every other frame");
+            DrawSettingsHelp("The share of recent frames the model ran on. Resets, setting changes and Freeze frame "
+                             "run it on every frame.");
+        }
         if (state.active)
             DrawStageMeasurements(view, SettingsPage::NeuralRendering);
         DrawNRAppliedPasses(view, applied);

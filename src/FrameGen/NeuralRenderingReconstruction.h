@@ -1,4 +1,5 @@
 #pragma once
+#include "NeuralModelRate.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -23,6 +24,8 @@ namespace TheosRenderPipeline::NeuralRendering
 		// Experimental fixed 80% centre / 90% work extent, in addition to inputScale.
 		bool peripheralCompression{};
 		bool fusedPreparation{};
+		// Every pass at once. Live: changing it neither recreates NR nor resets its history.
+		ModelRate modelRate{ ModelRate::EveryFrame };
 		// Adapter-owned input contract, never loaded from or written to an INI.
 		// Preserve the producer's RGB domain instead of assuming linear/sRGB.
 		bool producerColor{};
@@ -46,6 +49,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		value.maxRatio = std::isfinite(value.maxRatio) && value.maxRatio > 0 ? std::clamp(value.maxRatio, 0.01f, 16.0f) : 2.0f;
 		value.whitePoint = std::isfinite(value.whitePoint) && value.whitePoint > 0 ? std::clamp(value.whitePoint, 0.0001f, 10000.0f) : 1.0f;
 		value.exposureBias = std::isfinite(value.exposureBias) ? std::clamp(value.exposureBias, -2.0f, 2.0f) : 0.0f;
+		value.modelRate = SanitizeModelRate(value.modelRate);
 		return value;
 	}
 	inline ResolveMethod EffectiveResolve(const Reconstruction& value)
@@ -101,6 +105,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		value.detailStrength = static_cast<float>(ini.GetDoubleValue(section, "NRDetailStrength", 1));
 		value.peripheralCompression = ini.GetBoolValue(section, "NRPeripheralCompression", false);
 		value.fusedPreparation = ini.GetBoolValue(section, "NRFusedPreparation", false);
+		value.modelRate = static_cast<ModelRate>(ini.GetLongValue(section, "NRModelRate", 0));
 		return SanitizeReconstruction(value);
 	}
 	template<class Ini> void StoreReconstruction(Ini& ini, const char* section, Reconstruction value)
@@ -120,5 +125,6 @@ namespace TheosRenderPipeline::NeuralRendering
 		ini.SetBoolValue(section, "NRColorIsHDR", value.colorIsHDR);
 		ini.SetBoolValue(section, "NRPeripheralCompression", value.peripheralCompression);
 		ini.SetBoolValue(section, "NRFusedPreparation", value.fusedPreparation);
+		ini.SetLongValue(section, "NRModelRate", static_cast<long>(value.modelRate));
 	}
 }

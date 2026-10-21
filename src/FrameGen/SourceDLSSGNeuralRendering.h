@@ -7,6 +7,7 @@
 #include "SourceDLSSGNeuralTelemetry.h"
 #include "NeuralObjectBlend.h"
 #include "NeuralObjectControl.h"
+#include "NeuralModelRate.h"
 #include <chrono>
 #include <array>
 
@@ -99,6 +100,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			int requestedPasses{}, readyPasses{}, startablePasses{};
 			std::array<bool, NeuralRendering::kMaxNeuralPasses> objectControls{};
 			bool objectControlsUnavailable{};
+			bool everyOtherFrame{};
 			bool operator==(const StatusKey&) const = default;
 		};
 		void PublishStatus(const StatusKey& key);
@@ -156,6 +158,22 @@ namespace TheosRenderPipeline::SourceDLSSG
         NeuralRendering::ObjectControl objectControl_;
         std::array<bool,NeuralRendering::kMaxNeuralPasses> objectControlActive_{};
 		bool fusedColor_{};
+		// Model rate (NeuralModelRate.h). Each frame's guides alternate between
+		// two textures; the change is NR's last stored result relative to its
+		// input; the motion is composed for an evaluation after a skipped frame.
+		// All stay COMMON between dispatches and are allocated on first use.
+		bool EnsureModelRate(ID3D12Device* device, ID3D12Resource* motion, ID3D12Resource* hudless);
+		NeuralRendering::ModelRateSchedule rateSchedule_;
+		std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, 2> rateGuides_;
+		Microsoft::WRL::ComPtr<ID3D12Resource> rateChange_, rateMotion_;
+		unsigned rateGuide_{};
+		NeuralOptions rateOptions_;
+		int rateEffectivePasses_{};
+		std::chrono::steady_clock::time_point rateTime_{};
+		// The previous captured frame's camera jitter and whether it classified objects.
+		std::array<float, 2> rateJitter_{};
+		bool rateMask_{};
+		bool createdThisFrame_{};
 		NeuralRendering::Reconstruction reconstruction_;
 		std::filesystem::path runtimePath_;
 		UINT guideWidth_{}, guideHeight_{};

@@ -348,6 +348,21 @@ PreviewScenario Steady()
     return scenario;
 }
 
+// NR's model every other frame with Frame limit Off, so the Steady hint shows.
+PreviewScenario ModelRate()
+{
+    auto scenario = Healthy();
+    scenario.name = "model-rate";
+    scenario.summary = "NR model every other frame, Frame limit Off";
+    auto& reconstruction = scenario.applied.sourceDLSSG.neuralReconstruction;
+    reconstruction.modelRate = TheosRenderPipeline::NeuralRendering::ModelRate::EveryOtherFrame;
+    scenario.draft = scenario.applied;
+    scenario.view.neuralApplied.reconstruction = reconstruction;
+    scenario.view.neuralState.telemetry.modelRunShare = 0.5;
+    scenario.view.neuralState.telemetry.skippedFrames = 24000;
+    return scenario;
+}
+
 // A non-NVIDIA GPU: XeSS upscaling and XeFG x2, with NR unavailable.
 PreviewScenario Intel();
 // Universal on NVIDIA: the tensor model was asked for x5 and safely refused, so
@@ -425,5 +440,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), FivePasses(), Compare(), Exposure(), Steady(), Intel(), TensorRefused(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), FivePasses(), Compare(), Exposure(), Steady(), ModelRate(), Intel(), TensorRefused(), Lab()};
 }
