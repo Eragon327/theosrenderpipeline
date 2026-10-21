@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	TheosRenderPipeline
-	VERSION 0.5.0
+	VERSION 0.5.1
 	LANGUAGES C CXX
 )
 
@@ -18,6 +18,11 @@ target_compile_features("${PROJECT_NAME}" PRIVATE cxx_std_23)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_DEBUG OFF)
+# The renderer was created above, before the CMake default was set. Apply
+# these properties to it explicitly so Release objects participate in LTCG.
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    INTERPROCEDURAL_OPTIMIZATION ON
+    INTERPROCEDURAL_OPTIMIZATION_DEBUG OFF)
 set(BUILD_TESTS OFF)
 set(SKSE_SUPPORT_XBYAK ON CACHE BOOL "" FORCE)
 

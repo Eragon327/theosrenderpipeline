@@ -1,13 +1,39 @@
 #include "XeFGPresenter.h"
 #include "XeFGUnlock.h"
 #include "../PluginPaths.h"
+#include <psapi.h>
 #include <algorithm>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <span>
 
 namespace TheosRenderPipeline
 {
+    namespace
+    {
+        bool SameFile(const std::filesystem::path& a, const std::filesystem::path& b)
+        {
+            std::ifstream left(a, std::ios::binary), right(b, std::ios::binary);
+            if (!left || !right) { return false; }
+            const std::vector<char> x{std::istreambuf_iterator<char>(left), {}}, y{std::istreambuf_iterator<char>(right), {}};
+            return !x.empty() && x == y;
+        }
+        // Modules with this base name in the process, whatever their folder.
+        unsigned LoadedCount(const wchar_t* name)
+        {
+            std::vector<HMODULE> modules(1024);
+            DWORD needed = 0;
+            if (!K32EnumProcessModules(GetCurrentProcess(), modules.data(), DWORD(modules.size() * sizeof(HMODULE)), &needed)) { return 0; }
+            modules.resize((std::min)(modules.size(), std::size_t(needed / sizeof(HMODULE))));
+            unsigned count = 0;
+            for (const auto module : modules) {
+                if (_wcsicmp(PluginPaths::ModulePath(module).filename().c_str(), name) == 0) { ++count; }
+            }
+            return count;
+        }
+    }
     HRESULT XeFGPresenter::FG(xefg_swapchain_result_t result, const char* operation)
     {
         if (result < 0) {
@@ -35,22 +61,62 @@ namespace TheosRenderPipeline
         return format == DXGI_FORMAT_R8G8B8A8_UNORM || format == DXGI_FORMAT_B8G8R8A8_UNORM ||
             format == DXGI_FORMAT_R10G10B10A2_UNORM;
     }
-    HRESULT XeFGPresenter::Load(const std::filesystem::path& directory)
+    HMODULE XeFGPresenter::LoadedRuntime(const std::filesystem::path& directory) const
     {
-        if (!directory.is_absolute()) { return E_INVALIDARG; }
-        if (fgModule_ || llModule_) {
-            return apiReady_ && PluginPaths::EqualPath(directory_, directory) ? S_OK : E_UNEXPECTED;
+        for (const auto& [folder, module] : runtimes_) {
+            if (PluginPaths::EqualPath(folder, directory)) { return module; }
         }
-        directory_ = PluginPaths::Normalize(directory);
-        for (const auto* name : {L"libxell.dll", L"libxess_fg.dll"}) {
-            if (GetModuleHandleW(name)) { status_ = "another owner already loaded an Intel runtime"; return E_UNEXPECTED; }
+        return nullptr;
+    }
+    HRESULT XeFGPresenter::Load(const std::filesystem::path& requested)
+    {
+        if (!requested.is_absolute()) { return E_INVALIDARG; }
+        const auto directory = PluginPaths::Normalize(requested);
+        if (LoadedRuntime(directory)) { return S_OK; }
+        constexpr DWORD search = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
+        if (!llModule_) {
+            for (const auto* name : {L"libxell.dll", L"libxess_fg.dll"}) {
+                if (GetModuleHandleW(name)) { status_ = "another owner already loaded an Intel runtime"; return E_UNEXPECTED; }
+            }
+            llModule_ = LoadLibraryExW((directory / L"libxell.dll").c_str(), nullptr, search);
+            if (!llModule_) { status_ = "load libxell.dll"; return HRESULT_FROM_WIN32(GetLastError()); }
+        } else if (!SameFile(PluginPaths::ModulePath(llModule_), directory / L"libxell.dll")) {
+            // A second libxess_fg binds its import to the XeLL already loaded.
+            status_ = "Intel SDK copies need an identical libxell.dll"; return E_UNEXPECTED;
         }
-        llModule_ = LoadLibraryExW((directory_ / L"libxell.dll").c_str(), nullptr,
-            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-        if (!llModule_) { status_ = "load libxell.dll"; return HRESULT_FROM_WIN32(GetLastError()); }
-        fgModule_ = LoadLibraryExW((directory_ / L"libxess_fg.dll").c_str(), nullptr,
-            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-        if (!fgModule_) { status_ = "load libxess_fg.dll"; return HRESULT_FROM_WIN32(GetLastError()); }
+        const auto path = directory / L"libxess_fg.dll";
+        const auto module = LoadLibraryExW(path.c_str(), nullptr, search);
+        if (!module) { status_ = "load libxess_fg.dll"; return HRESULT_FROM_WIN32(GetLastError()); }
+        if (!PluginPaths::EqualPath(PluginPaths::ModulePath(module), path) ||
+            std::any_of(runtimes_.begin(), runtimes_.end(), [&](const auto& entry) { return entry.second == module; }) ||
+            LoadedCount(L"libxell.dll") != 1) {
+            status_ = "Intel SDK copy did not load beside the first"; return E_UNEXPECTED;
+        }
+        // Validate before accepting it: Activate runs only after the current
+        // presenter has retired, when a failure can no longer keep it.
+        for (const auto* name : {"xefgSwapChainGetVersion", "xefgSwapChainSetLoggingCallback", "xefgSwapChainD3D12CreateContext",
+                "xefgSwapChainSetLatencyReduction", "xefgSwapChainGetProperties", "xefgSwapChainD3D12InitFromSwapChainDesc",
+                "xefgSwapChainD3D12GetSwapChainPtr", "xefgSwapChainD3D12TagFrameResource", "xefgSwapChainTagFrameConstants",
+                "xefgSwapChainSetPresentId", "xefgSwapChainSetEnabled", "xefgSwapChainSetNumInterpolatedFrames",
+                "xefgSwapChainEnableDebugFeature", "xefgSwapChainGetLastPresentStatus", "xefgSwapChainSetUiCompositionState",
+                "xefgSwapChainDestroy"}) {
+            if (!GetProcAddress(module, name)) { status_ = std::string("missing ") + name; return E_NOINTERFACE; }
+        }
+        xefg_swapchain_version_t version{};
+        const auto getVersion = reinterpret_cast<decltype(&::xefgSwapChainGetVersion)>(GetProcAddress(module, "xefgSwapChainGetVersion"));
+        if (getVersion(&version) < 0 || version.major != 1 || version.minor != 3) {
+            status_ = "candidate requires XeFG 1.3"; return E_NOINTERFACE;
+        }
+        runtimes_.emplace_back(directory, module);
+        return S_OK;
+    }
+    HRESULT XeFGPresenter::Activate(const std::filesystem::path& directory)
+    {
+        const auto module = LoadedRuntime(directory);
+        if (!module) { status_ = "Intel SDK copy not loaded"; return E_UNEXPECTED; }
+        if (apiReady_ && module == fgModule_) { return S_OK; }
+        if (initialized_ || fg_ || ll_) { status_ = "the Intel presenter must retire before switching SDK copies"; return E_UNEXPECTED; }
+        apiReady_ = false; fgModule_ = module; directory_ = directory;
 #define RESOLVE(module, name) name##_ = reinterpret_cast<decltype(name##_)>(GetProcAddress(module, #name)); \
         if (!name##_) { status_ = "missing " #name; return E_NOINTERFACE; }
         RESOLVE(fgModule_, xefgSwapChainGetVersion)
@@ -90,20 +156,34 @@ namespace TheosRenderPipeline
     }
     HRESULT XeFGPresenter::Probe(ID3D12Device* device, const std::filesystem::path& directory, bool tensorRequested)
     {
-        if (!tensorChoiceMade_) {
-            snapshot_.tensorRequested = tensorRequested;
-            tensor_.Select(device, directory, tensorRequested);
+        probedTensorRequest_ = snapshot_.tensorRequested = tensorRequested;
+        // The helper is selected once, before the tensor SDK copy first loads.
+        if (tensorRequested && !tensorChoiceMade_) {
+            tensor_.Select(device, directory, true);
             tensorChoiceMade_ = true;
-            if (tensorRequested && log_) log_(tensor_.Status().c_str());
-        }
-        auto hr = Load(tensor_.Selected() ? tensor_.Directory() : directory);
-        if (FAILED(hr) || !device) { return FAILED(hr) ? hr : E_POINTER; }
-        if (tensor_.Selected()) {
-            hr = tensor_.Start(device, fgModule_, llModule_);
             if (log_) log_(tensor_.Status().c_str());
-            if (FAILED(hr) && tensor_.Unsafe()) { status_ = tensor_.Status(); return E_UNEXPECTED; }
-            // A safely refused model leaves this exact 1.3.4 SDK at official x2.
-            // Dispatch-only refusal keeps the ported model's HLSL fallback.
+        }
+        wantTensor_ = tensorRequested && tensor_.Selected();
+        wanted_ = PluginPaths::Normalize(wantTensor_ ? tensor_.Directory() : directory);
+        auto hr = Load(wanted_);
+        if (FAILED(hr) && wantTensor_) {
+            // A tensor copy that cannot load beside Intel's keeps normal XeFG.
+            if (log_) log_(("Tensor model unavailable: " + status_ + "; normal XeFG retained").c_str());
+            wantTensor_ = false; wanted_ = PluginPaths::Normalize(directory);
+            hr = Load(wanted_);
+        }
+        if (FAILED(hr) || !device) { return FAILED(hr) ? hr : E_POINTER; }
+        // A live presenter keeps its copy until it retires; Create switches then.
+        const bool live = initialized_ || fg_ || ll_;
+        if (!live) {
+            if (FAILED(hr = Activate(wanted_))) { return hr; }
+            if (wantTensor_) {
+                hr = tensor_.Start(device, fgModule_, llModule_);
+                if (log_) log_(tensor_.Status().c_str());
+                if (FAILED(hr) && tensor_.Unsafe()) { status_ = tensor_.Status(); return E_UNEXPECTED; }
+                // A safely refused model leaves this exact 1.3.4 SDK at official x2.
+                // Dispatch-only refusal keeps the ported model's HLSL fallback.
+            }
         }
         // Admission does not change within a session; skip another SDK context.
         if (device == admittedDevice_) { return S_OK; }
@@ -129,18 +209,21 @@ namespace TheosRenderPipeline
         *swapchain = nullptr;
         if (!apiReady_ || initialized_ || fg_ || ll_ || !device || !queue || !factory || !SupportsFormat(desc.BufferDesc.Format)) { return E_INVALIDARG; }
         options = SanitizeXeFG(options);
-        if (tensor_.Selected()) {
+        // The previous presenter has retired: bind the copy Probe chose.
+        if (auto hr = Activate(wanted_); FAILED(hr)) { return hr; }
+        usingTensor_ = wantTensor_;
+        if (usingTensor_) {
             const auto started = tensor_.Start(device, fgModule_, llModule_);
             if (FAILED(started) && tensor_.Unsafe()) { status_ = tensor_.Status(); return E_UNEXPECTED; }
         }
-        snapshot_.experimentalMFG = options.experimentalMFG || tensor_.Selected();
+        snapshot_.experimentalMFG = options.experimentalMFG || usingTensor_;
         snapshot_.unlockReady = false;
         snapshot_.maxGeneratedFrames = 1;
         snapshot_.generatedFrames = 1;
         unlockStatus_="Experimental MFG off; official x2";
-        snapshot_.tensorModel = tensor_.ModelReady();
-        snapshot_.tensorActive = (tensor_.Snapshot().flags & XeFGTensor::TensorReady) != 0;
-        if (tensor_.Selected()) {
+        snapshot_.tensorModel = usingTensor_ && tensor_.ModelReady();
+        snapshot_.tensorActive = usingTensor_ && (tensor_.Snapshot().flags & XeFGTensor::TensorReady) != 0;
+        if (usingTensor_) {
             snapshot_.unlockReady = snapshot_.tensorModel;
             unlockStatus_ = tensor_.Status();
             if (log_) log_(unlockStatus_.c_str());
@@ -218,9 +301,13 @@ namespace TheosRenderPipeline
         snapshot_.frameId = (std::max)(snapshot_.frameId, lastApplicationFrame);
         if (FAILED(hr = FG(xefgSwapChainSetNumInterpolatedFrames_(fg_, snapshot_.generatedFrames), "select multiplier")) ||
             FAILED(hr = FG(xefgSwapChainSetEnabled_(fg_, 0), "initial passthrough"))) { return hr; }
-        const auto paced = tensor_.RegisterPacing(fg_, device, log_);
-        if (log_ && tensor_.Selected()) log_(tensor_.PacingStatus().c_str());
-        if (FAILED(paced) && tensor_.Unsafe()) { status_ = tensor_.PacingStatus(); return paced; }
+        pacingRegistered_ = false;
+        if (usingTensor_) {
+            const auto paced = tensor_.RegisterPacing(fg_, device, log_);
+            if (log_) log_(tensor_.PacingStatus().c_str());
+            if (FAILED(paced) && tensor_.Unsafe()) { status_ = tensor_.PacingStatus(); return paced; }
+            pacingRegistered_ = paced == S_OK;
+        }
         status_ = "XeFG x"+std::to_string(snapshot_.generatedFrames+1)+" ready; waiting for world inputs";
         return BeginFrame();
     }
@@ -321,7 +408,7 @@ namespace TheosRenderPipeline
             const auto result = FG(xefgSwapChainSetNumInterpolatedFrames_(fg_, count), "live multiplier");
             if (FAILED(result)) return result;
             snapshot_.generatedFrames = count;
-            tensor_.ResetPacing(fg_);
+            ResetPacing();
         }
         auto hr = LL(xellAddMarkerData_(ll_, snapshot_.frameId, XELL_SIMULATION_END), "simulation end");
         if (FAILED(hr) || FAILED(hr = LL(xellAddMarkerData_(ll_, snapshot_.frameId, XELL_RENDERSUBMIT_START), "render start"))) { return hr; }
@@ -332,7 +419,7 @@ namespace TheosRenderPipeline
         if (sleep.minimumIntervalUs != snapshot_.frameLimitUs &&
             FAILED(hr = LL(xellSetSleepMode_(ll_, &sleep), "output cap"))) { return hr; }
         if (FAILED(hr = FG(xefgSwapChainSetEnabled_(fg_, generate), "generation options"))) { return hr; }
-        if (generate != snapshot_.enabled) tensor_.ResetPacing(fg_);
+        if (generate != snapshot_.enabled) ResetPacing();
         snapshot_.frameLimitUs = sleep.minimumIntervalUs;
         if (generate) {
             if (!list) { return E_POINTER; }
@@ -382,7 +469,7 @@ namespace TheosRenderPipeline
         ++snapshot_.presents; snapshot_.totalOutputs += status.framesPresented;
         if (status.framesPresented > 1) { ++snapshot_.generatedPresents; }
         status_ = snapshot_.enabled ? "XeFG x"+std::to_string(snapshot_.generatedFrames+1)+" active" : "XeFG passthrough";
-        if (tensor_.Selected()) {
+        if (usingTensor_) {
             const auto state = tensor_.Snapshot();
             snapshot_.tensorLaunches = state.launches; snapshot_.tensorFallbacks = state.fallbacks;
             snapshot_.pacing = tensor_.PacingStats();
@@ -410,7 +497,7 @@ namespace TheosRenderPipeline
     {
         if (!initialized_) { return S_OK; }
         auto hr = FG(xefgSwapChainSetEnabled_(fg_, 0), "disable before retirement");
-        if (SUCCEEDED(hr)) { snapshot_.enabled = false; tensor_.ResetPacing(fg_); }
+        if (SUCCEEDED(hr)) { snapshot_.enabled = false; ResetPacing(); }
         return hr;
     }
     HRESULT XeFGPresenter::Destroy()
@@ -418,7 +505,8 @@ namespace TheosRenderPipeline
         if (fg_) {
             const auto hr = FG(xefgSwapChainDestroy_(fg_), "destroy presenter and internal work");
             if (FAILED(hr)) { return hr; }
-            retiredPacingContext_ = fg_;
+            if (pacingRegistered_) { retiredPacingContext_ = fg_; }
+            pacingRegistered_ = false;
             fg_ = nullptr; initialized_ = false; frameBegun_ = presentPending_ = false;
         }
         if (retiredPacingContext_) {

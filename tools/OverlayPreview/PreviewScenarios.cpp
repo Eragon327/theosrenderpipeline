@@ -282,7 +282,59 @@ PreviewScenario Objects()
     return scenario;
 }
 
+// NR after upscaling with the live comparison on: Split at 60% and a held frame.
+PreviewScenario Compare()
+{
+    auto scenario = Healthy();
+    scenario.name = "compare";
+    scenario.summary = "NR after upscaling with Split at 60% and Freeze frame on";
+    scenario.applied.sourceDLSSG.neuralBeforeUpscaling = false;
+    scenario.draft = scenario.applied;
+    auto& applied = scenario.view.neuralApplied;
+    applied.beforeUpscaling = false;
+    applied.compare = {true, 0.6f, true};
+    return scenario;
+}
+
+// Ratio reconstruction of linear HDR input with adaptive exposure at +0.5 EV.
+PreviewScenario Exposure()
+{
+    auto scenario = Healthy();
+    scenario.name = "exposure";
+    scenario.summary = "Ratio reconstruction, linear HDR input, adaptive exposure +0.5 EV";
+    auto& reconstruction = scenario.applied.sourceDLSSG.neuralReconstruction;
+    reconstruction.method = TheosRenderPipeline::NeuralRendering::ResolveMethod::Ratio;
+    reconstruction.colorIsHDR = true;
+    reconstruction.adaptiveExposure = true;
+    reconstruction.exposureBias = 0.5f;
+    scenario.draft = scenario.applied;
+    scenario.view.neuralApplied.reconstruction = reconstruction;
+    return scenario;
+}
+
 // A non-NVIDIA GPU: XeSS upscaling and XeFG x2, with NR unavailable.
+PreviewScenario Intel();
+// Universal on NVIDIA: the tensor model was asked for x5 and safely refused, so
+// the running presenter is x2 only and x3-x6 are greyed with Intel's reason.
+PreviewScenario TensorRefused()
+{
+    auto scenario = Intel();
+    scenario.name = "tensor-refused";
+    scenario.summary = "XeFG tensor model refused at x5; x3-x6 greyed with the reason";
+    auto& view = scenario.view;
+    view.nvidiaAdapter = true;
+    view.xefgUnlockAvailable = true;
+    view.xefgTensorRequested = true;
+    view.xefg.experimentalMFG = true;
+    view.xefgUnlockStatus = "XeFG model safely refused; official 1.3.4 x2 retained: model catalog not recognised";
+    view.xefgTensorStatus = view.xefgUnlockStatus;
+    scenario.applied.sourceDLSSG.xefgTensorCores = true;
+    scenario.applied.sourceDLSSG.xefg.generatedFrames = 4;
+    scenario.applied.sourceDLSSG.xefg.experimentalMFG = true;
+    scenario.draft = scenario.applied;
+    return scenario;
+}
+
 PreviewScenario Intel()
 {
     auto scenario = Healthy();
@@ -337,5 +389,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Intel(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Intel(), TensorRefused(), Lab()};
 }

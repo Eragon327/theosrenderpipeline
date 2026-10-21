@@ -190,7 +190,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 					auto residualDesc = workDesc; residualDesc.Width = sceneDesc.Width;
 					residualDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 					if (!create(residualDesc, residual_)) { return false; }
-				} else if (!fusedColor_ && (reconstruction.colorIsHDR || reconstruction.producerColor) && !create(sceneDesc, encoded_)) { return false; }
+				} else if (!fusedColor_ && (reconstruction.colorIsHDR || reconstruction.producerColor ||
+					(options.beforeUpscaling && method == NeuralRendering::ResolveMethod::Ratio)) && !create(sceneDesc, encoded_)) { return false; }
 			}
 			if (!options.WorldOnly()) {
 				D3D12_DESCRIPTOR_RANGE ranges[2]{};
@@ -248,11 +249,54 @@ namespace TheosRenderPipeline::SourceDLSSG
 
 #include "SourceDLSSGNeuralSecondPass.inl"
 
+	bool NeuralPass::HoldFrame(ID3D12Device* device, ID3D12GraphicsCommandList* list, bool freeze,
+		ID3D12Resource*& motion, ID3D12Resource*& depth, ID3D12Resource* hudless, ID3D12Resource*& objectMask, bool& reset)
+	{
+		if (!freeze) {
+			// Release the hold. The model's history is of the held frame. The held
+			// textures stay allocated: lists in flight may still read them, and the
+			// pass's retirement releases them with everything else.
+			if (frozen_) { reset = true; }
+			frozen_ = false;
+			return true;
+		}
+		auto allocate = [&](ID3D12Resource* like, Microsoft::WRL::ComPtr<ID3D12Resource>& out) {
+			if (out) { return true; }
+			// Committed default-heap memory starts zeroed; stillMotion_ relies on it.
+			auto desc = like->GetDesc();
+			D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+			if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+				D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&out)))) {
+				status_ = "NR freeze-frame allocation failed"; return false;
+			}
+			return true;
+		};
+		if (!allocate(hudless, heldColor_) || !allocate(depth, heldDepth_) || !allocate(motion, stillMotion_) ||
+			(objectMask && !allocate(objectMask, heldMask_))) { return false; }
+		auto copy = [&](ID3D12Resource* source, ID3D12Resource* destination) {
+			if (FAILED(Interop::RecordCopy(list, source, destination))) { status_ = "NR freeze-frame copy rejected"; return false; }
+			return true;
+		};
+		if (!frozen_) {
+			// Take this frame. A mask that appears later is held from its first frame.
+			if (!copy(hudless, heldColor_.Get()) || !copy(depth, heldDepth_.Get()) ||
+				(objectMask && !copy(objectMask, heldMask_.Get()))) { return false; }
+			frozen_ = true; reset = true;
+		}
+		// The scene input is rewritten in place: everything after NR, including
+		// the HUD-less tag and the comparison, sees the held frame.
+		if (!copy(heldColor_.Get(), hudless)) { return false; }
+		motion = stillMotion_.Get(); depth = heldDepth_.Get();
+		if (objectMask) { objectMask = heldMask_.Get(); }
+		return true;
+	}
+
 	bool NeuralPass::Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
 		const NeuralOptions& options, bool reset, bool depthInverted, float scaleX, float scaleY,
 		ID3D12Resource* motion, ID3D12Resource* depth, ID3D12Resource* ui,
 		ID3D12Resource* hudless, ID3D12Resource* composed, std::uint64_t timestampFrequency,
-		const D3D12StageMarks& marks, ID3D12Resource* objectMask, std::array<float,2> objectMaskGuideOffset)
+		const D3D12StageMarks& marks, ID3D12Resource* objectMask, std::array<float,2> objectMaskGuideOffset,
+		std::array<float,2> colorJitter)
 	{
 		if (!device || !list || slot >= heaps_.size() || options.passes < 1 || options.passes > 2 || !SameSize(motion, depth) ||
 			!Texture(hudless) || (options.WorldOnly() ? (ui || composed || options.tuning.uiCorrection) :
@@ -261,6 +305,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 			status_ = "NR source input contract is incomplete"; return false;
 		}
 		if (!Initialize(device, options, motion, hudless, composed)) { return false; }
+		// Before upscaling the held frame would reach DLSS without its jitter.
+		if (!HoldFrame(device, list, options.compare.freeze && !options.beforeUpscaling, motion, depth, hudless, objectMask, reset)) {
+			return false;
+		}
 		const int effectivePasses = options.EffectivePasses();
 		if (effectivePasses == 1) { secondHistoryInvalid_ = true; }
 		InitializeTelemetry(device, timestampFrequency);
@@ -296,15 +344,58 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(hr)) { status_ = std::format("NR reconstruction recording failed 0x{:08X}", static_cast<UINT>(hr)); }
 			return SUCCEEDED(hr);
 		};
+		// Adaptive exposure measures the original scene before anything encodes it.
+		const bool adaptive = resolving && reconstruction.adaptiveExposure && reconstruction.colorIsHDR &&
+			!reconstruction.producerColor;
+		constants.adaptiveExposure = adaptive;
+		constants.exposureBias = reconstruction.exposureBias;
+		if (adaptive) {
+			if (!exposure_) {
+				D3D12_RESOURCE_DESC desc{};
+				desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = desc.Height = 1;
+				desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
+				desc.Format = DXGI_FORMAT_R32_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+				if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+					D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&exposure_)))) {
+					status_ = "NR exposure allocation failed"; return false;
+				}
+			}
+			// Half the remaining difference every quarter second: about a second to settle.
+			const auto now = std::chrono::steady_clock::now();
+			const float seconds = std::clamp(std::chrono::duration<float>(now - exposureTime_).count(), 0.0f, 0.25f);
+			constants.exposureRate = 1.0f - std::exp2(-seconds / 0.25f);
+			constants.exposureReset = reset || !exposureValid_;
+			resolve_.SetExposure(exposure_.Get());
+			if (!dispatch(12, ResolveKernel::MeasureExposure, hudless, nullptr, nullptr, exposure_.Get())) { return false; }
+			exposureTime_ = now; exposureValid_ = true;
+			constants.exposureReset = false;
+		} else {
+			resolve_.SetExposure(nullptr);
+			exposureValid_ = false;
+		}
+		// Before upscaling, Ratio shows NR the frame on the steady grid and moves its
+		// change back to the jittered one; DLSS still receives the jittered pixels.
+		// Only the passes that read the raw frame, and the final resolve, use it.
+		const bool steady = method == NeuralRendering::ResolveMethod::Ratio &&
+			options.beforeUpscaling && std::isfinite(colorJitter[0]) && std::isfinite(colorJitter[1]) &&
+			(colorJitter[0] != 0 || colorJitter[1] != 0);
+		const auto setJitter = [&](bool on) {
+			constants.jitterX = on ? colorJitter[0] : 0; constants.jitterY = on ? colorJitter[1] : 0;
+		};
 		if (resolving) {
 			if (encoded_) {
 				constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
+				setJitter(steady);
 				if (!dispatch(0, ResolveKernel::Ratio, hudless, nullptr, nullptr, encoded_.Get())) { return false; }
+				setJitter(false);
 				featureColor = encoded_.Get();
 			}
 			if (workColor_) {
 				constants.targetWidth = constants.workWidth; constants.targetHeight = constants.workHeight;
+				setJitter(steady && featureColor == hudless);
 				if (!dispatch(1, fusedColor_ ? ResolveKernel::PrepareColor : ResolveKernel::Downsample, featureColor, nullptr, nullptr, workColor_.Get())) { return false; }
+				setJitter(false);
 				featureColor = workColor_.Get();
 			}
 		}
@@ -468,8 +559,38 @@ namespace TheosRenderPipeline::SourceDLSSG
 				constants.mode = 1;
 				if (!dispatch(3, ResolveKernel::Residual, hudless, residual_.Get(), nullptr, corrected_.Get())) { return false; }
 			} else {
+				// Broad and Detail: NR's change in stops at its grid, blurred across
+				// regions but not across the proxy's own edges, for the resolve to split.
+				const bool bands = !reconstruction.producerColor && reconstruction.ToneBands();
+				constants.broad = reconstruction.broadStrength; constants.detail = reconstruction.detailStrength;
+				constants.toneBands = bands;
+				if (bands) {
+					const auto work = featureColor->GetDesc();
+					for (auto* tone : { std::addressof(toneData_), std::addressof(toneScratch_) }) {
+						if (*tone) { continue; }
+						D3D12_RESOURCE_DESC desc{};
+						desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = work.Width; desc.Height = work.Height;
+						desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
+						desc.Format = DXGI_FORMAT_R16G16_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+						D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+						if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+							D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(tone->ReleaseAndGetAddressOf())))) {
+							status_ = "NR broad/detail allocation failed"; return false;
+						}
+					}
+					constants.targetWidth = static_cast<UINT>(work.Width); constants.targetHeight = work.Height;
+					if (!dispatch(13, ResolveKernel::PrepareTone, featureColor, modelResult, nullptr, toneData_.Get())) { return false; }
+					constants.mode = 0;
+					if (!dispatch(14, ResolveKernel::FilterTone, toneData_.Get(), nullptr, nullptr, toneScratch_.Get())) { return false; }
+					constants.mode = 1;
+					if (!dispatch(15, ResolveKernel::FilterTone, toneScratch_.Get(), nullptr, nullptr, toneData_.Get())) { return false; }
+					resolve_.SetTone(toneData_.Get());
+				}
 				constants.mode = 1; constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
+				setJitter(steady);
 				if (!dispatch(3, ResolveKernel::Ratio, featureColor, modelResult, hudless, corrected_.Get())) { return false; }
+				setJitter(false);
+				resolve_.SetTone(nullptr);
 			}
 		}
 
@@ -515,6 +636,41 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(hr)) { status_ = std::format("NR object-mask preview failed 0x{:08X}", static_cast<UINT>(hr)); return false; }
 			const auto copied = Interop::RecordCopy(list, objectResult_.Get(), corrected_.Get());
 			if (FAILED(copied)) { status_ = std::format("NR object-mask preview copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
+			if (!resolving) {
+				Barriers barriers{list};
+				barriers.Add(corrected_.Get(), common, write);
+				transitionInputs(barriers, common, read);
+				barriers.Flush();
+			}
+		}
+		if (options.compare.split) {
+			// Like the preview, the comparison takes corrected_ and the inputs in COMMON.
+			if (!splitResult_) {
+				auto desc = corrected_->GetDesc();
+				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+				const auto hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+					D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&splitResult_));
+				if (FAILED(hr)) { status_ = "NR compare allocation failed"; return false; }
+			}
+			if (const auto hr = resolve_.Initialize(device); FAILED(hr)) {
+				status_ = std::format("NR compare kernels failed 0x{:08X}", static_cast<UINT>(hr)); return false;
+			}
+			if (!resolving) {
+				Barriers barriers{list};
+				barriers.Add(corrected_.Get(), write, common);
+				transitionInputs(barriers, read, common);
+				barriers.Flush();
+			}
+			ResolveConstants split;
+			split.targetWidth = split.sourceWidth = static_cast<UINT>(corrected_->GetDesc().Width);
+			split.targetHeight = split.sourceHeight = corrected_->GetDesc().Height;
+			split.splitX = NeuralRendering::SplitColumn(options.compare, split.targetWidth);
+			if (const auto hr = resolve_.Record(device, list, slot, 11, ResolveKernel::Split, split, hudless, corrected_.Get(),
+				nullptr, splitResult_.Get()); FAILED(hr)) {
+				status_ = std::format("NR compare failed 0x{:08X}", static_cast<UINT>(hr)); return false;
+			}
+			const auto copied = Interop::RecordCopy(list, splitResult_.Get(), corrected_.Get());
+			if (FAILED(copied)) { status_ = std::format("NR compare copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
 			if (!resolving) {
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), common, write);

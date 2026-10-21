@@ -17,10 +17,23 @@ cbuffer NRParams : register(b0) {
     uint Peripheral, EncodedFormat;
     uint GuideWidth, GuideHeight;
     float MotionScaleX, MotionScaleY;
+    uint SplitX;
+    float ExposureBias, ExposureRate;
+    uint AdaptiveExposure, ExposureReset;
+    // Before upscaling: the frame's camera jitter in source pixels. A steady-grid
+    // position u was rendered at u + Jitter. Zero for every other dispatch.
+    float JitterX, JitterY;
+    // Broad and Detail: scale NR's region-wide relighting and its local detail.
+    float Broad, Detail;
+    uint ToneBands;
 };
 Texture2D<float4> Tex0 : register(t0);
 Texture2D<float4> Tex1 : register(t1);
 Texture2D<float4> Tex2 : register(t2);
+// Adaptive exposure: the white point MeasureExposure wrote this frame.
+Texture2D<float> ExposureTex : register(t3);
+// Broad and Detail: NR's brightness change in stops after the edge-aware blur.
+Texture2D<float2> ToneTex : register(t4);
 RWTexture2D<float4> OutputColor : register(u0);
 // Only the entry point's output is live in the compiled shader.
 RWTexture2D<float> OutputDepth : register(u0);
@@ -74,6 +87,8 @@ void FilterColor(uint3 p, bool encode) {
     float2 a = float2(p.xy) * float2(SourceWidth,SourceHeight) / float2(TargetWidth,TargetHeight);
     float2 b = float2(p.xy+1) * float2(SourceWidth,SourceHeight) / float2(TargetWidth,TargetHeight);
     if (Peripheral) { a=UnpackPosition(p.xy); b=UnpackPosition(p.xy+1); }
+    // Integrate the steady-grid footprint where the jittered frame holds it.
+    a+=float2(JitterX,JitterY); b+=float2(JitterX,JitterY);
     float4 sum = 0; float weight = 0;
     for (int y=(int)floor(a.y); y<(int)ceil(b.y); ++y) {
         float wy = max(0, min(b.y,y+1.0)-max(a.y,(float)y));
@@ -100,6 +115,19 @@ void FilterColor(uint3 p, bool encode) {
         sum+=Tex0.Load(int3(ClampPixel(base+int2(x,y),uint2(SourceWidth,SourceHeight)),0))*w;
     }
     OutputColor[p.xy]=sum;
+}
+)"
+// MSVC limits one literal to 16 KB; adjacent literals concatenate.
+R"(// Compare: original left of SplitX, NR's result from it, and a two-pixel
+// black/white divider that reads on bright and dark content alike.
+[numthreads(8,8,1)] void Split(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=TargetWidth || p.y>=TargetHeight) return;
+    float4 result=Tex1.Load(int3(p.xy,0));
+    if (p.x+1==SplitX || p.x==SplitX) {
+        float v=((p.y/6)&1)?1:0;
+        OutputColor[p.xy]=float4(v,v,v,result.a); return;
+    }
+    OutputColor[p.xy]=p.x<SplitX ? Tex0.Load(int3(p.xy,0)) : result;
 }
 [numthreads(8,8,1)] void RestoreSecond(uint3 p : SV_DispatchThreadID) {
     if (p.x>=TargetWidth || p.y>=TargetHeight) return;
@@ -184,6 +212,8 @@ void FilterColor(uint3 p, bool encode) {
     OutputColor[p.xy]=float4(Swizzle(saturate(Swizzle(original.rgb)+delta/(abs(weight)>0.000001?weight:1))),original.a);
 }
 float Luma(float3 c) { return dot(c,float3(0.212599993,0.715200007,0.0722000003)); }
+// The white point linear HDR input is divided by: fixed, or measured per frame.
+float White() { return max(AdaptiveExposure ? ExposureTex.Load(int3(0,0,0)) : WhitePoint, 0.0001); }
 float3 ToLinear(float3 c) {
     c=saturate(c);
     return lerp(c*0.0773993805, pow((c+0.0549999997)*0.947867334,2.40000010),step(0.0404499993,c));
@@ -213,6 +243,34 @@ float3 GamutClip(float3 c) {
     return float3(dot(wide,float3(1.70505095,-0.621792018,-0.0832590014)),
         dot(wide,float3(-0.130255997,1.14080501,-0.0105480002)),dot(wide,float3(-0.0240030009,-0.128968999,1.15297198)));
 }
+// NR's model carries a small, consistent colour bias (a green cast on grey
+// shading). Where the original is near neutral, NR may change its saturation
+// along the original's own hue, never rotate it or push it past neutral; the
+// guard releases as the original carries chroma of its own (OkLab 0.02-0.08).
+// Lightness is kept. Linear RGB in and out.
+float3 HueGuard(float3 original, float3 result) {
+    float3 o=ToLab(max(original,0)), r=ToLab(max(result,0));
+    float chroma=length(o.yz), keep=1-smoothstep(0.02,0.08,chroma);
+    if (keep<=0) return result;
+    float2 axis=chroma>0.000001 ? o.yz/chroma : float2(0,0);
+    r.yz=lerp(r.yz,axis*max(dot(r.yz,axis),0),keep);
+    return GamutClip(FromLab(r));
+}
+// Per frame, not per pixel: black is a legitimate answer (a shadow NR paints
+// over a lit surface). Only a model output with nothing anywhere on an 8x8
+// grid, such as an empty first evaluation, counts as no answer. Every thread of
+// the group must call this; Mode and ProducerColor are uniform.
+groupshared uint AnswerSeen;
+bool ModelAnswered(uint index) {
+    if (index==0) AnswerSeen=0;
+    GroupMemoryBarrierWithGroupSync();
+    uint2 size=max(uint2(WorkWidth,WorkHeight),1);
+    uint2 q=min(uint2((float2(index%8,index/8)+0.5)*float2(size)/8.0),size-1);
+    float3 n=Tex1.Load(int3(q,0)).rgb;
+    if (all(isfinite(n)) && max(n.r,max(n.g,n.b))>0.00001) InterlockedOr(AnswerSeen,1u);
+    GroupMemoryBarrierWithGroupSync();
+    return AnswerSeen!=0;
+}
 // A paired range conversion in the producer's own RGB coordinates. No gamma,
 // gamut or exposure interpretation is inferred from its floating-point format.
 // Reuse the original pixel's scale when returning NR's delta; never invert a
@@ -231,7 +289,7 @@ float4 EncodedTap(float4 c) {
         c=float4(Swizzle(saturate(rgb)),1);
     } else {
         if (!Passthrough) {
-            rgb/=max(WhitePoint,0.0001);
+            rgb/=White();
             float peak=max(rgb.r,max(rgb.g,rgb.b));
             if (peak>0.75) rgb*=(0.75+0.25*(1-exp2(-5.77078009*(peak-0.75))))/peak;
             rgb=ToSRGB(rgb);
@@ -254,6 +312,9 @@ float3 RestoreProducer(float3 original, float3 a, float3 n) {
     float3 brightnessDelta=base*(brightnessRatio-1);
     float3 result=base+TransferStrength*lerp(brightnessDelta,delta,ColourStrength);
     if (!all(isfinite(result))) return original;
+    // CS completes the scene in 2.2-gamma RGB; judge hue in linear light. An
+    // unchanged pixel skips the round trip so a no-op model stays exact.
+    if (any(result!=base)) result=pow(max(HueGuard(pow(base,2.2),pow(max(result,0),2.2)),0),1/2.2);
     // Bound gain and prevent FP16 overflow. The original signed channels and
     // alpha are retained outside the nonnegative model proxy.
     float limit=min(peak*max(MaxRatio,1),max(peak,65504));
@@ -262,16 +323,39 @@ float3 RestoreProducer(float3 original, float3 a, float3 n) {
                   original.g<0?original.g:result.g,
                   original.b<0?original.b:result.b);
 }
-[numthreads(8,8,1)] void Ratio(uint3 p : SV_DispatchThreadID) {
+)"
+R"(// Catmull-Rom at a source position (pixel centres at +0.5), clamped to the
+// 2x2 neighbourhood so HDR highlights cannot ring. Moves the jittered frame
+// onto the steady grid NR sees; the resolve moves NR's change back.
+float4 SampleSteady(float2 position) {
+    float2 q=position-0.5, f=frac(q);
+    int2 base=int2(floor(q));
+    float2 w[4]={ f*(-0.5+f*(1-0.5*f)), 1+f*f*(-2.5+1.5*f), f*(0.5+f*(2-1.5*f)), f*f*(-0.5+0.5*f) };
+    float4 sum=0, low=65504, high=-65504;
+    [unroll] for (int y=0; y<4; ++y) {
+        [unroll] for (int x=0; x<4; ++x) {
+            float4 tap=Tex0.Load(int3(ClampPixel(base+int2(x-1,y-1),uint2(SourceWidth,SourceHeight)),0));
+            tap=all(isfinite(tap)) ? tap : 0;
+            sum+=tap*w[x].x*w[y].y;
+            if ((x==1||x==2) && (y==1||y==2)) { low=min(low,tap); high=max(high,tap); }
+        }
+    }
+    return clamp(sum,low,high);
+}
+[numthreads(8,8,1)] void Ratio(uint3 p : SV_DispatchThreadID, uint index : SV_GroupIndex) {
+    const bool answered = Mode == 1 && !ProducerColor ? ModelAnswered(index) : true;
     if (p.x >= TargetWidth || p.y >= TargetHeight) return;
+    const float2 jitter=float2(JitterX,JitterY);
+    const bool jittered=any(jitter!=0);
     if (Mode == 0) {
-        float4 c=Tex0.Load(int3(p.xy,0)); float3 rgb=max(Swizzle(c.rgb),0);
+        float4 c=jittered ? SampleSteady(p.xy+0.5+jitter) : Tex0.Load(int3(p.xy,0));
+        float3 rgb=max(Swizzle(c.rgb),0);
         if (ProducerColor) {
             rgb=all(isfinite(c.rgb)) ? rgb/ProducerScale(rgb) : 0;
             OutputColor[p.xy]=float4(Swizzle(saturate(rgb)),1); return;
         }
         if (!Passthrough) {
-            rgb/=max(WhitePoint,0.0001);
+            rgb/=White();
             // Bound the brightest channel with one RGB scale. A luminance-only
             // shoulder lets saturated highlights exceed one; ToSRGB then clips
             // channels separately and changes hue even when NR changes nothing.
@@ -284,11 +368,16 @@ float3 RestoreProducer(float3 original, float3 a, float3 n) {
     float4 original=Tex2.Load(int3(p.xy,0));
     float3 a=0, n=0;
     uint2 size=max(uint2(WorkWidth,WorkHeight),1);
-    if (all(size==uint2(TargetWidth,TargetHeight)) && !Peripheral) {
+    // Where this pixel samples NR's grid; the tone bands are read there too.
+    float2 tonePos=float2(p.xy);
+    if (all(size==uint2(TargetWidth,TargetHeight)) && !Peripheral && !jittered) {
         a=Swizzle(Tex0.Load(int3(p.xy,0)).rgb); n=Swizzle(Tex1.Load(int3(p.xy,0)).rgb);
     } else {
-        float2 pos=(p.xy+0.5)*size/float2(TargetWidth,TargetHeight)-0.5; float weight=0;
-        if (Peripheral) pos=PackPosition(p.xy+0.5)-0.5;
+        // This jittered pixel sits at p - jitter on the steady grid NR saw.
+        float2 steady=p.xy+0.5-jitter;
+        float2 pos=steady*size/float2(TargetWidth,TargetHeight)-0.5; float weight=0;
+        if (Peripheral) pos=PackPosition(steady)-0.5;
+        tonePos=pos;
         [loop] for (int y=-2; y<=3; ++y) {
             [loop] for (int x=-2; x<=3; ++x) {
                 int2 q=int2(floor(pos))+int2(x,y);
@@ -304,7 +393,7 @@ float3 RestoreProducer(float3 original, float3 a, float3 n) {
     }
     if (TransferStrength==0) { OutputColor[p.xy]=original; return; }
     if (!Passthrough) { a=ToLinear(a); n=ToLinear(n); }
-    float white=Passthrough?1:max(WhitePoint,0.0001);
+    float white=Passthrough?1:White();
     float3 base=Swizzle(original.rgb)/white, result=base;
     float by=Luma(base), ny=Luma(n), ay=Luma(a);
     if (ny>0.00001) {
@@ -313,15 +402,82 @@ float3 RestoreProducer(float3 original, float3 a, float3 n) {
         float chroma=length(normal.yz);
         scaled.yz=normal.yz*(chroma==0?1:length(scaled.yz)/chroma);
         result=lerp(base,GamutClip(FromLab(scaled)),TransferStrength);
+    } else if (answered) {
+        // NR painted this pixel black: darken the original by the same ratio.
+        result=lerp(base,base*(max(ny,0)+0.0001)/(max(ay,0)+0.0001),TransferStrength);
     }
     float lumaRatio=max((Luma(result)+0.001953125)/(max(by,0)+0.001953125),0);
     result=max(lerp(base*lumaRatio,result,ColourStrength),0);
+    if (ToneBands) {
+        // NR's change in stops splits into the blurred (broad) part and the rest
+        // (detail); scale each. Broad and Detail at 1 leave the result unchanged.
+        float delta=log2((max(ny,0)+0.001953125)/(max(ay,0)+0.001953125));
+        float broad=ToneTex.Load(int3(clamp(int2(floor(tonePos+0.5)),int2(0,0),int2(size)-1),0)).y;
+        float tone=(Broad-1)*broad+(Detail-1)*(delta-broad);
+        result*=exp2(clamp(tone,-4,4));
+    }
+    result=HueGuard(base,result);
     // Limit the final colour, including extrapolation above colour strength 1.
     // Capping only the luminance branch lets the other branch bypass the limit.
     float resultY=Luma(result), maxY=max(by,0)*MaxRatio;
     if (resultY>maxY) result*=maxY/max(resultY,0.0000000001);
     result=min(result*white,65504);
     OutputColor[p.xy]=float4(Swizzle(result),original.a);
+}
+// Adaptive exposure. The geometric mean luminance of a 64x64 grid over the
+// source maps to mid-grey, shifted by the bias in EV, and adapts in log space
+// at ExposureRate per frame (snapping on reset). Writes the white point to the
+// 1x1 output, which the encode and Ratio passes then read. One 16x16 group.
+groupshared float ExposureSum[256];
+[numthreads(16,16,1)] void MeasureExposure(uint3 t : SV_GroupThreadID, uint index : SV_GroupIndex) {
+    float sum=0;
+    [unroll] for (uint y=0; y<4; ++y) {
+        [unroll] for (uint x=0; x<4; ++x) {
+            float2 cell=float2(t.xy*4+uint2(x,y))+0.5;
+            uint2 q=min(uint2(cell*float2(SourceWidth,SourceHeight)/64.0),uint2(SourceWidth,SourceHeight)-1);
+            float3 c=Swizzle(Tex0.Load(int3(q,0)).rgb);
+            sum+=log2(max(all(isfinite(c)) ? Luma(max(c,0)) : 0, 0.0001));
+        }
+    }
+    ExposureSum[index]=sum;
+    GroupMemoryBarrierWithGroupSync();
+    [unroll] for (uint s=128; s>0; s>>=1) {
+        if (index<s) ExposureSum[index]+=ExposureSum[index+s];
+        GroupMemoryBarrierWithGroupSync();
+    }
+    if (index==0) {
+        float target=ExposureSum[0]/4096.0-log2(0.18)-ExposureBias;
+        float previous=OutputDepth[uint2(0,0)];
+        bool usable=previous>0 && isfinite(previous) && !ExposureReset;
+        float current=usable ? lerp(log2(previous),target,saturate(ExposureRate)) : target;
+        OutputDepth[uint2(0,0)]=exp2(clamp(current,-20,20));
+    }
+}
+// Broad and Detail, at NR's grid: (log2 proxy luminance, NR's change in stops).
+// Tex0 is the proxy NR saw, Tex1 NR's answer, both display-encoded unless
+// Passthrough; luminance is judged in linear light with a shared shadow floor.
+[numthreads(8,8,1)] void PrepareTone(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=TargetWidth || p.y>=TargetHeight) return;
+    float3 a=Swizzle(Tex0.Load(int3(p.xy,0)).rgb), n=Swizzle(Tex1.Load(int3(p.xy,0)).rgb);
+    if (!Passthrough) { a=ToLinear(a); n=ToLinear(n); }
+    float ay=max(all(isfinite(a)) ? Luma(a) : 0,0)+0.001953125, ny=max(all(isfinite(n)) ? Luma(n) : 0,0)+0.001953125;
+    OutputMotion[p.xy]=float2(log2(ay),log2(ny/ay));
+}
+// Separable edge-aware blur of NR's change (Mode 0 horizontal, 1 vertical):
+// 17 taps spaced so the radius is about 1/12 of the grid's width, Gaussian in
+// distance and falling off across edges in the proxy's own brightness.
+[numthreads(8,8,1)] void FilterTone(uint3 p : SV_DispatchThreadID) {
+    if (p.x>=TargetWidth || p.y>=TargetHeight) return;
+    int step=max(1,int(TargetWidth/96));
+    int2 axis=Mode==0 ? int2(step,0) : int2(0,step);
+    float2 centre=Tex0.Load(int3(p.xy,0)).xy;
+    float sum=0, weight=0;
+    [unroll] for (int i=-8; i<=8; ++i) {
+        float2 tap=Tex0.Load(int3(ClampPixel(int2(p.xy)+axis*i,uint2(TargetWidth,TargetHeight)),0)).xy;
+        float w=exp(-i*i/32.0)*exp(-3*abs(tap.x-centre.x));
+        sum+=tap.y*w; weight+=w;
+    }
+    OutputMotion[p.xy]=float2(centre.x,sum/max(weight,0.000001));
 }
 )";
 }

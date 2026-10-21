@@ -43,14 +43,14 @@ int wmain(int argc, wchar_t** argv)
             "namespace TheosRenderPipeline::SourceDLSSG::CompiledNeuralShaders {\n"
             "struct Bytecode { const unsigned char* data; std::size_t size; };\n";
         const char* entries[]{ "Downsample", "Residual", "Ratio", "PackDepth", "PackMotion",
-            "PrepareColor", "PackGuides", "ResizeColor", "RestoreSecond" };
+            "PrepareColor", "PackGuides", "ResizeColor", "RestoreSecond", "Split", "MeasureExposure", "PrepareTone", "FilterTone" };
         for (const auto* entry : entries) {
             Compile(generated, entry, kNeuralResolveShader, sizeof(kNeuralResolveShader) - 1,
                 "TheosRenderPipeline-NR-resolve", entry, "cs_5_1");
         }
         Compile(generated, "ComposeBytes", kNeuralComposeShader, sizeof(kNeuralComposeShader) - 1,
             "SourceDLSSG-NR-compose", "main", "cs_5_0");
-        generated << "inline constexpr std::array<Bytecode, 9> Resolve{{\n";
+        generated << "inline constexpr std::array<Bytecode, 13> Resolve{{\n";
         for (const auto* entry : entries) { generated << '{' << entry << ", sizeof(" << entry << ")},\n"; }
         generated << "}};\ninline constexpr Bytecode Compose{ComposeBytes, sizeof(ComposeBytes)};\n}\n";
 

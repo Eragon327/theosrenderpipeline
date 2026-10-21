@@ -1,3 +1,45 @@
+# 0.5.1
+
+Game-tested on an RTX 4080 SUPER with ENB. The Community Shaders changes (the grey
+guard on its colour path and the steady grid before upscaling) passed GPU tests
+but have not been tested in game.
+
+- Add Neural Rendering > Compare, a live, session-only comparison that is never
+  saved. Split shows the frame without NR left of a movable line. Freeze frame
+  (after upscaling only) keeps NR working on one held frame while the game runs
+  on, so setting changes compare on identical content.
+- Add NR Exposure for Ratio reconstruction of linear HDR input: Fixed keeps the
+  white point; Adaptive measures the frame's average brightness and adapts over
+  about a second, with a bias in EV, so NR sees interiors and exteriors at a
+  similar brightness. Only NR's view changes. Both are weather override settings
+  (`AdaptiveExposure`, `ExposureBias`; INI `NRAdaptiveExposure`, `NRExposureBias`).
+- Before upscaling, Ratio reconstruction now shows NR the frame on the steady,
+  unjittered grid and moves its change back to each jittered pixel. DLSS still
+  receives the jittered frame, on TRP's own route and with Community Shaders.
+  Auto and Residual are unchanged.
+- Keep greys grey: where the original is near neutral, NR may change saturation
+  along its own hue but not tint it, which removes NR's green cast on grey
+  shading (Ratio and the Community Shaders route).
+- Ratio reconstruction treats a black answer from NR as a real shadow. Only an
+  entirely empty model output keeps the original, so shadows NR paints over lit
+  surfaces no longer leave bright specks.
+- Add NR Broad and Detail for Ratio reconstruction: Broad scales how much NR
+  relights whole areas and objects (lower it if object shadows change as the view
+  changes), Detail its local contrast and shading. Both default to 1, which leaves
+  the result unchanged, and both are weather override settings (`BroadStrength`,
+  `DetailStrength`; INI `NRBroadStrength`, `NRDetailStrength`).
+- The XeFG tensor model now switches live: Apply recreates the XeFG presenter on
+  the other Intel SDK copy after a short pause, instead of needing a restart.
+  Both copies stay loaded and share one XeLL, and each keeps its own pipeline
+  cache.
+- Once a running XeFG presenter has tried x3 to x6 and Intel refused or capped
+  them, the Multiplier row greys the counts it cannot reach, with the reason.
+- NR settings that rebuild the model (placement, reconstruction, network, input)
+  no longer re-verify the 266 MB runtime each time, which froze the game for
+  several seconds. The log records each rebuild step's time.
+- Build the renderer with whole-program optimization, which its link-time code
+  generation already expected.
+
 # 0.5.0
 
 Settings note: object rules from 0.4.5 (`NRObjectMasks` and the `NR*Strength`

@@ -6,6 +6,8 @@
 #include <bcrypt.h>
 
 #include <fstream>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace TheosRenderPipeline::NeuralRenderingRuntimeIdentity
@@ -119,8 +121,30 @@ namespace TheosRenderPipeline::NeuralRenderingRuntimeIdentity
 			return result;
 		}
 		result.size = std::filesystem::file_size(result.path, error);
+		// Hashing a 266 MB runtime through MO2's virtual file system takes
+		// seconds, and every NR rebuild verifies it again. Reuse the result while
+		// the file's path, size and modification time are unchanged.
+		struct Cached { std::uint64_t size; std::filesystem::file_time_type written; std::string version, sha256; };
+		static std::mutex cacheMutex;
+		static std::unordered_map<std::wstring, Cached> cache;
+		const auto written = std::filesystem::last_write_time(result.path, error);
+		const auto key = result.path.wstring();
+		{
+			std::scoped_lock lock(cacheMutex);
+			const auto found = cache.find(key);
+			if (!error && found != cache.end() && found->second.size == result.size && found->second.written == written) {
+				result.version = found->second.version;
+				result.sha256 = found->second.sha256;
+				result.matched = result.size == a_expectedSize && result.sha256 == a_expectedSha256;
+				return result;
+			}
+		}
 		result.version = FileVersion(result.path);
 		result.sha256 = Sha256(result.path);
+		if (!error && !result.sha256.empty()) {
+			std::scoped_lock lock(cacheMutex);
+			cache[key] = { result.size, written, result.version, result.sha256 };
+		}
 		result.matched = !error && result.size == a_expectedSize &&
 			result.sha256 == a_expectedSha256;
 		return result;

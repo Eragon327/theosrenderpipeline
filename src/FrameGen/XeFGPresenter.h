@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 #include "XeFGOptions.h"
 #include "XeFGTensorRuntime.h"
 
@@ -68,11 +70,15 @@ namespace TheosRenderPipeline
         // retires. A failure leaves context handles retained and stops replacement.
         HRESULT Destroy();
         bool Initialized() const { return initialized_; }
-        HMODULE RuntimeModule() const { return fgModule_; }
-        // Scope by the selected runtime bundle, which Probe establishes before
-        // Create populates the per-context snapshot and Destroy later clears it.
-        const char* PipelineCacheName() const { return tensor_.Selected() ? "xefg-tensor-v1" : "xefg"; }
-        void ResetHistory() { needsReset_ = true; snapshot_.prepared = false; tensor_.ResetPacing(fg_); }
+        // The SDK copy the next Create uses, which Probe chose: Intel's own folder
+        // or the tensor bundle. Both stay loaded once used and share one XeLL.
+        HMODULE RuntimeModule() const { const auto wanted = LoadedRuntime(wanted_); return wanted ? wanted : fgModule_; }
+        const char* PipelineCacheName() const { return wantTensor_ ? "xefg-tensor-v1" : "xefg"; }
+        bool TensorWanted() const { return wantTensor_; }
+        bool TensorInUse() const { return usingTensor_; }
+        // The tensor request the last Probe saw; a different request needs a new presenter.
+        bool ProbedTensorRequest() const { return probedTensorRequest_; }
+        void ResetHistory() { needsReset_ = true; snapshot_.prepared = false; ResetPacing(); }
         const XeFGSnapshot& Snapshot() const { return snapshot_; }
         const std::string& Status() const { return status_; }
         const std::string& UnlockStatus() const { return unlockStatus_; }
@@ -86,12 +92,20 @@ namespace TheosRenderPipeline
     private:
         HRESULT FG(xefg_swapchain_result_t result, const char* operation);
         HRESULT LL(xell_result_t result, const char* operation);
+        // Loads a folder's libxess_fg beside any already loaded; never switches.
         HRESULT Load(const std::filesystem::path& directory);
+        // Binds the API to a loaded copy. Only while no presenter context exists.
+        HRESULT Activate(const std::filesystem::path& directory);
+        HMODULE LoadedRuntime(const std::filesystem::path& directory) const;
+        void ResetPacing() { if (pacingRegistered_) tensor_.ResetPacing(fg_); }
         void Trace(const char* stage) { status_ = stage; if (log_) { log_(stage); } }
         void (*log_)(const char*){};
         bool apiReady_{};
         HMODULE fgModule_{}, llModule_{};
         std::filesystem::path directory_;
+        std::vector<std::pair<std::filesystem::path, HMODULE>> runtimes_; // Loaded libxess_fg copies.
+        std::filesystem::path wanted_;
+        bool wantTensor_{}, usingTensor_{}, probedTensorRequest_{}, pacingRegistered_{};
         ID3D12Device* admittedDevice_{}; // Identity only; the backend owns the device.
 #define TRP_FG_FUNCTION(name) decltype(&::name) name##_{};
 #define TRP_LL_FUNCTION(name) decltype(&::name) name##_{};

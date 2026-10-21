@@ -371,6 +371,11 @@ void OverlayUI::SetXeFGFlipMetering(bool enabled)
     TheosRenderPipeline::SourceDLSSG::Backend::Get().ConfigureXeFGFlipMetering(enabled);
 }
 
+void OverlayUI::SetNeuralCompare(TheosRenderPipeline::NeuralRendering::CompareSettings compare)
+{
+    TheosRenderPipeline::SourceDLSSG::Backend::Get().ConfigureNeuralCompare(compare);
+}
+
 void OverlayUI::PausePresets(bool paused)
 {
     TheosRenderPipeline::Appearance::Runtime::Get().Pause(paused);

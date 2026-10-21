@@ -115,6 +115,11 @@ void OverlayUI::ApplySettingsDraft(bool saveAsDefault)
 
 void OverlayUI::RequestFrameGeneration(bool) {}
 void OverlayUI::SetXeFGFlipMetering(bool) {}
+// The comparison is live in game; the preview shows the toggle taking effect.
+void OverlayUI::SetNeuralCompare(TheosRenderPipeline::NeuralRendering::CompareSettings compare)
+{
+    OverlayPreview::Scenario().view.neuralApplied.compare = compare;
+}
 void OverlayUI::PausePresets(bool) {}
 void OverlayUI::RefreshWeatherList() {}
 void OverlayUI::ResetSessionFallbacks() {}

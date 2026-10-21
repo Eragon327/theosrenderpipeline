@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <functional>
 #include <vector>
 #include <imgui_internal.h>
 #include <string_view>
@@ -18,6 +19,10 @@ using namespace TheosRenderPipeline::Overlay;
 
 namespace
 {
+// Base only: the live, session-only NR comparison. Set while the panel draws
+// Base; weather overrides never show it.
+std::function<void(TheosRenderPipeline::NeuralRendering::CompareSettings)> g_setCompare;
+
 void DrawNRAppliedPasses(const OverlayUI::FrameView& view, const TheosRenderPipeline::SourceDLSSG::NeuralOptions& applied)
 {
     const auto width = applied.beforeUpscaling ? view.renderWidth : view.outputWidth;
@@ -589,6 +594,48 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             DrawSettingsHelp("Both passes use the selected side of upscaling. UI is composed afterwards.");
             return changed;
         });
+        if (base && g_setCompare)
+        {
+            // Applies at once and is never saved, so it is not a draft change.
+            SettingRow("Compare", nullptr, false, unavailable, [&] {
+                auto compare = view.neuralApplied.compare;
+                bool changed = ImGui::Checkbox("Split", &compare.split);
+                DrawSettingsHelp("Session only, never saved. Left of the line shows the frame without NR.");
+                ImGui::SameLine();
+                ImGui::BeginDisabled(!compare.split);
+                // The slider takes what Freeze frame leaves of the column.
+                const auto& style = ImGui::GetStyle();
+                const float freezeWidth = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x +
+                                          ImGui::CalcTextSize("Freeze frame").x;
+                ImGui::SetNextItemWidth((std::max)(Px(48.0f), ImGui::GetContentRegionAvail().x - freezeWidth -
+                                                                  style.ItemSpacing.x * 3));
+                float percent = compare.splitPosition * 100.0f;
+                if (ImGui::SliderFloat("##splitAt", &percent, 0, 100, "%.0f%%"))
+                {
+                    compare.splitPosition = percent / 100.0f;
+                    changed = true;
+                }
+                ImGui::EndDisabled();
+                DrawSettingsHelp("Where the line sits, from the left edge.");
+                // Follows the applied placement: the comparison is live, the draft is not.
+                const bool before = view.neuralApplied.beforeUpscaling;
+                ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
+                ImGui::BeginDisabled(before);
+                bool freeze = compare.freeze && !before;
+                if (ImGui::Checkbox("Freeze frame", &freeze))
+                {
+                    compare.freeze = freeze;
+                    changed = true;
+                }
+                ImGui::EndDisabled();
+                DrawSettingsHelp(before ? "Freeze frame needs After upscaling: before upscaling, DLSS needs a moving frame."
+                                        : "Session only. NR keeps working on one held frame while the game runs on, so "
+                                          "setting changes compare on identical content. Turn frame generation off for a "
+                                          "steady image.");
+                if (changed) { g_setCompare(compare); }
+                return false;
+            });
+        }
         ImGui::EndTable();
     }
     auto* decor = ActivePresetDecor();
@@ -877,9 +924,71 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             DrawSettingsHelp(std::format("{}{}", producerColor ? "Colour strength." : "Ratio colour strength.", ratioHelp).c_str());
             return changed;
         });
+        // Applied after NR, like Effect and colour; changing them keeps NR's history.
+        const bool bandsOff = unavailable || producerColor || reconstruction.method != NR::ResolveMethod::Ratio;
+        SettingRowFor("Broad \xC2\xB7 detail", {"BroadStrength", "DetailStrength"}, false, bandsOff, [&] {
+            const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            const char* reason = producerColor ? "Not on the Community Shaders route yet." : "Used by Ratio reconstruction.";
+            ImGui::SetNextItemWidth(half);
+            bool changed = ImGui::SliderFloat("##broad", &reconstruction.broadStrength, 0, 2);
+            DrawSettingsHelp(bandsOff ? reason : "Broad: how much NR relights whole areas and objects. Lower it if shadows on "
+                                                 "objects change as the view changes.");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            changed |= ImGui::SliderFloat("##detail", &reconstruction.detailStrength, 0, 2);
+            DrawSettingsHelp(bandsOff ? reason : "Detail: NR's local contrast and fine shading.");
+            return changed;
+        });
         SettingRow(producerColor ? "Maximum scene gain" : "Maximum luma ratio", "MaximumRatio", false, ratioOff,
                    [&] { return ImGui::SliderFloat("##v", &reconstruction.maxRatio, producerColor ? 1.0f : 0.01f, 16); });
-        SettingRowFor(producerColor ? "Scene normalization" : "HDR input", {"InputHDR", "WhitePoint"}, true, ratioOff, [&] {
+        if (!producerColor)
+        {
+            SettingRow("HDR input", "InputHDR", true, ratioOff, [&] {
+                const bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
+                DrawSettingsHelp("Input colour is linear HDR. Used by Ratio reconstruction; it does not change "
+                                 "the display HDR mode.");
+                ImGui::SameLine();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("linear HDR");
+                return changed;
+            });
+            // How linear HDR is scaled for NR's view. Ratio's result is applied to
+            // the untouched frame, so neither choice changes its brightness.
+            const bool exposureOff = ratioOff || !reconstruction.colorIsHDR;
+            SettingRow("Exposure", "AdaptiveExposure", false, exposureOff, [&] {
+                int mode = reconstruction.adaptiveExposure ? 1 : 0;
+                bool changed = Segmented("exposure", mode, {
+                    {"Fixed", true, "Divides linear HDR input by the white point before NR sees it."},
+                    {"Adaptive", true, "TRP measures the frame's average brightness and adapts over about a second, so "
+                                       "NR sees interiors and exteriors at a similar brightness. Only NR's view "
+                                       "changes; its effect is carried back onto the untouched frame. NR may relight "
+                                       "objects as the view's brightness changes; Fixed keeps its view steady."}});
+                if (changed) { reconstruction.adaptiveExposure = mode == 1; }
+                DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
+                                             : "How linear HDR input is scaled for NR's view.");
+                return changed;
+            });
+            // The value row follows the choice: a fixed white point or an EV bias.
+            if (reconstruction.adaptiveExposure)
+            {
+                SettingRow("Bias", "ExposureBias", false, exposureOff, [&] {
+                    const bool changed = ImGui::SliderFloat("##bias", &reconstruction.exposureBias, -2, 2, "%+.1f EV");
+                    DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
+                                                 : "Brightens NR's view when positive, darkens it when negative.");
+                    return changed;
+                });
+            }
+            else
+            {
+                SettingRow("White point", "WhitePoint", false, exposureOff, [&] {
+                    const bool changed = ImGui::InputFloat("##white", &reconstruction.whitePoint, 0, 0, "%.4f");
+                    DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
+                                                 : "White point for encoding linear HDR input before model evaluation.");
+                    return changed;
+                });
+            }
+        }
+        else SettingRowFor("Scene normalization", {"InputHDR", "WhitePoint"}, true, ratioOff, [&] {
             ImGui::BeginDisabled(producerColor);
             bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
             ImGui::EndDisabled();
@@ -1042,8 +1151,10 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
         }
         else {
             DrawBaseSettings(view, [&] {
+                g_setCompare = [this](auto compare) { SetNeuralCompare(compare); };
                 DrawSourceNeuralControls(view, settingsDraft.sourceDLSSG, settingsDraft.sharpening, settingsDraft.sharpness,
                                          settingsDraft.upscaleType, nrRuntimePresent);
+                g_setCompare = nullptr;
             });
         }
         EndSettingsColumns();

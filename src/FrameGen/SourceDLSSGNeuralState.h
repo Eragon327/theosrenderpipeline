@@ -4,6 +4,7 @@
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralCombatPolicy.h"
 #include "NeuralObjectMask.h"
+#include "NeuralRenderingCompare.h"
 #include "NeuralRuntimeFiles.h"
 #include "SourceDLSSGNeuralTelemetry.h"
 #include <algorithm>
@@ -37,6 +38,8 @@ namespace TheosRenderPipeline::SourceDLSSG
         NeuralRendering::ObjectMaskSettings objectMasks{};
 		NeuralRendering::Reconstruction reconstruction{};
 		NeuralRendering::SecondPassSettings secondPass{};
+		// Session-only, set live from the menu; the backend adds it per frame.
+		NeuralRendering::CompareSettings compare{};
 		// Per-frame appearance controller revision; zero preserves manual-edit resets.
 		std::uint64_t appearanceRevision{};
 		NeuralRendering::SecondPassSettings EffectiveSecond() const
@@ -57,6 +60,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		options.passOverride = NeuralRendering::PassOverride::None;
 		options.secondPass = NeuralRendering::SanitizeSecondPass(options.secondPass);
 		options.reconstruction = NeuralRendering::SanitizeReconstruction(options.reconstruction);
+		options.compare = NeuralRendering::SanitizeCompare(options.compare);
 		// Automatic is checked by GPU-aware candidate selection after sanitizing.
 		// Explicit paths still fail before any GPU work is recorded.
 		// Runtime identity and initialization checks still belong to the session.
@@ -81,6 +85,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		auto previousComparable=previous;
 		current.objectMasks.previewGroups=previousComparable.objectMasks.previewGroups=0;
 		current.objectMasks.previewClassesOnly=previousComparable.objectMasks.previewClassesOnly=false;
+		current.compare=previousComparable.compare={};
+		current.reconstruction.broadStrength=previousComparable.reconstruction.broadStrength=1;
+		current.reconstruction.detailStrength=previousComparable.reconstruction.detailStrength=1;
 		if (current.appearanceRevision && current.appearanceRevision == previous.appearanceRevision) {
 			const auto retain = [](NeuralRendering::Tuning& value, const NeuralRendering::Tuning& old) {
 				value.intensity = old.intensity;

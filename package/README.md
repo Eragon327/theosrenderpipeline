@@ -1,4 +1,13 @@
-# Theo's Render Pipeline — Universal, 0.5.0
+# Theo's Render Pipeline — Universal, 0.5.1
+
+Version 0.5.1 adds NR comparison and tuning. Neural Rendering > Compare shows
+NR on and off side by side (Split) and can hold one frame (Freeze frame) while
+you change settings. Ratio reconstruction gains Exposure (Fixed or Adaptive),
+Broad and Detail, a steady grid before upscaling, a guard that keeps grey
+shading grey, and black NR shadows without bright specks. NR settings that
+rebuild the model now pause for about half a second instead of several. On
+NVIDIA, the XeFG tensor model now switches with Apply, without a restart. See
+CHANGELOG.md.
 
 Version 0.5.0 redesigns the settings menu. Neural Rendering passes are folder
 tabs with object rules inside each pass, short choices are segmented controls,
@@ -89,7 +98,7 @@ This package includes the full renderer, configuration and sharpening shader.
 It requires no other Theo's Render Pipeline package. NVIDIA DLLs are supplied
 separately: download the SR/FG files below, and the NR runtime if you want NR.
 Alternatively, install Standard first and Universal after it in MO2; Standard
-0.5.0 supplies the complete NVIDIA and Intel runtime bundles, including the
+0.5.1 supplies the complete NVIDIA and Intel runtime bundles, including the
 original NR 310.9.16 and the retained older NR runtime. Universal adds the
 compatibility pack and legacy INT8 alternative. In that setup,
 skip the runtime downloads below.
@@ -310,7 +319,7 @@ an RTX 4080 SUPER: ordinary 6.8.0.2158 and full add-on 6.8.0.2155, with
 early NR and x4. Sky Reflection Fix's ReShade registration was excluded;
 Rumble passed a separate initial test. Combined third-party add-ons,
 Standard gameplay and CS with ReShade remain unverified. These were earlier
-development builds; the exact 0.5.0 package has not been tested with ReShade.
+development builds; the exact 0.5.1 package has not been tested with ReShade.
 
 MartysMods ReGrade+ (ReShade 6.6 or newer) used to crash the game while TRP
 started ReShade: it prepares itself only in a device event that ReShade does not

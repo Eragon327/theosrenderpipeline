@@ -11,8 +11,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (!device) { return E_INVALIDARG; }
 		if (root_) { return S_OK; }
 		D3D12_DESCRIPTOR_RANGE ranges[2]{
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 0, 0 },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0, 3 }
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0, 0, 0 },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0, 5 }
 		};
 		D3D12_ROOT_PARAMETER params[2]{};
 		params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -36,7 +36,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		}
 		for (auto& slot : heaps_) {
 			for (auto& heap : slot) {
-				D3D12_DESCRIPTOR_HEAP_DESC h{ D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 5, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0 };
+				D3D12_DESCRIPTOR_HEAP_DESC h{ D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 7, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0 };
 				hr = device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&heap));
 				if (FAILED(hr)) { return hr; }
 			}
@@ -52,14 +52,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 			!a || !output || a == output || b == output || original == output ||
 			(secondOutput && (secondOutput == a || secondOutput == b || secondOutput == original || secondOutput == output)) ||
 			(kernel == ResolveKernel::PackGuides && (!b || !secondOutput))) { return E_INVALIDARG; }
-		const std::array<ID3D12Resource*, 5> bound{ a, b, original, output, secondOutput };
+		// The measuring pass writes the exposure, so it is not also bound for reading.
+		auto* exposure = exposure_ && exposure_ != output ? exposure_ : nullptr;
+		auto* tone = tone_ && tone_ != output && tone_ != secondOutput ? tone_ : nullptr;
+		const std::array<ID3D12Resource*, 7> bound{ a, b, original, exposure, tone, output, secondOutput };
 		auto& table = tables_[slot][stage];
 		bool unchanged = table.valid;
 		for (std::size_t i = 0; unchanged && i < bound.size(); ++i) { unchanged = table.resources[i].Get() == bound[i]; }
 		auto* heap = heaps_[slot][stage].Get();
 		if (!unchanged) {
 			// Resource descriptions are immutable, so a retained identity needs no revalidation.
-			std::array<D3D12_RESOURCE_DESC, 5> descs{};
+			std::array<D3D12_RESOURCE_DESC, 7> descs{};
 			for (std::size_t i = 0; i < bound.size(); ++i) {
 				if (!bound[i]) { continue; }
 				const auto& d = descs[i] = bound[i]->GetDesc();
@@ -69,25 +72,26 @@ namespace TheosRenderPipeline::SourceDLSSG
 			// Interop::Begin retired this slot, so its descriptors are no longer referenced.
 			auto cpu = heap->GetCPUDescriptorHandleForHeapStart();
 			const auto stride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-			for (std::size_t i = 0; i < 3; ++i) {
+			for (std::size_t i = 0; i < 5; ++i) {
 				D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
-				srv.Format = bound[i] ? descs[i].Format : DXGI_FORMAT_R32G32B32A32_FLOAT;
+				srv.Format = bound[i] ? descs[i].Format : i == 3 ? DXGI_FORMAT_R32_FLOAT :
+					i == 4 ? DXGI_FORMAT_R16G16_FLOAT : DXGI_FORMAT_R32G32B32A32_FLOAT;
 				srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; srv.Texture2D.MipLevels = 1;
 				srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 				device->CreateShaderResourceView(bound[i], &srv, cpu); cpu.ptr += stride;
 			}
-			for (std::size_t i = 3; i < bound.size(); ++i) {
+			for (std::size_t i = 5; i < bound.size(); ++i) {
 				D3D12_UNORDERED_ACCESS_VIEW_DESC uav{}; uav.Format = bound[i] ? descs[i].Format : DXGI_FORMAT_R32G32_FLOAT;
 				uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 				device->CreateUnorderedAccessView(bound[i], nullptr, &uav, cpu); cpu.ptr += stride;
 			}
 			for (std::size_t i = 0; i < bound.size(); ++i) { table.resources[i] = bound[i]; }
-			table.width = static_cast<UINT>(descs[3].Width); table.height = descs[3].Height;
+			table.width = static_cast<UINT>(descs[5].Width); table.height = descs[5].Height;
 			table.valid = true;
 			++descriptorWrites_;
 		}
 		// One barrier batch before and after the dispatch. Inputs may repeat.
-		std::array<D3D12_RESOURCE_BARRIER, 5> barriers{};
+		std::array<D3D12_RESOURCE_BARRIER, 7> barriers{};
 		UINT count = 0;
 		auto record = [&](bool entering) {
 			count = 0;
@@ -97,7 +101,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				barrier.Transition = { resource, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
 					entering ? D3D12_RESOURCE_STATE_COMMON : state, entering ? state : D3D12_RESOURCE_STATE_COMMON };
 			};
-			for (std::size_t i = 0; i < 3; ++i) {
+			for (std::size_t i = 0; i < 5; ++i) {
 				if (bound[i] && std::find(bound.begin(), bound.begin() + i, bound[i]) == bound.begin() + i) { add(bound[i], read); }
 			}
 			add(output, write);

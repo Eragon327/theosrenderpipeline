@@ -125,7 +125,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 	NeuralOptions Backend::NeuralConfiguration() const
 	{
-		std::scoped_lock lock(neuralMutex_); return neuralOptions_;
+		std::scoped_lock lock(neuralMutex_);
+		auto options = neuralOptions_;
+		options.compare = neuralCompare_;
+		return options;
+	}
+	void Backend::ConfigureNeuralCompare(NeuralRendering::CompareSettings a_compare)
+	{
+		std::scoped_lock lock(neuralMutex_); neuralCompare_ = NeuralRendering::SanitizeCompare(a_compare);
+	}
+	NeuralRendering::CompareSettings Backend::NeuralCompare() const
+	{
+		std::scoped_lock lock(neuralMutex_); return neuralCompare_;
 	}
 	NeuralSnapshot Backend::NeuralState() const
 	{
@@ -136,13 +147,21 @@ namespace TheosRenderPipeline::SourceDLSSG
         if (!neuralPass_ || !neuralPass_->NeedsRecreation(options, motion_.desc.Width, motion_.desc.Height)) { return true; }
         // Private outputs are copied into stable shared textures. Only our
         // queues read the feature, and no command list may be open here.
+        const auto started = std::chrono::steady_clock::now();
+        const auto since = [](auto from) {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - from).count();
+        };
         if (!Check(interop_.Drain(), "retire NR before placement/reconstruction change")) { return false; }
+        const double drained = since(started);
         neuralPass_->RetireTelemetry();
         {
             std::scoped_lock lock(neuralMutex_);
             neuralSnapshot_.telemetry = neuralPass_->Telemetry();
         }
+        const auto releasing = std::chrono::steady_clock::now();
         neuralPass_.reset();
+        logger::info("[SourceDLSSG NR] rebuild: GPU drain {:.0f} ms, previous feature released in {:.0f} ms",
+            drained, since(releasing));
         logger::info("[SourceDLSSG NR] retired feature for placement={} passes={} preset={} inputScale={} resolve={} HDR={} producerColor={} peripheral={} fusion={}",
             options.beforeUpscaling ? "before DLSS" : "after DLSS", options.passes, options.reconstruction.preset,
             options.reconstruction.inputScale, static_cast<unsigned>(options.reconstruction.method), options.reconstruction.colorIsHDR,
@@ -216,7 +235,9 @@ namespace TheosRenderPipeline::SourceDLSSG
             motion_.texture12.Get(), depth_.texture12.Get(), nullptr, earlyNeuralColor_.texture12.Get(), nullptr,
             neuralTimestampFrequency_, interop_.Marks(Work::Upscaling), objectMaskCurrent_ ? objectMask_.texture12.Get() : nullptr,
             frameNeuralOptions_.beforeUpscaling ? std::array<float,2>{} :
-                std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y})) {
+                std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y},
+            frameNeuralOptions_.beforeUpscaling ? std::array<float,2>{camera->jitterOffset.x,camera->jitterOffset.y} :
+                std::array<float,2>{})) {
             if (!RefuseNeuralCreation(frameNeuralOptions_.runtimePath)) { return FailNeuralRecording(); }
             // Nothing was recorded: retire the empty list and run DLSS on the original
             // colour this frame. The next frame uses the next runtime.

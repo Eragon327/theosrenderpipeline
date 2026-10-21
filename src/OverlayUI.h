@@ -7,6 +7,7 @@
 
 #include "TextureProviderBridge.h"
 #include "FrameGen/SourceDLSSGSettings.h"
+#include "FrameGen/NeuralRenderingCompare.h"
 #include "FrameTelemetry.h"
 #include "OverlayNumericInput.h"
 #include "OverlayHotkeys.h"
@@ -55,6 +56,7 @@ private:
     void ApplySettingsDraft(bool a_saveAsDefault);
     void RequestFrameGeneration(bool enabled);
     void SetXeFGFlipMetering(bool enabled);
+    void SetNeuralCompare(TheosRenderPipeline::NeuralRendering::CompareSettings compare);
     void PausePresets(bool paused);
     void RefreshWeatherList();
     void ResetSessionFallbacks();

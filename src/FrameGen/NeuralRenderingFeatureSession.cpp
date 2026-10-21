@@ -12,6 +12,7 @@
 #include <nvsdk_ngx.h>
 
 #include <array>
+#include <chrono>
 #include <atomic>
 #include <cmath>
 #include <format>
@@ -175,6 +176,10 @@ namespace TheosRenderPipeline::NeuralRendering
 		}
 		state.attempted = true;
 		std::scoped_lock initializationLock(initializationMutex);
+		const auto started = std::chrono::steady_clock::now();
+		const auto elapsed = [&] {
+			return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+		};
 		if (!a_info.device || a_info.runtimePath.empty() || a_info.displayWidth == 0 ||
 			a_info.displayHeight == 0 || a_info.renderWidth == 0 || a_info.renderHeight == 0) {
 			state.status = "source session inputs are incomplete";
@@ -182,6 +187,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		}
 
 		const auto identity = VerifySource(a_info.runtimePath, a_info.allowReconstructionRuntime);
+		const double verified = elapsed();
 		if (!identity.matched) {
 			state.status = "NR runtime is not a supported build (file version 310 or later, or a known runtime)";
 			return false;
@@ -363,6 +369,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		state.renderHeight = a_info.renderHeight;
 		state.initialized = true;
 		state.status = "source-owned Neural Rendering feature initialized";
+		logger::info("[DLSSNR Source] feature setup {:.0f} ms (runtime verified in {:.0f} ms)", elapsed(), verified);
 		logger::warn(
 			"[DLSSNR Source] feature initialized output={}x{} render={}x{} ratio={:.4f} preset={} build={} handle={}",
 			state.displayWidth,
