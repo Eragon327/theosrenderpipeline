@@ -1,4 +1,8 @@
-# Unreleased
+# 0.5.1
+
+Game-tested on an RTX 4080 SUPER with ENB. The Community Shaders changes (the grey
+guard on its colour path and the steady grid before upscaling) passed GPU tests
+but have not been tested in game.
 
 - Add Neural Rendering > Compare, a live, session-only comparison that is never
   saved. Split shows the frame without NR left of a movable line. Freeze frame
