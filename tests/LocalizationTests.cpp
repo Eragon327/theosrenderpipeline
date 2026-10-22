@@ -120,6 +120,28 @@ Apply = 应用
 		"an unterminated section header is reported");
 }
 
+// A translation used as a printf format must take the same arguments, or ImGui
+// reads the wrong ones; such an entry keeps the English text.
+void Conversions()
+{
+	std::vector<std::string> warnings;
+	const auto table = Parse(R"ini([Strings]
+"Pass %d: %.1f%%" = "第 %d 遍：%.1f%%"
+"Limited to %.0f%% so the menu fits." = "限制为 %s，以便菜单适合。"
+"NR Pass %d: %s" = "NR %s"
+"Uses about 19% fewer model pixels." = "约少 19% 的模型像素。"
+"{} passes" = "{} 遍 (100% 输入)"
+)ini", "formats.ini", &warnings);
+	Require(table->Has("Pass %d: %.1f%%"), "matching conversions are kept");
+	Require(!table->Has("Limited to %.0f%% so the menu fits."), "a different conversion keeps English");
+	Require(!table->Has("NR Pass %d: %s"), "a missing conversion keeps English");
+	Require(HasWarning(warnings, "formats.ini:3:") && HasWarning(warnings, "formats.ini:4:"),
+		"each rejected entry is reported with its line");
+	Require(table->Has("Uses about 19% fewer model pixels."), "a percent sign in prose is not a conversion");
+	Require(table->Has("{} passes"), "std::format text is not checked for % conversions");
+	Require(warnings.size() == 2, "only the mismatched entries warn");
+}
+
 // [Strings.<context>] wins over [Strings] for the labels that need a meaning.
 void Contexts()
 {
@@ -251,6 +273,7 @@ int main(int argc, char** argv)
 		Metadata();
 		Escapes();
 		Warnings();
+		Conversions();
 		Contexts();
 		Formatting();
 		Glyphs();

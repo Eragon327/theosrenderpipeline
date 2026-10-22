@@ -169,6 +169,35 @@ namespace TheosRenderPipeline::Localization
 
 	// ---- parser -----------------------------------------------------------
 
+	// The printf conversions in a_text, in order ("%d|%.1f|%s"), without %%. Text
+	// with std::format fields is formatted by FormatText, which already falls
+	// back to English on a mismatch, so its % signs are literal and not checked.
+	std::string PrintfConversions(std::string_view a_text)
+	{
+		std::string result;
+		if (a_text.find('{') != std::string_view::npos) {
+			return result;
+		}
+		for (std::size_t i = 0; i < a_text.size(); ++i) {
+			if (a_text[i] != '%') {
+				continue;
+			}
+			std::size_t j = i + 1;
+			if (j < a_text.size() && a_text[j] == '%') {
+				i = j;
+				continue;
+			}
+			while (j < a_text.size() && std::string_view("-+#0123456789.*hlLqjzt").find(a_text[j]) != std::string_view::npos) {
+				++j;
+			}
+			if (j < a_text.size() && std::string_view("diouxXeEfFgGaAcspn").find(a_text[j]) != std::string_view::npos) {
+				result.append(a_text.substr(i, j - i + 1)).push_back('|');
+				i = j;
+			}
+		}
+		return result;
+	}
+
 	struct Parser
 	{
 		Table& table;
@@ -309,6 +338,15 @@ namespace TheosRenderPipeline::Localization
 			if (value.empty() && !valueQuoted) {
 				// An unquoted empty translation means "not translated yet" and keeps
 				// the English text; a quoted empty string ("") is deliberate.
+				++table.info_.untranslated;
+				return;
+			}
+			// Many labels are printf formats (ImGui::Text, SetTooltip, slider
+			// formats), where a missing or extra %s reads the wrong argument and
+			// can crash the game. Keep the English text unless the translation has
+			// the same conversions in the same order.
+			if (PrintfConversions(key) != PrintfConversions(value)) {
+				Warn("translation's % conversions differ from the English; kept English");
 				++table.info_.untranslated;
 				return;
 			}
