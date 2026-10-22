@@ -13,6 +13,7 @@
 #include "XeFGOptions.h"
 #include "PresentationVSync.h"
 #include "DlssgPreset.h"
+#include "SteadyPacing.h"
 #include "NeuralRuntimeFiles.h"
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -26,6 +27,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		XeFGOptions xefg{};
 		int reflexMode{ 1 };
 		int outputFPSLimit{ 0 };
+		FrameLimitMode frameLimit{ FrameLimitMode::Off };
 		// NVIDIA's Frame Generation preset: B recomposes the UI (also XeFG's
 		// UI layer), C uses DLSS-G 310.9.16+ Lite blending. Live; recreates DLSS-G.
 		DlssgPreset preset{ DlssgPreset::B };
@@ -47,7 +49,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralRendering::Tuning neuralTuning{};
         NeuralRendering::ObjectMaskSettings neuralObjectMasks{};
 		NeuralRendering::Reconstruction neuralReconstruction{};
-		NeuralRendering::SecondPassSettings neuralSecondPass{};
+		// Passes 2 to 5, used up to neuralPasses.
+		NeuralRendering::ExtraPasses neuralExtraPasses{};
 		HDROutput::Settings hdrOutput{};
 		bool operator==(const Preferences&) const = default;
 	};
@@ -62,15 +65,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 		value.xefg.experimentalMFG = value.xefg.generatedFrames > 1;
 		if (value.reflexMode < 0 || value.reflexMode > 2) { value.reflexMode = 1; }
 		value.outputFPSLimit = std::clamp(value.outputFPSLimit, 0, 1000);
+		if (static_cast<int>(value.frameLimit) < 0 || static_cast<int>(value.frameLimit) > 2) { value.frameLimit = FrameLimitMode::Off; }
+		if (value.frameLimit == FrameLimitMode::Fixed && !value.outputFPSLimit) { value.frameLimit = FrameLimitMode::Off; }
 		value.generation = SanitizeGenerationRequest(value.generation);
 		if (!ValidPreset(static_cast<int>(value.preset))) { value.preset = DlssgPreset::B; }
 		value.neuralTuning = NeuralRendering::SanitizeBuild14Tuning(value.neuralTuning);
         value.neuralObjectMasks = NeuralRendering::SanitizeObjectMask(value.neuralObjectMasks);
 		if (value.neuralRuntime.empty()) { value.neuralRuntime = kAutomaticNeuralRuntime; }
-		value.neuralPasses = std::clamp(value.neuralPasses, 1, 2);
+		value.neuralPasses = std::clamp(value.neuralPasses, 1, NeuralRendering::kMaxNeuralPasses);
 		value.neuralCombat = NeuralRendering::SanitizeCombatSettings(value.neuralCombat);
 		value.neuralReconstruction = NeuralRendering::SanitizeReconstruction(value.neuralReconstruction);
-		value.neuralSecondPass = NeuralRendering::SanitizeSecondPass(value.neuralSecondPass);
+		value.neuralExtraPasses = NeuralRendering::SanitizeExtraPasses(value.neuralExtraPasses);
 		value.hdrOutput = HDROutput::Sanitize(value.hdrOutput);
 		return value;
 	}
@@ -94,6 +99,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// output. Preserve the old numeric value; never silently multiply it.
 		value.outputFPSLimit = static_cast<int>(ini.GetLongValue(section, "OutputFPSLimit",
 			ini.GetLongValue(section, "RasterFPSLimit", 0)));
+		// Without the key, a saved output cap means Fixed.
+		value.frameLimit = static_cast<FrameLimitMode>(ini.GetLongValue(section, "FrameLimit",
+			static_cast<long>(value.outputFPSLimit > 0 ? FrameLimitMode::Fixed : FrameLimitMode::Off)));
 		value.generation.generatedFrames = static_cast<std::uint32_t>(ini.GetLongValue(section, "GeneratedFrames", 1));
 		value.generation.dynamic = ini.GetBoolValue(section, "DynamicMFG", false);
 		value.generation.dynamicTargetFPS = static_cast<std::uint32_t>(ini.GetLongValue(section, "DynamicTargetFPS", 0));
@@ -118,7 +126,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		nr.useAutoSkinMask = ini.GetBoolValue(section, "NRAutoSkinMask", false);
 		nr.uiCorrection = ini.GetBoolValue(section, "NRUICorrection", false);
 		value.neuralReconstruction = NeuralRendering::LoadReconstruction(ini, section);
-		value.neuralSecondPass = NeuralRendering::LoadSecondPass(ini, section, value.neuralReconstruction, value.neuralTuning);
+		value.neuralExtraPasses = NeuralRendering::LoadExtraPasses(ini, section, value.neuralReconstruction, value.neuralTuning);
         value.neuralObjectMasks = NeuralRendering::LoadObjectMask(ini, section);
 		value.hdrOutput = HDROutput::Load(ini);
 		return SanitizePreferences(value);
@@ -137,6 +145,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ini.SetLongValue("FrameGeneration", "XeFGMultiplier", value.xefg.generatedFrames+1);
 		ini.SetLongValue(section, "ReflexMode", value.reflexMode);
 		ini.SetLongValue(section, "OutputFPSLimit", value.outputFPSLimit);
+		ini.SetLongValue(section, "FrameLimit", static_cast<long>(value.frameLimit));
 		ini.Delete(section, "RasterFPSLimit");
 		ini.SetLongValue(section, "GeneratedFrames", value.generation.generatedFrames);
 		ini.SetBoolValue(section, "DynamicMFG", value.generation.dynamic);
@@ -162,7 +171,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ini.SetBoolValue(section, "NRAutoSkinMask", nr.useAutoSkinMask);
 		ini.SetBoolValue(section, "NRUICorrection", nr.uiCorrection);
 		NeuralRendering::StoreReconstruction(ini, section, value.neuralReconstruction);
-		NeuralRendering::StoreSecondPass(ini, section, value.neuralSecondPass);
+		NeuralRendering::StoreExtraPasses(ini, section, value.neuralExtraPasses);
         NeuralRendering::StoreObjectMask(ini, section, value.neuralObjectMasks);
 		HDROutput::Store(ini, value.hdrOutput);
 	}

@@ -70,6 +70,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     backend.ConfigureXeFGTensor(settings.sourceDLSSG.xefgTensorCores);
     backend.ConfigureXeFGSceneChangeThreshold(settings.sourceDLSSG.xefgSceneChangeThreshold);
     backend.ConfigureOutputFPSLimit(settings.sourceDLSSG.outputFPSLimit);
+    backend.ConfigureFrameLimit(settings.sourceDLSSG.frameLimit);
     backend.ConfigureGeneration(settings.sourceDLSSG.generation);
     backend.ConfigureXeFG(settings.sourceDLSSG.xefg);
     backend.ConfigureMFGUnlock(settings.sourceDLSSGMFGUnlock);
@@ -83,7 +84,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     options.tuning = settings.sourceDLSSG.neuralTuning;
     options.objectMasks = settings.sourceDLSSG.neuralObjectMasks;
     options.reconstruction = settings.sourceDLSSG.neuralReconstruction;
-    options.secondPass = settings.sourceDLSSG.neuralSecondPass;
+    options.extraPasses = settings.sourceDLSSG.neuralExtraPasses;
     options.beforeUpscaling = settings.sourceDLSSG.neuralBeforeUpscaling;
     options.passes = settings.sourceDLSSG.neuralPasses;
     options.combat = settings.sourceDLSSG.neuralCombat;

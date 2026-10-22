@@ -86,6 +86,8 @@ int main()
     }
     Require(SelectProviderStartup(false, false, static_cast<FrameGenerationProvider>(42)).presenter == FrameGenerationProvider::XeFG, "invalid provider on non-NVIDIA still starts XeFG");
     Require(SelectProviderStartup(true, true, static_cast<FrameGenerationProvider>(42)).requested == FrameGenerationProvider::NVIDIA, "invalid provider keeps configured default policy");    // 2026-10-03: XeSS start, NR on, then Intel -> NVIDIA failed MFG verification fatally.
+    Require(!XeFGStartupInvertedDepth(false), "native Skyrim's first forward-Z camera needs no startup recreation");
+    Require(XeFGStartupInvertedDepth(true), "external CS projection retains its provisional startup convention");
     Require(NvidiaSwitchNeedsRestart(false, true), "NR-initialized NGX before Streamline refuses the live NVIDIA switch");
     Require(!NvidiaSwitchNeedsRestart(false, false), "XeSS start without NR still switches to NVIDIA live");
     Require(!NvidiaSwitchNeedsRestart(true, true), "Streamline initialized before NR keeps live switching");

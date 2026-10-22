@@ -3,7 +3,7 @@
 Rendering integration for Skyrim: NVIDIA DLSS/DLAA and frame generation,
 experimental Intel XeSS upscaling and XeFG frame generation, optional Neural
 Rendering (NR), and native-resolution menus and HUD. Current version:
-**0.5.1**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
+**0.5.2**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
 
 ## Features
 
@@ -13,7 +13,8 @@ Rendering (NR), and native-resolution menus and HUD. Current version:
   GPUs. See [XeSS and XeFG](#xess-and-xefg-experimental).
 - NR before or after DLSS/DLAA, one or two independently configured passes,
   input scaling and tuning, in both editions. NR defaults off.
-- Optional peripheral compression and combined NR preparation, both off by default.
+- Optional peripheral compression, combined NR preparation and an every-other-frame
+  NR model rate, all off by default.
 - Optional weather overrides for NR appearance settings and sharpening: change
   settings for chosen weathers and places, with smooth transitions and optional
   values by time of day. Overrides are shareable files. See
@@ -32,12 +33,25 @@ file, so updates keep it; MO2 places it in Overwrite. NR keyboard
 shortcuts are opt-in. HDR is experimental, through Community Shaders or TRP's own
 HDR output; see [HDR](#hdr-experimental).
 
-With two NR passes selected, optional **One pass in combat** and **One pass while
-weapons/spells are drawn** controls temporarily skip the second pass. The return
-delay defaults to five seconds after all selected conditions clear and pauses
-with the game. Your saved pass count, resolution and tuning remain unchanged.
-The second pass stays allocated and its history resets when it resumes. These
-options default off; their effect on responsiveness depends on the workload.
+NR runs one to five passes; each extra pass processes the previous pass's result
+with its own history, and follows Pass 1's settings until you change one of its
+own. With two or more NR passes selected, optional **One pass in combat** and
+**One pass while weapons/spells are drawn** controls temporarily skip the extra
+passes. The return delay defaults to five seconds after all selected conditions
+clear and pauses with the game. Your saved pass count, resolution and tuning remain
+unchanged. The extra passes stay allocated and their histories reset when they
+resume. These options default off; their effect on responsiveness depends on the
+workload.
+
+NR's **Model rate** can run the model on **Every other frame**. The frames between
+reuse its last change, moved with the game's motion vectors and checked against
+depth (and object groups while object rules capture them), which roughly halves
+NR's GPU cost. Expect some ghosting in fast motion and on newly revealed areas.
+Resets, setting changes and Freeze frame run the model on that frame. Frame times
+alternate, so **Frame generation > Frame limit > Steady** is recommended with it.
+It works best with 2x frame generation: at 3x and above the generated frames
+between real ones can look unevenly paced. The rate applies to every pass, switches live, is a weather override setting
+(`ModelRate`) and defaults to every frame (INI `NRModelRate`).
 
 
 ### Experimental NR object masks

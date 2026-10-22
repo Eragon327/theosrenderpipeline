@@ -163,6 +163,18 @@ struct NvidiaHost::SourceFrameOperations
     }
 
     bool NativeUIAvailable() { return host.nativeUI_.Available(); }
+    // The game was told to hide its menus and HUD during gameplay. Main and
+    // loading menus keep their own route.
+    bool InterfaceHidden()
+    {
+        auto* ui = RE::UI::GetSingleton();
+        return ui && !ui->IsShowingMenus() && !MainOrLoading() && host.nativeUI_.Dedicated();
+    }
+    bool ClearNativeUI()
+    {
+        InternalOperation internal(host.sourceUIInternal_);
+        return host.nativeUI_.ClearTagged(host.context_.Get());
+    }
     bool ComposeNativeUI()
     {
         ScopedD3D11PerformanceStage timer{host.context_.Get(), PerformanceTuning::D3D11Stage::kNativeUIComposition};

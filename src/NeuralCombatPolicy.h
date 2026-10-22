@@ -46,7 +46,7 @@ namespace TheosRenderPipeline::NeuralRendering
         PassOverride Update(CombatSettings settings, bool enabled, int passes, GameplayState state, double now)
         {
             settings = SanitizeCombatSettings(settings);
-            if (!enabled || passes != 2 || !settings.Enabled() || !state.available) {
+            if (!enabled || passes < 2 || !settings.Enabled() || !state.available) {
                 Reset();
                 return PassOverride::None;
             }

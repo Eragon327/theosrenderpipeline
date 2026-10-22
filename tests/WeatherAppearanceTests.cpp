@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <limits>
 #include <chrono>
+#include <format>
 #include <fstream>
 #include <iterator>
 
@@ -224,7 +225,7 @@ static void FrameHistory()
     Controller controller; controller.Configure(settings);
     SourceDLSSG::NeuralOptions base; base.enabled = true; base.passes = 2;
     base.tuning.skinStructureStrength = -1; base.tuning.style = 4;
-    base.secondPass.linked = false;
+    base.extraPasses[0].linked = false;
     const auto manual = base;
     SourceDLSSG::NeuralHistory history;
     auto scene = Scene();
@@ -269,10 +270,10 @@ static void FrameHistory()
     base.tuning.intensity = .8f; frame = base;
     ApplyFrame(controller, scene, frame, .016f);
     Require(history.ResetFor(frame, true, false), "manual edit resets even under an overriding profile");
-    base.secondPass.linked = true; frame = base;
+    base.extraPasses[0].linked = true; frame = base;
     ApplyFrame(controller, scene, frame, .016f);
     Require(history.ResetFor(frame, true, false), "relink resets history");
-    Require(frame.EffectiveSecond().tuning == frame.tuning, "linked second pass uses automated first pass");
+    Require(frame.EffectiveExtra(0).tuning == frame.tuning, "linked second pass uses automated first pass");
     controller.Pause(true); frame = base;
     Require(ApplyFrame(controller, scene, frame, .016f) == .4f && frame == base, "manual session override restores base values");
     Require(history.ResetFor(frame, true, false), "leaving automation resets once");
@@ -309,9 +310,9 @@ static void CombatAppearanceHistory()
         bool extendedRange = route == 2;
         Controller controller; controller.Configure(settings);
         SourceDLSSG::NeuralOptions base; base.enabled = true; base.passes = 2;
-        base.worldOnly = worldOnly; base.secondPass.linked = linked;
+        base.worldOnly = worldOnly; base.extraPasses[0].linked = linked;
         base.reconstruction.whitePoint = 4;
-        base.reconstruction.inputScale = .75f; base.secondPass.inputScale = .5f;
+        base.reconstruction.inputScale = .75f; base.extraPasses[0].inputScale = .5f;
         base.combat = {true, true, 5};
         const auto saved = base;
         SourceDLSSG::NeuralHistory history;
@@ -329,13 +330,13 @@ static void CombatAppearanceHistory()
                 Require(frame.reconstruction.producerColor == extendedRange &&
                     frame.reconstruction.whitePoint == (extendedRange ? 1 : 4),
                     "HDR adaptation preserves weather tuning and restores saved SDR normalization");
-                Require(frame.EffectiveSecond().inputScale == (linked ? .75f : .5f) &&
-                    !frame.EffectiveSecond().tuning.uiCorrection,
+                Require(frame.EffectiveExtra(0).inputScale == (linked ? .75f : .5f) &&
+                    !frame.EffectiveExtra(0).tuning.uiCorrection,
                     "HDR adaptation preserves the second-pass scale and world-only UI policy");
             }
             Require(history.ResetFor(frame, true, cameraReset) == reset,
                 "combined history resets only at effective-pass or explicit camera changes");
-            Require(base == saved && frame.passes == 2 && frame.secondPass.linked == linked,
+            Require(base == saved && frame.passes == 2 && frame.extraPasses[0].linked == linked,
                 "combined overrides preserve saved allocation and pass-link preferences");
             return std::pair{frame, revision};
         };
@@ -353,7 +354,7 @@ static void CombatAppearanceHistory()
             Require(frame.EffectivePasses() == 1 && currentRevision == revision && frame.tuning.intensity >= prior,
                 "weather ramp and combat-to-weapons reason changes retain history");
             prior = frame.tuning.intensity;
-            if (linked) { Require(frame.EffectiveSecond().tuning == frame.tuning, "automated passes remain linked"); }
+            if (linked) { Require(frame.EffectiveExtra(0).tuning == frame.tuning, "automated passes remain linked"); }
         }
         Require(prior > initial.tuning.intensity, "weather tuning continues through combat reduction");
         auto recovery = update(calm, 4, false).first;
@@ -389,21 +390,21 @@ static void PresetPasses()
     auto clear = Scene();
     SourceDLSSG::NeuralHistory history;
     auto frame = base; ApplyFrame(controller, rain, frame, .016f);
-    Require(frame.passes == 2 && frame.presetOnePass && frame.EffectivePasses() == 1,
+    Require(frame.passes == 2 && frame.presetPasses == 1 && frame.EffectivePasses() == 1,
         "a one-pass preset keeps two passes allocated instead of recreating NR");
     history.ResetFor(frame, true, false);
     frame = base; ApplyFrame(controller, clear, frame, .016f);
-    Require(!frame.presetOnePass && frame.EffectivePasses() == 2 && history.ResetFor(frame, true, false),
+    Require(!frame.presetPasses && frame.EffectivePasses() == 2 && history.ResetFor(frame, true, false),
         "leaving a one-pass preset restores Pass 2 with one history reset");
     SetChange(settings.presets[0].profile, "Passes", 2);
     SetChange(settings.presets[0].profile, "ReconstructionMethod", 2);
     controller.Configure(settings);
     base.passes = 1;
     frame = base; ApplyFrame(controller, clear, frame, .016f);
-    Require(frame.passes == 2 && frame.presetOnePass && frame.EffectivePasses() == 1,
+    Require(frame.passes == 2 && frame.presetPasses == 1 && frame.EffectivePasses() == 1,
         "presets that need two passes keep them allocated everywhere");
     frame = base; ApplyFrame(controller, rain, frame, .016f);
-    Require(frame.passes == 2 && !frame.presetOnePass && frame.EffectivePasses() == 2 &&
+    Require(frame.passes == 2 && !frame.presetPasses && frame.EffectivePasses() == 2 &&
         frame.reconstruction.method == NeuralRendering::ResolveMethod::Ratio && frame.reconstruction.producerColor,
         "presets change other NR settings but never the adapter's input contract");
     // A preset that gives Pass 2 its own style keeps its other settings following Base's Pass 1.
@@ -414,13 +415,66 @@ static void PresetPasses()
     Controller styledController; styledController.Configure(styled);
     SourceDLSSG::NeuralOptions linked; linked.enabled = true; linked.passes = 2;
     linked.tuning.style = 3; linked.tuning.intensity = 1.4f;
-    linked.secondPass.tuning.intensity = .2f; // Stale values kept while linked.
+    linked.extraPasses[0].tuning.intensity = .2f; // Stale values kept while linked.
     frame = linked; ApplyFrame(styledController, rain, frame, .016f);
-    const auto second = frame.EffectiveSecond();
-    Require(!frame.secondPass.linked && second.tuning.style == 7 && Near(second.tuning.intensity, 1.4f),
+    const auto second = frame.EffectiveExtra(0);
+    Require(!frame.extraPasses[0].linked && second.tuning.style == 7 && Near(second.tuning.intensity, 1.4f),
         "unlinking Pass 2 in a preset starts from Base's Pass 1, not stale Pass 2 values");
     frame = linked; ApplyFrame(styledController, clear, frame, .016f);
-    Require(frame.secondPass.linked && frame.EffectiveSecond().tuning == frame.tuning, "outside the preset Pass 2 stays linked");
+    Require(frame.extraPasses[0].linked && frame.EffectiveExtra(0).tuning == frame.tuning, "outside the preset Pass 2 stays linked");
+
+    // Up to five passes: a preset with fewer runs a prefix of the largest allocation.
+    Settings many;
+    FindPreset(many, AddPreset(many, "Rain"))->groups[3] = true;
+    SetChange(many.presets[0].profile, "Passes", 3);
+    SetChange(many.presets[0].profile, "Pass4SameAsPass1", 0);
+    SetChange(many.presets[0].profile, "Pass4Intensity", .5f);
+    Require(PresetPassAllocation(many) == 3, "a used three-pass preset keeps three allocated");
+    Controller manyController; manyController.Configure(many);
+    SourceDLSSG::NeuralOptions five; five.enabled = true; five.passes = 5;
+    frame = five; ApplyFrame(manyController, rain, frame, .016f);
+    Require(frame.passes == 5 && frame.presetPasses == 3 && frame.EffectivePasses() == 3,
+        "a three-pass preset inside five allocated runs three without recreating NR");
+    Require(!frame.extraPasses[2].linked && Near(frame.EffectiveExtra(2).tuning.intensity, .5f) &&
+        frame.extraPasses[1].linked && frame.EffectiveExtra(1).tuning == frame.tuning,
+        "a preset unlinks Pass 4 alone; Pass 3 still follows Pass 1");
+    frame = five; ApplyFrame(manyController, clear, frame, .016f);
+    Require(frame.passes == 5 && !frame.presetPasses && frame.EffectivePasses() == 5 && frame.extraPasses[2].linked,
+        "outside the preset all five passes run with Base's links");
+    SourceDLSSG::NeuralOptions one; one.enabled = true; one.passes = 1;
+    frame = one; ApplyFrame(manyController, clear, frame, .016f);
+    Require(frame.passes == 3 && frame.presetPasses == 1 && frame.EffectivePasses() == 1,
+        "one-pass Base keeps the preset's three passes allocated");
+    frame = one; ApplyFrame(manyController, rain, frame, .016f);
+    Require(frame.passes == 3 && !frame.presetPasses && frame.EffectivePasses() == 3, "the preset's three passes run where it applies");
+}
+static void ExtraPassFields()
+{
+    for (int pass = 2; pass <= NeuralRendering::kMaxNeuralPasses; ++pass) {
+        for (const char* name : {"SameAsPass1", "InputScale", "Network", "Intensity", "LocalTone", "LocalStructure", "Style",
+                 "SkinStructure", "AutoSkinMask", "UICorrection"}) {
+            const auto key = std::format("Pass{}{}", pass, name);
+            const auto* field = FindField(key);
+            Require(field != nullptr, "every extra pass has Pass 2's fields");
+            Setup setup;
+            field->set(setup, field->low == 0 && field->high == 1 ? 0.0f : .5f);
+            for (int other = 2; other <= NeuralRendering::kMaxNeuralPasses; ++other) {
+                if (other == pass) { continue; }
+                Require(setup.extra[other - 2] == Setup{}.extra[other - 2], "a pass field sets only its own pass");
+            }
+            const std::string_view suffix(name);
+            Require(RecreatesNR(key) == (suffix == "InputScale" || suffix == "Network"),
+                "an extra pass's raster and network recreate NR like Pass 2's");
+        }
+    }
+    Require(!FindField("Pass6InputScale") && !RecreatesNR("Pass6InputScale") && !RecreatesNR("Pass0Network"), "no fields past Pass 5");
+    Require(RecreatesNR("Pass1InputScale") && RecreatesNR("Pass2Network") && !RecreatesNR("Passes"), "Pass 1 and 2 keep their rules");
+    const auto* passes = FindField("Passes");
+    Require(passes && ClampField(*passes, 9) == 5 && ClampField(*passes, 0) == 1, "presets ask for 1 to 5 passes");
+    Require(SanitizeSetup(Setup{.passes = 8}).passes == 5, "a setup clamps to five passes");
+    // Field order keeps Pass 2's released keys in place, then Passes 3 to 5.
+    Require(FieldIndex("Pass2UICorrection") < FieldIndex("Pass3SameAsPass1") &&
+        FieldIndex("Pass5UICorrection") < FieldIndex("SharpeningEnabled"), "extra-pass fields follow Pass 2's");
 }
 static void SharedPresets()
 {
@@ -535,9 +589,9 @@ static void PresetFileOrder()
         FindChange(wordPreset, "InputHDR")->points[0] == 0, "on/off settings accept true/false, on/off and yes/no");
     Settings unusedTwo;
     SetChange(FindPreset(unusedTwo, AddPreset(unusedTwo, "Two passes"))->profile, "Passes", 2);
-    Require(!PresetsRequestTwoPasses(unusedTwo), "a two-pass preset used nowhere does not keep two passes allocated");
+    Require(PresetPassAllocation(unusedTwo) == 1, "a two-pass preset used nowhere does not keep two passes allocated");
     FindPreset(unusedTwo, unusedTwo.presets[0].id)->groups[3] = true;
-    Require(PresetsRequestTwoPasses(unusedTwo), "a used two-pass preset keeps two passes allocated");
+    Require(PresetPassAllocation(unusedTwo) == 2, "a used two-pass preset keeps two passes allocated");
     Settings named;
     AddPreset(named, "Rain"); AddPreset(named, "rain"); AddPreset(named, "Rain?");
     Require(named.presets[1].name == "rain 2" && PresetFileName("Rain?") == "Rain_.ini" && PresetFileName("con") == "con_.ini" &&
@@ -726,7 +780,7 @@ static void Benchmark()
 }
 int main(int argc, char** argv)
 {
-    Resolution(); TimeAndPersistence(); FrameHistory(); CombatAppearanceHistory(); PresetPasses(); SharedPresets(); PresetFileOrder(); PresetFileSystem(); MigrationAndSchedule();
+    Resolution(); TimeAndPersistence(); FrameHistory(); CombatAppearanceHistory(); PresetPasses(); ExtraPassFields(); SharedPresets(); PresetFileOrder(); PresetFileSystem(); MigrationAndSchedule();
     if (argc == 2 && std::string(argv[1]) == "--benchmark") { Benchmark(); }
     std::puts("PASS: weather/time resolution, per-setting presets, persistence, frame smoothing, manual overrides and NR history");
 }

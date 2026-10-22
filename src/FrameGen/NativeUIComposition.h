@@ -2,7 +2,6 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <cstdint>
-#include "NativeUIBlend.h"
 
 namespace TheosRenderPipeline
 {
@@ -23,6 +22,9 @@ namespace TheosRenderPipeline
         // game UI texture tagged for frame generation.
         bool ComposeOverlay(ID3D11DeviceContext* context, ID3D11Texture2D* presentation,
             ID3D11ShaderResourceView* overlay);
+        // The interface was hidden this frame: the tagged UI becomes transparent,
+        // so frame generation and late NR see a HUD-less frame with no UI on it.
+        bool ClearTagged(ID3D11DeviceContext* context);
         void ResetAfterRetirement();
         void Invalidate() { nativeUIExtractionAvailable_ = nativeUITextureMode_ = false; }
         bool Available() const { return nativeUIExtractionAvailable_; }
@@ -34,7 +36,6 @@ namespace TheosRenderPipeline
         bool ComposeLayer(ID3D11DeviceContext* context, ID3D11Texture2D* presentation,
             ID3D11ShaderResourceView* layer);
         bool Matches(ID3D11Texture2D* texture) const;
-        NativeUIBlend blend_;
         UINT outputWidth_{}, outputHeight_{};
         DXGI_FORMAT format_{DXGI_FORMAT_UNKNOWN};
         bool nativeUIExtractionAvailable_{}, nativeUITextureMode_{};

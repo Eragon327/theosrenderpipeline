@@ -70,6 +70,7 @@ struct OverlayUI::FrameView
     bool vsyncObserved{}, vsyncIncoming{}, vsyncRequested{}, vsyncFailed{};
     TheosRenderPipeline::SourceDLSSG::VSyncMode vsyncConfigured{};
     bool xefgTensorRequested{}, xefgFlipMetering{};
+    float steadyRenderedFPS{}; // Steady frame limit's current cap; 0 while measuring or off.
     std::string xefgTensorStatus, xefgPacingStatus;
     TheosRenderPipeline::SourceDLSSG::SessionSnapshot session{};
     TheosRenderPipeline::SourceDLSSG::MFGSnapshot mfg{};

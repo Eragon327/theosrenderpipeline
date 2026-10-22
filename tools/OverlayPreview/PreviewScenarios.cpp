@@ -282,6 +282,30 @@ PreviewScenario Objects()
     return scenario;
 }
 
+// The widest pass strip: five tabs, Passes 2-5 paused by combat, Pass 3 and 5
+// with their own settings and Pass 4 with an object rule.
+PreviewScenario FivePasses()
+{
+    auto scenario = Healthy();
+    scenario.name = "five-passes";
+    scenario.summary = "Five NR passes paused to one in combat; Pass 3 and 5 independent";
+    auto& nr = scenario.applied.sourceDLSSG;
+    nr.neuralPasses = 5;
+    nr.neuralCombat.inCombat = true;
+    nr.neuralExtraPasses[1] = {false, 0.5f, 1, nr.neuralTuning};
+    nr.neuralExtraPasses[1].tuning.intensity = 0.7f;
+    nr.neuralExtraPasses[3] = {false, 0.75f, 0, nr.neuralTuning};
+    nr.neuralExtraPasses[3].tuning.style = 2;
+    nr.neuralObjectMasks.passes[3].groups[2] = {true, 1.0f, 1.0f, 0.5f};
+    scenario.draft = scenario.applied;
+    auto& view = scenario.view;
+    view.neuralApplied.passes = 5;
+    view.neuralApplied.extraPasses = nr.neuralExtraPasses;
+    view.neuralState.effectivePasses = 1;
+    view.neuralState.passOverride = TheosRenderPipeline::NeuralRendering::PassOverride::Combat;
+    return scenario;
+}
+
 // NR after upscaling with the live comparison on: Split at 60% and a held frame.
 PreviewScenario Compare()
 {
@@ -309,6 +333,33 @@ PreviewScenario Exposure()
     reconstruction.exposureBias = 0.5f;
     scenario.draft = scenario.applied;
     scenario.view.neuralApplied.reconstruction = reconstruction;
+    return scenario;
+}
+
+// Frame limit Steady, holding rendered frames at 58 FPS.
+PreviewScenario Steady()
+{
+    auto scenario = Healthy();
+    scenario.name = "steady";
+    scenario.summary = "Frame limit Steady at 58 rendered FPS";
+    scenario.applied.sourceDLSSG.frameLimit = TheosRenderPipeline::SourceDLSSG::FrameLimitMode::Steady;
+    scenario.draft = scenario.applied;
+    scenario.view.steadyRenderedFPS = 58.2f;
+    return scenario;
+}
+
+// NR's model every other frame with Frame limit Off, so the Steady hint shows.
+PreviewScenario ModelRate()
+{
+    auto scenario = Healthy();
+    scenario.name = "model-rate";
+    scenario.summary = "NR model every other frame, Frame limit Off";
+    auto& reconstruction = scenario.applied.sourceDLSSG.neuralReconstruction;
+    reconstruction.modelRate = TheosRenderPipeline::NeuralRendering::ModelRate::EveryOtherFrame;
+    scenario.draft = scenario.applied;
+    scenario.view.neuralApplied.reconstruction = reconstruction;
+    scenario.view.neuralState.telemetry.modelRunShare = 0.5;
+    scenario.view.neuralState.telemetry.skippedFrames = 24000;
     return scenario;
 }
 
@@ -389,5 +440,5 @@ PreviewScenario Lab()
 
 std::vector<PreviewScenario> PreviewScenarios()
 {
-    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), Compare(), Exposure(), Intel(), TensorRefused(), Lab()};
+    return {Healthy(), NROff(), Presets(), CommunityShaders(), HostUnavailable(), Objects(), FivePasses(), Compare(), Exposure(), Steady(), ModelRate(), Intel(), TensorRefused(), Lab()};
 }

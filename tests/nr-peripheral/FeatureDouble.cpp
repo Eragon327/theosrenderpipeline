@@ -17,22 +17,35 @@ void Extent(ID3D12Resource* r, unsigned w, unsigned h, const char* why) {
 }
 }
 struct FeatureSession::State {
-    unsigned w{},h{},gw{},gh{},index{};
+    unsigned w{},h{},gw{},gh{},index{},createdFrame{};
     Microsoft::WRL::ComPtr<ID3D12RootSignature> root;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap;
-    bool initialized{}; std::uint64_t evaluations{}; std::string status{"scripted identity NR"}; };
+    bool initialized{}, refused{}; std::uint64_t evaluations{}; std::string status{"scripted identity NR"}; };
 FeatureSession::FeatureSession() : state_(new State) {}
 FeatureSession::~FeatureSession() = default;
 void FeatureSession::StateDeleter::operator()(State* s) const { delete s; }
 bool FeatureSession::EnsureInitialized(const CreateInfo& info) {
+    if (state_->refused) { return false; }
+    if (!state_->initialized && Fixture::creations==Fixture::refuseIndex) {
+        state_->refused=true; state_->status="feature creation failed (0xBAD00002)"; return false;
+    }
     if (!state_->initialized) {
         state_->index=Fixture::creations;
         state_->w=state_->index && Fixture::secondWidth?Fixture::secondWidth:Fixture::workWidth;
         state_->h=state_->index && Fixture::secondHeight?Fixture::secondHeight:Fixture::workHeight;
+        if(state_->index<Fixture::passWidth.size() && Fixture::passWidth[state_->index]){
+            state_->w=Fixture::passWidth[state_->index];state_->h=Fixture::passHeight[state_->index];
+        }
+        if(state_->index>=2){
+            // Creating and first evaluating several new features in one list hangs some GPUs.
+            Require(Fixture::frame!=Fixture::lateCreationFrame,"at most one later-pass feature is created per frame");
+            Fixture::lateCreationFrame=Fixture::frame;
+        }
+        state_->createdFrame=Fixture::frame;
         state_->gw=Fixture::peripheral?state_->w:Fixture::guideWidth;
         state_->gh=Fixture::peripheral?state_->h:Fixture::guideHeight;
-        if(Fixture::transform) Require(info.networkPreset==(state_->index?1:-1),"per-pass preset");
+        if(Fixture::transform) Require(info.networkPreset==Fixture::networkPreset[state_->index],"per-pass preset");
         ++Fixture::creations; state_->initialized=true;
     }
     Require(info.displayWidth==state_->w && info.displayHeight==state_->h,"model extent");
@@ -41,6 +54,7 @@ bool FeatureSession::EnsureInitialized(const CreateInfo& info) {
 }
 bool FeatureSession::RecordEvaluation(const EvaluationInput& in) {
     Require(state_->initialized && in.commandList && in.backbuffer==in.output, "modern feature input contract");
+    Require(state_->index<2 || Fixture::frame>state_->createdFrame,"a later pass first runs on a frame after its feature's creation");
     Require(bool(in.controlMask)==Fixture::objectControls,"per-pass control mask presence");
     if(in.controlMask){
         Extent(in.controlMask,state_->w,state_->h,"control mask follows each model extent");
@@ -63,7 +77,7 @@ bool FeatureSession::RecordEvaluation(const EvaluationInput& in) {
     Require(in.color!=in.output,"two-pass output must not alias input");
     Require(state_->evaluations || in.reset,"new feature history reset");
     if(Fixture::transform) {
-        Require(in.tuning.intensity==(in.controlMask?1.f:state_->index?.6f:.8f),"independent tuning reaches each evaluation");
+        Require(in.tuning.intensity==(in.controlMask?1.f:Fixture::intensity[state_->index]),"independent tuning reaches each evaluation");
         if(!state_->root) {
             Microsoft::WRL::ComPtr<ID3D12Device> device;
             Require(SUCCEEDED(in.output->GetDevice(IID_PPV_ARGS(&device))),"fixture device");
@@ -112,10 +126,11 @@ bool FeatureSession::RecordEvaluation(const EvaluationInput& in) {
     for (auto& v:b) std::swap(v.Transition.StateBefore,v.Transition.StateAfter);
     in.commandList->ResourceBarrier(2,b);
     }
-    ++state_->evaluations; ++Fixture::evaluations; Fixture::resets+=in.reset;
+    ++state_->evaluations; ++Fixture::evaluations; Fixture::resets+=in.reset; Fixture::motions.push_back(in.motionVectors);
     return true;
 }
 bool FeatureSession::IsInitialized() const {return state_->initialized;}
+std::uint32_t FeatureSession::RefusedCreation() const {return state_->refused?0xBAD00002u:0u;}
 RuntimeBuild FeatureSession::Build() const {return RuntimeBuild::Nexus3108;}
 std::uint64_t FeatureSession::EvaluationsRecorded() const {return state_->evaluations;}
 const std::string& FeatureSession::Status() const {return state_->status;}

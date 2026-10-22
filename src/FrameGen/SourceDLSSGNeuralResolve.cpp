@@ -35,30 +35,42 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(hr)) { return hr; }
 		}
 		for (auto& slot : heaps_) {
-			for (auto& heap : slot) {
-				D3D12_DESCRIPTOR_HEAP_DESC h{ D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 7, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0 };
-				hr = device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&heap));
+			for (unsigned stage = 0; stage < kBaseStages; ++stage) {
+				hr = CreateHeap(device, slot[stage]);
 				if (FAILED(hr)) { return hr; }
 			}
 		}
 		root_ = std::move(root);
 		return S_OK;
 	}
+	HRESULT NeuralResolveKernels::CreateHeap(ID3D12Device* device, ComPtr<ID3D12DescriptorHeap>& heap)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC h{ D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 7, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0 };
+		return device->CreateDescriptorHeap(&h, IID_PPV_ARGS(&heap));
+	}
 	HRESULT NeuralResolveKernels::Record(ID3D12Device* device, ID3D12GraphicsCommandList* list, std::size_t slot,
 		unsigned stage, ResolveKernel kernel, const ResolveConstants& constants, ID3D12Resource* a,
-		ID3D12Resource* b, ID3D12Resource* original, ID3D12Resource* output, ID3D12Resource* secondOutput)
+		ID3D12Resource* b, ID3D12Resource* original, ID3D12Resource* output, ID3D12Resource* secondOutput,
+		ID3D12Resource* fourth)
 	{
 		if (!root_ || !device || !list || slot >= heaps_.size() || stage >= kStages || unsigned(kernel) >= pipelines_.size() ||
 			!a || !output || a == output || b == output || original == output ||
 			(secondOutput && (secondOutput == a || secondOutput == b || secondOutput == original || secondOutput == output)) ||
-			(kernel == ResolveKernel::PackGuides && (!b || !secondOutput))) { return E_INVALIDARG; }
+			(kernel == ResolveKernel::PackGuides && (!b || !secondOutput)) || (fourth && (fourth == output || fourth == secondOutput))) {
+			return E_INVALIDARG;
+		}
 		// The measuring pass writes the exposure, so it is not also bound for reading.
-		auto* exposure = exposure_ && exposure_ != output ? exposure_ : nullptr;
+		// A fourth input takes its slot (t3) for this dispatch.
+		auto* exposure = fourth ? fourth : exposure_ && exposure_ != output ? exposure_ : nullptr;
 		auto* tone = tone_ && tone_ != output && tone_ != secondOutput ? tone_ : nullptr;
 		const std::array<ID3D12Resource*, 7> bound{ a, b, original, exposure, tone, output, secondOutput };
 		auto& table = tables_[slot][stage];
 		bool unchanged = table.valid;
 		for (std::size_t i = 0; unchanged && i < bound.size(); ++i) { unchanged = table.resources[i].Get() == bound[i]; }
+		// Only Passes 3 to 5 use the later stages; one and two passes never allocate them.
+		if (!heaps_[slot][stage]) {
+			if (const auto hr = CreateHeap(device, heaps_[slot][stage]); FAILED(hr)) { return hr; }
+		}
 		auto* heap = heaps_[slot][stage].Get();
 		if (!unchanged) {
 			// Resource descriptions are immutable, so a retained identity needs no revalidation.

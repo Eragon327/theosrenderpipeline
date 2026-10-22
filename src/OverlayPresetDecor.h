@@ -19,6 +19,8 @@ public:
     virtual const char* EditingTime() const = 0;
     // What unchanged rows follow, as the state column names it.
     virtual const char* Reference() const { return "Base"; }
+    // The reference's pass count, so the tabs of passes a preset adds are tinted; 0 when unknown.
+    virtual int ReferencePasses() const { return 0; }
 };
 inline PresetDecor*& ActivePresetDecor()
 {

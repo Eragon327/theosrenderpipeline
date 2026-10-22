@@ -13,6 +13,9 @@ namespace TheosRenderPipeline
         FrameGenerationProvider requested;
         FrameGenerationProvider presenter;
     };
+    // Skyrim's native projection is forward Z. An external upscaler may replace
+    // it; keep the existing CS startup convention until its first valid camera.
+    constexpr bool XeFGStartupInvertedDepth(bool externalUpscaler) { return externalUpscaler; }
     // xeSS: TRP runs the XeSS upscaler. It is false on the Community Shaders
     // route, where CS upscales whatever TRP's UpscaleType says.
     constexpr ProviderStartup SelectProviderStartup(bool xeSS, bool nvidiaAdapter, FrameGenerationProvider requested)

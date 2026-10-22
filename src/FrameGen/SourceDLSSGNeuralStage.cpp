@@ -88,7 +88,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const auto result = neuralPass_ ? neuralPass_->RefusedCreation() : 0u;
 		if (!result) { return false; }
 		const auto status = neuralPass_->Status();
-		// NGX refused before NR recorded anything; this pass has no GPU work in flight.
+		// Only Pass 1's creation reports a refusal, and it stops before Record
+		// writes to the open list. Earlier frames of this pass may still be running
+		// in other command slots, so retire them before releasing its resources.
+		// The open list is unsubmitted and Drain waits only for submitted work.
+		if (!Check(interop_.Drain(), "retire NR before dropping a refused runtime")) { return false; }
 		neuralPass_.reset();
 		std::scoped_lock lock(neuralMutex_);
 		RefuseNeuralRuntime(runtime, std::format("could not start NR ({})", status), "");
@@ -166,10 +170,10 @@ namespace TheosRenderPipeline::SourceDLSSG
             options.beforeUpscaling ? "before DLSS" : "after DLSS", options.passes, options.reconstruction.preset,
             options.reconstruction.inputScale, static_cast<unsigned>(options.reconstruction.method), options.reconstruction.colorIsHDR,
             options.reconstruction.producerColor, options.reconstruction.peripheralCompression, options.reconstruction.fusedPreparation);
-        if (options.passes == 2) {
-            const auto second = options.EffectiveSecond();
-            logger::info("[SourceDLSSG NR] pass2 linked={} preset={} inputScale={} intensity={}",
-                options.secondPass.linked, second.preset, second.inputScale, second.tuning.intensity);
+        for (std::size_t i = 0; i + 1 < static_cast<std::size_t>(options.passes); ++i) {
+            const auto extra = options.EffectiveExtra(i);
+            logger::info("[SourceDLSSG NR] pass{} linked={} preset={} inputScale={} intensity={}",
+                i + 2, options.extraPasses[i].linked, extra.preset, extra.inputScale, extra.tuning.intensity);
         }
         return true;
     }

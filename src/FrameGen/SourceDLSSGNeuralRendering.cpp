@@ -132,12 +132,19 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const auto method = NeuralRendering::EffectiveResolve(reconstruction);
 		const auto workWidth = NeuralRendering::ModelExtent(static_cast<UINT>(sceneDesc.Width), reconstruction);
 		const auto workHeight = NeuralRendering::ModelExtent(sceneDesc.Height, reconstruction);
-		const auto secondSettings = options.EffectiveSecond();
-		auto secondReconstruction = reconstruction;
-		secondReconstruction.inputScale = secondSettings.inputScale;
-		const auto secondWidth = NeuralRendering::ModelExtent(static_cast<UINT>(sceneDesc.Width), secondReconstruction);
-		const auto secondHeight = NeuralRendering::ModelExtent(sceneDesc.Height, secondReconstruction);
-		const bool resizeSecond = options.passes == 2 && (secondWidth != workWidth || secondHeight != workHeight);
+		// Each extra pass's own model raster; a different one resizes into it and back.
+		struct ExtraPlan { NeuralRendering::ExtraPassSettings settings; UINT width{}, height{}; bool resize{}; };
+		const auto extraPasses = static_cast<std::size_t>(std::clamp(options.passes, 1, NeuralRendering::kMaxNeuralPasses) - 1);
+		std::array<ExtraPlan, NeuralRendering::kExtraPasses> plans{};
+		for (std::size_t i = 0; i < extraPasses; ++i) {
+			auto& plan = plans[i];
+			plan.settings = options.EffectiveExtra(i);
+			auto extent = reconstruction;
+			extent.inputScale = plan.settings.inputScale;
+			plan.width = NeuralRendering::ModelExtent(static_cast<UINT>(sceneDesc.Width), extent);
+			plan.height = NeuralRendering::ModelExtent(sceneDesc.Height, extent);
+			plan.resize = plan.width != workWidth || plan.height != workHeight;
+		}
 		if (NeedsRecreation(options, static_cast<UINT>(motion->GetDesc().Width), motion->GetDesc().Height)) {
 			status_ = "NR settings or guide dimensions changed without retiring the previous pass"; return false;
 		}
@@ -158,19 +165,21 @@ namespace TheosRenderPipeline::SourceDLSSG
 					D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&out)), "NR output allocation");
 			};
 			if (!create(sceneDesc, corrected_) || (!options.WorldOnly() && !create(outputDesc, composed_))) { return false; }
-			if (options.passes == 2) {
-				auto secondDesc = sceneDesc; secondDesc.Width = secondWidth; secondDesc.Height = secondHeight;
-				if (!create(secondDesc, secondOutput_)) { return false; }
-				if (resizeSecond) {
-					if (!check(resolve_.Initialize(device), "NR pass 2 resize kernels") || !create(secondDesc, secondInput_)) { return false; }
+			for (std::size_t i = 0; i < extraPasses; ++i) {
+				const auto& plan = plans[i];
+				auto& extra = extra_[i];
+				auto extraDesc = sceneDesc; extraDesc.Width = plan.width; extraDesc.Height = plan.height;
+				if (!create(extraDesc, extra.output)) { return false; }
+				if (plan.resize) {
+					if (!check(resolve_.Initialize(device), "NR extra-pass resize kernels") || !create(extraDesc, extra.input)) { return false; }
 					auto restoredDesc = sceneDesc; restoredDesc.Width = workWidth; restoredDesc.Height = workHeight;
-					if (!create(restoredDesc, secondRestored_)) { return false; }
+					if (!create(restoredDesc, extra.restored)) { return false; }
 					if (reconstruction.peripheralCompression) {
-						auto guideDesc = secondDesc; guideDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
-						if (!create(guideDesc, secondMotion_)) { return false; }
+						auto guideDesc = extraDesc; guideDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+						if (!create(guideDesc, extra.motion)) { return false; }
 						guideDesc.Format = DXGI_FORMAT_R32_FLOAT;
-						if (!create(guideDesc, secondDepth_)) { return false; }
-						if (!options.WorldOnly() && !create(secondDesc, secondUI_)) { return false; }
+						if (!create(guideDesc, extra.depth)) { return false; }
+						if (!options.WorldOnly() && !create(extraDesc, extra.ui)) { return false; }
 					}
 				}
 			}
@@ -224,16 +233,39 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Each identified runtime contract selects its own default preset.
 		info.networkPreset = reconstruction.preset == 0 ? -1 : reconstruction.preset;
 		if (!feature_.EnsureInitialized(info)) { status_ = feature_.Status(); return false; }
-		if (options.passes == 2) {
-			info.displayWidth = secondWidth; info.displayHeight = secondHeight;
-			info.networkPreset = secondSettings.preset == 0 ? -1 : secondSettings.preset;
-			if (reconstruction.peripheralCompression) { info.renderWidth = secondWidth; info.renderHeight = secondHeight; }
-			if (!secondFeature_.EnsureInitialized(info)) { status_ = "NR second feature: " + secondFeature_.Status(); return false; }
-			if (resizeSecond && !NeuralRendering::UsesReconstructionContract(secondFeature_.Build())) {
+		// Pass 1 and 2 start together as before; Passes 3 to 5 follow one per frame.
+		auto ramp = NeuralRendering::NextFeatureRamp(createdPasses_, options.passes, startablePasses_);
+		for (std::size_t i = 0; i + 1 < static_cast<std::size_t>(ramp.created); ++i) {
+			const auto& plan = plans[i];
+			auto& feature = extra_[i].feature;
+			info.displayWidth = plan.width; info.displayHeight = plan.height;
+			info.networkPreset = plan.settings.preset == 0 ? -1 : plan.settings.preset;
+			if (reconstruction.peripheralCompression) { info.renderWidth = plan.width; info.renderHeight = plan.height; }
+			if (!feature.EnsureInitialized(info)) {
+				// NGX refusing a later pass is not a reason to drop the runtime: the
+				// passes before it keep running, and this one is not tried again
+				// until NR is recreated. Nothing was recorded for it.
+				if (feature.RefusedCreation()) {
+					const int running = static_cast<int>(i) + 1;
+					startablePasses_ = running;
+					ramp.created = running;
+					ramp.ready = (std::min)(ramp.ready, running);
+					passNote_ = std::format("Pass {} could not start: {}; running {} pass{}", running + 1,
+						feature.Status(), running, running == 1 ? "" : "es");
+					logger::warn("[DLSSNR Source] {}", passNote_);
+					break;
+				}
+				status_ = std::format("NR pass {} feature: {}", i + 2, feature.Status()); return false;
+			}
+			if (plan.resize && !NeuralRendering::UsesReconstructionContract(feature.Build())) {
 				status_ = "Independent NR pass resolutions require the reconstruction runtime"; return false;
 			}
 		}
-		secondSettings_ = secondSettings;
+		// Model rate evaluates on a frame that created a feature.
+		createdThisFrame_ = ramp.created != createdPasses_;
+		createdPasses_ = ramp.created;
+		readyPasses_ = ramp.ready;
+		for (std::size_t i = 0; i < extraPasses; ++i) { extra_[i].settings = plans[i].settings; }
 		if (method != NeuralRendering::ResolveMethod::Auto && !NeuralRendering::UsesReconstructionContract(feature_.Build())) {
 			status_ = "Legacy NR supports Auto reconstruction only"; return false;
 		}
@@ -248,6 +280,38 @@ namespace TheosRenderPipeline::SourceDLSSG
 	}
 
 #include "SourceDLSSGNeuralSecondPass.inl"
+
+	bool NeuralPass::EnsureModelRate(ID3D12Device* device, ID3D12Resource* motion, ID3D12Resource* hudless)
+	{
+		if (const auto hr = resolve_.Initialize(device); FAILED(hr)) {
+			status_ = std::format("NR model-rate kernels failed 0x{:08X}", static_cast<UINT>(hr)); return false;
+		}
+		// The pass is recreated when the guides or the scene change size.
+		if (rateChange_) {
+			if (!SameSize(rateChange_.Get(), hudless) || !SameSize(rateMotion_.Get(), motion)) {
+				status_ = "NR model-rate textures changed size without retiring the pass"; return false;
+			}
+			return true;
+		}
+		auto create = [&](ID3D12Resource* like, DXGI_FORMAT format, Microsoft::WRL::ComPtr<ID3D12Resource>& out) {
+			D3D12_RESOURCE_DESC desc{};
+			desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = like->GetDesc().Width; desc.Height = like->GetDesc().Height;
+			desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
+			desc.Format = format; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+			D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+			if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+				D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&out)))) {
+				status_ = "NR model-rate allocation failed"; return false;
+			}
+			return true;
+		};
+		// RGBA16F guides and change (see the shader's notes on precision); the
+		// composed motion is RG32F like the packed guides the model already reads.
+		return create(motion, DXGI_FORMAT_R16G16B16A16_FLOAT, rateGuides_[0]) &&
+			create(motion, DXGI_FORMAT_R16G16B16A16_FLOAT, rateGuides_[1]) &&
+			create(motion, DXGI_FORMAT_R32G32_FLOAT, rateMotion_) &&
+			create(hudless, DXGI_FORMAT_R16G16B16A16_FLOAT, rateChange_);
+	}
 
 	bool NeuralPass::HoldFrame(ID3D12Device* device, ID3D12GraphicsCommandList* list, bool freeze,
 		ID3D12Resource*& motion, ID3D12Resource*& depth, ID3D12Resource* hudless, ID3D12Resource*& objectMask, bool& reset)
@@ -298,7 +362,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const D3D12StageMarks& marks, ID3D12Resource* objectMask, std::array<float,2> objectMaskGuideOffset,
 		std::array<float,2> colorJitter)
 	{
-		if (!device || !list || slot >= heaps_.size() || options.passes < 1 || options.passes > 2 || !SameSize(motion, depth) ||
+		if (!device || !list || slot >= heaps_.size() || options.passes < 1 || options.passes > NeuralRendering::kMaxNeuralPasses || !SameSize(motion, depth) ||
 			!Texture(hudless) || (options.WorldOnly() ? (ui || composed || options.tuning.uiCorrection) :
 			(!SameSize(hudless, composed) || !SameSize(ui, hudless) || hudless == composed)) ||
 			!std::isfinite(scaleX) || !std::isfinite(scaleY) || !scaleX || !scaleY) {
@@ -309,8 +373,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (!HoldFrame(device, list, options.compare.freeze && !options.beforeUpscaling, motion, depth, hudless, objectMask, reset)) {
 			return false;
 		}
-		const int effectivePasses = options.EffectivePasses();
-		if (effectivePasses == 1) { secondHistoryInvalid_ = true; }
+		// A pass whose feature was created this frame waits for the next one.
+		const int effectivePasses = (std::max)(1, (std::min)(options.EffectivePasses(), readyPasses_));
+		for (std::size_t i = static_cast<std::size_t>(effectivePasses) - 1; i < extra_.size(); ++i) { extra_[i].historyInvalid = true; }
 		InitializeTelemetry(device, timestampFrequency);
 		// Interop::Begin retired this exact command slot before Record was called.
 		// Reading its previous query pair therefore never adds a CPU wait.
@@ -344,255 +409,350 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(hr)) { status_ = std::format("NR reconstruction recording failed 0x{:08X}", static_cast<UINT>(hr)); }
 			return SUCCEEDED(hr);
 		};
-		// Adaptive exposure measures the original scene before anything encodes it.
-		const bool adaptive = resolving && reconstruction.adaptiveExposure && reconstruction.colorIsHDR &&
-			!reconstruction.producerColor;
-		constants.adaptiveExposure = adaptive;
-		constants.exposureBias = reconstruction.exposureBias;
-		if (adaptive) {
-			if (!exposure_) {
-				D3D12_RESOURCE_DESC desc{};
-				desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = desc.Height = 1;
-				desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
-				desc.Format = DXGI_FORMAT_R32_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
-				if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
-					D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&exposure_)))) {
-					status_ = "NR exposure allocation failed"; return false;
-				}
-			}
-			// Half the remaining difference every quarter second: about a second to settle.
-			const auto now = std::chrono::steady_clock::now();
-			const float seconds = std::clamp(std::chrono::duration<float>(now - exposureTime_).count(), 0.0f, 0.25f);
-			constants.exposureRate = 1.0f - std::exp2(-seconds / 0.25f);
-			constants.exposureReset = reset || !exposureValid_;
-			resolve_.SetExposure(exposure_.Get());
-			if (!dispatch(12, ResolveKernel::MeasureExposure, hudless, nullptr, nullptr, exposure_.Get())) { return false; }
-			exposureTime_ = now; exposureValid_ = true;
-			constants.exposureReset = false;
-		} else {
-			resolve_.SetExposure(nullptr);
-			exposureValid_ = false;
+		// The passes whose object controls run this frame. A change resets their histories.
+		std::array<bool, NeuralRendering::kMaxNeuralPasses> controlWanted{};
+		bool controlReset = false;
+		for (unsigned pass = 0; pass < controlWanted.size(); ++pass) {
+			controlWanted[pass] = objectMask && pass < unsigned(effectivePasses) &&
+				NeuralRendering::UsesReconstructionContract(feature_.Build()) && options.objectMasks.passes[pass].Active();
+			controlReset |= controlWanted[pass] != objectControlActive_[pass];
 		}
-		// Before upscaling, Ratio shows NR the frame on the steady grid and moves its
-		// change back to the jittered one; DLSS still receives the jittered pixels.
-		// Only the passes that read the raw frame, and the final resolve, use it.
-		const bool steady = method == NeuralRendering::ResolveMethod::Ratio &&
-			options.beforeUpscaling && std::isfinite(colorJitter[0]) && std::isfinite(colorJitter[1]) &&
-			(colorJitter[0] != 0 || colorJitter[1] != 0);
-		const auto setJitter = [&](bool on) {
-			constants.jitterX = on ? colorJitter[0] : 0; constants.jitterY = on ? colorJitter[1] : 0;
-		};
-		if (resolving) {
-			if (encoded_) {
-				constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
-				setJitter(steady);
-				if (!dispatch(0, ResolveKernel::Ratio, hudless, nullptr, nullptr, encoded_.Get())) { return false; }
-				setJitter(false);
-				featureColor = encoded_.Get();
-			}
-			if (workColor_) {
-				constants.targetWidth = constants.workWidth; constants.targetHeight = constants.workHeight;
-				setJitter(steady && featureColor == hudless);
-				if (!dispatch(1, fusedColor_ ? ResolveKernel::PrepareColor : ResolveKernel::Downsample, featureColor, nullptr, nullptr, workColor_.Get())) { return false; }
-				setJitter(false);
-				featureColor = workColor_.Get();
-			}
+
+		// Model rate: decide before preparing anything for the model (NeuralModelRate.h).
+		const auto rateNow = std::chrono::steady_clock::now();
+		// Frames NR did not record (a menu, a stall) break the motion chain.
+		const bool gap = rateTime_ != std::chrono::steady_clock::time_point{} && rateNow - rateTime_ > std::chrono::milliseconds(100);
+		rateTime_ = rateNow;
+		const bool rateChanged = gap || createdThisFrame_ || effectivePasses != rateEffectivePasses_ ||
+			!SameModelOutputOptions(options, rateOptions_);
+		rateOptions_ = options; rateEffectivePasses_ = effectivePasses;
+		const auto rate = rateSchedule_.Next({ reconstruction.modelRate, reset || controlReset, rateChanged, frozen_ });
+		const bool skipped = !rate.evaluate;
+		telemetry_.RecordModelRun(rate.evaluate);
+		// Camera jitter in render pixels. Before upscaling the colour raster carries
+		// it; after upscaling only the guides do, against the steady output.
+		const auto cameraJitter = options.beforeUpscaling ? colorJitter : objectMaskGuideOffset;
+		const bool jitterKnown = std::isfinite(cameraJitter[0]) && std::isfinite(cameraJitter[1]);
+		constants.cameraJitterX = jitterKnown ? cameraJitter[0] : 0; constants.cameraJitterY = jitterKnown ? cameraJitter[1] : 0;
+		constants.previousJitterX = rateJitter_[0]; constants.previousJitterY = rateJitter_[1];
+		constants.guidesJittered = !options.beforeUpscaling;
+		constants.depthInverted = depthInverted;
+		constants.categories = objectMask && rateMask_;
+		// Multiplicative above, additive below: about 5/255 of display-encoded
+		// colour, or a deep shadow of linear HDR relative to its white point.
+		constants.changeFloor = reconstruction.producerColor ? 0.02f * reconstruction.whitePoint :
+			reconstruction.colorIsHDR ? 0.002f * reconstruction.whitePoint : 0.02f;
+		ID3D12Resource* currentGuides{};
+		ID3D12Resource* previousGuides{};
+		if (rate.captureGuides || rate.storeChange) {
+			if (!EnsureModelRate(device, motion, hudless)) { return false; }
 		}
-		if (reconstruction.peripheralCompression) {
-			if (reconstruction.fusedPreparation) {
-				if (!dispatch(4, ResolveKernel::PackGuides, depth, motion, nullptr, packedDepth_.Get(), packedMotion_.Get())) { return false; }
-			} else if (!dispatch(4, ResolveKernel::PackDepth, depth, nullptr, nullptr, packedDepth_.Get()) ||
-				!dispatch(5, ResolveKernel::PackMotion, motion, nullptr, nullptr, packedMotion_.Get())) { return false; }
-			featureDepth = packedDepth_.Get(); featureMotion = packedMotion_.Get();
-			if (ui) {
-				if (!dispatch(6, ResolveKernel::Downsample, ui, nullptr, nullptr, packedUI_.Get())) { return false; }
-				featureUI = packedUI_.Get();
+		if (rate.captureGuides) {
+			currentGuides = rateGuides_[rateGuide_].Get(); previousGuides = rateGuides_[rateGuide_ ^ 1].Get();
+			if (!dispatch(NeuralResolveKernels::ModelRateStage(0), ResolveKernel::CaptureGuides, motion, depth, objectMask, currentGuides)) {
+				return false;
 			}
+			rateGuide_ ^= 1;
+			rateJitter_ = { constants.cameraJitterX, constants.cameraJitterY };
+			rateMask_ = objectMask != nullptr;
 		}
-		// NR UI correction reads Backbuffer's existing pixels. The reconstruction
-		// output/backbuffer alias must therefore contain the original scene, not
-		// fresh allocation contents or last frame's NR result. UI remains separate
-		// here because TheosRenderPipeline composes it once after NR for both presentation paths.
-		if (NeuralRendering::UsesReconstructionContract(feature_.Build()) && options.tuning.uiCorrection &&
-			FAILED(Interop::RecordCopy(list, featureColor, featureOutput))) {
-			status_ = "NR correction background copy rejected"; return false;
+		if (rate.composeMotion) {
+			// Every pass's history is two frames old; packing and the extra passes
+			// read this composed field as the frame's motion.
+			if (!dispatch(NeuralResolveKernels::ModelRateStage(1), ResolveKernel::ComposeMotion, motion, currentGuides, previousGuides,
+				rateMotion_.Get())) { return false; }
+			motion = rateMotion_.Get();
+			featureMotion = motion;
 		}
-		constexpr auto read = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-		constexpr auto common = D3D12_RESOURCE_STATE_COMMON;
-		constexpr auto write = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		// Prepare both passes before transitioning shared guides for evaluation.
-		// Each mask samples the raw classification/depth at that model's grid,
-		// including peripheral compression and the existing SDK pixel jitter.
-		std::array<ID3D12Resource*,2> controls{};
-		bool controlReset=false;
-		for (unsigned pass=0;pass<2;++pass) {
-			const bool active=objectMask&&pass<unsigned(effectivePasses)&&
-				NeuralRendering::UsesReconstructionContract(feature_.Build())&&options.objectMasks.passes[pass].Active();
-			controlReset|=active!=objectControlActive_[pass];
-			if(active) {
-				auto* output=pass?secondOutput_.Get():featureOutput;
-				const auto hr=objectControl_.Record(device,list,slot,pass,options.objectMasks.passes[pass],
-					pass?options.EffectiveSecond().tuning:options.tuning,objectMask,depth,
-					static_cast<UINT>(output->GetDesc().Width),output->GetDesc().Height,reconstruction.peripheralCompression,objectMaskGuideOffset);
-				if(FAILED(hr)){status_=std::format("NR object controls failed 0x{:08X}",static_cast<UINT>(hr));return false;}
-				controls[pass]=objectControl_.Output(pass);
-			}
-			objectControlActive_[pass]=active;
-		}
-		secondControlMask_=controls[1];
 		// Every resource NGX reads. featureColor is hudless unless preparation replaced it.
-		const std::array<ID3D12Resource*, 8> inputs{ featureMotion, featureDepth, featureUI, hudless, composed,
-			featureColor != hudless ? featureColor : nullptr,controls[0],controls[1] };
+		static_assert(NeuralRendering::kMaxNeuralPasses == 5, "list every pass's control mask");
+		std::array<ID3D12Resource*, 6 + NeuralRendering::kMaxNeuralPasses> inputs{};
 		auto transitionInputs = [&](Barriers& barriers, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after) {
 			for (auto* resource : inputs) { barriers.Add(resource, before, after); }
 		};
-		{
-			Barriers barriers{list};
-			transitionInputs(barriers, common, read);
-			barriers.Add(featureOutput, common, write).Flush();
-		}
-		NeuralRendering::FeatureSession::EvaluationInput input;
-		input.commandList = list; input.color = featureColor; input.motionVectors = featureMotion; input.depth = featureDepth;
-		input.output = featureOutput; input.ui = featureUI;
-		// This runtime aliases Backbuffer to output in UAV state. The older
-		// runtime reads the composed input instead.
-		input.backbuffer = NeuralRendering::UsesReconstructionContract(feature_.Build()) ? featureOutput : composed ? composed : hudless;
-		// Uniform mode retains the existing runtime guide/scale contract. Packed
-		// guides already express endpoint displacement in model pixels.
-		const float motionRatio = resolving ? float(constants.workWidth) / constants.sourceWidth : 1.0f;
-		input.motionVectorScaleX = reconstruction.peripheralCompression ? 1.0f : scaleX * motionRatio;
-		input.motionVectorScaleY = reconstruction.peripheralCompression ? 1.0f : scaleY * motionRatio;
-		input.reset = reset; input.depthInverted = depthInverted; input.tuning = options.tuning;
-		input.reset |= controlReset;
-		input.controlMask=controls[0];
-		if (input.controlMask) {
-			// The provider multiplies mask RGB by these global controls. Absolute
-			// pass/group values already live in the mask; do not apply them twice.
-			input.tuning.useAutoSkinMask = false;
-			input.tuning.intensity = input.tuning.localToneStrength = input.tuning.localStructureStrength = 1;
-		}
-		const bool gpuTiming = timestampHeap_ && timestampReadback_ && mappedTimestamps_ && timestampFrequency_;
-		const auto query = static_cast<UINT>(slot * 2);
-		marks.End(D3D12Stage::kNeuralPrepare);
-		marks.Begin(D3D12Stage::kNeuralInference);
-		if (gpuTiming) { list->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query); }
-		// Strength is source-owned, unlike the provider's tone/structure controls.
-		// Blend before the next pass reads this output, retaining that pass's input
-		// at zero. Each pass owns its scratch texture and retired-slot descriptors.
-		// The existing chain timing includes these blends and pass-2 preparation.
-		auto applyObjectStrength = [&](unsigned pass, const NeuralRendering::FeatureSession::EvaluationInput& evaluation) {
-			if (!objectMask) { return true; }
-			const auto strengths = options.objectMasks.passes[pass].Strengths();
-			if (std::all_of(strengths.begin(), strengths.end(), [](float value) { return value == 1; })) { return true; }
-			auto& result = passObjectResult_[pass];
-			if (!result) {
-				D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
-				const auto desc = evaluation.output->GetDesc();
-				const auto hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
-					common, nullptr, IID_PPV_ARGS(&result));
-				if (FAILED(hr)) { status_ = "NR per-pass object-result allocation failed"; return false; }
+		constexpr auto read = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+		constexpr auto common = D3D12_RESOURCE_STATE_COMMON;
+		constexpr auto write = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		if (skipped) {
+			// No model on this frame: carry the previous frame's change onto this
+			// input. Nothing NR's passes would prepare is needed; everything after
+			// corrected_ runs as on an evaluated frame.
+			marks.End(D3D12Stage::kNeuralPrepare);
+			marks.Begin(D3D12Stage::kNeuralFinish);
+			if (const auto hr = resolve_.Record(device, list, slot, NeuralResolveKernels::ModelRateStage(3), ResolveKernel::Reproject,
+				constants, hudless, rateChange_.Get(), currentGuides, corrected_.Get(), nullptr, previousGuides); FAILED(hr)) {
+				status_ = std::format("NR model-rate reprojection failed 0x{:08X}", static_cast<UINT>(hr)); return false;
 			}
-			// Raw depth remains readable when used directly by the first model;
-			// peripheral preparation instead left it COMMON. Other guides stay put.
-			const bool rawDepthRead = featureDepth == depth;
-			Barriers before{list};
-			before.Add(evaluation.color, read, common).Add(evaluation.output, write, common);
-			if (rawDepthRead) { before.Add(depth, read, common); }
-			before.Flush();
-			NeuralRendering::ObjectBlendRequest request;
-			request.strength = strengths;
-			const auto hr = passObjectBlend_[pass].Record(device, list, slot, request,
-				evaluation.color, evaluation.output, objectMask, depth, result.Get(), objectMaskGuideOffset,
-				reconstruction.peripheralCompression);
-			if (FAILED(hr) || FAILED(Interop::RecordCopy(list, result.Get(), evaluation.output))) {
-				status_ = std::format("NR pass {} object-strength composition failed", pass + 1); return false;
-			}
-			Barriers after{list};
-			after.Add(evaluation.color, common, read).Add(evaluation.output, common, write);
-			if (rawDepthRead) { after.Add(depth, common, read); }
-			after.Flush();
-			return true;
-		};
-		const auto cpuBegin = std::chrono::steady_clock::now();
-		auto second = input;
-		bool evaluated = feature_.RecordEvaluation(input);
-		if (!evaluated) { status_ = feature_.Status(); }
-		if (evaluated) { evaluated = applyObjectStrength(0, input); }
-		if (evaluated && effectivePasses == 2) {
-			evaluated = RecordSecond(device, list, slot, options, input, constants, motion, depth, ui, second);
-			if (evaluated) { evaluated = applyObjectStrength(1, second); }
-		}
-		const auto cpuRecordNanoseconds = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::steady_clock::now() - cpuBegin).count());
-		if (!evaluated) {
-			telemetry_.RecordCPUOnly(cpuRecordNanoseconds);
-			return false;
-		}
-		if (gpuTiming) {
-			list->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query + 1);
-			list->ResolveQueryData(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query, 2,
-				timestampReadback_.Get(), sizeof(std::uint64_t) * query);
-			pendingTiming_[slot] = { feature_.EvaluationsRecorded(), cpuRecordNanoseconds, true };
 		} else {
-			telemetry_.RecordCPUOnly(cpuRecordNanoseconds);
-		}
-		marks.End(D3D12Stage::kNeuralInference);
-		marks.Begin(D3D12Stage::kNeuralFinish);
-
-		// With a resolve to follow, it reads the final pass-2 result in place.
-		auto* modelResult = featureOutput;
-		if (effectivePasses == 2 && !FinishSecond(device, list, slot, input, second, constants,
-			resolving ? &modelResult : nullptr)) { return false; }
-
-		if (resolving) {
-			// The kernels take every input in COMMON and leave it there; nothing
-			// after the resolve reads the NGX inputs again.
-			Barriers barriers{list};
-			transitionInputs(barriers, read, common);
-			// A direct pass-2 result and featureOutput are already COMMON.
-			if (modelResult == featureOutput) { barriers.Add(featureOutput, write, common); }
-			barriers.Flush();
-			if (method == NeuralRendering::ResolveMethod::Residual) {
-				constants.targetWidth = constants.workWidth; constants.targetHeight = constants.workHeight;
-				if (!dispatch(2, ResolveKernel::Residual, featureColor, modelResult, nullptr, residual_.Get())) { return false; }
-				constants.mode = 1;
-				if (!dispatch(3, ResolveKernel::Residual, hudless, residual_.Get(), nullptr, corrected_.Get())) { return false; }
-			} else {
-				// Broad and Detail: NR's change in stops at its grid, blurred across
-				// regions but not across the proxy's own edges, for the resolve to split.
-				const bool bands = !reconstruction.producerColor && reconstruction.ToneBands();
-				constants.broad = reconstruction.broadStrength; constants.detail = reconstruction.detailStrength;
-				constants.toneBands = bands;
-				if (bands) {
-					const auto work = featureColor->GetDesc();
-					for (auto* tone : { std::addressof(toneData_), std::addressof(toneScratch_) }) {
-						if (*tone) { continue; }
-						D3D12_RESOURCE_DESC desc{};
-						desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = work.Width; desc.Height = work.Height;
-						desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
-						desc.Format = DXGI_FORMAT_R16G16_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-						D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
-						if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
-							D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(tone->ReleaseAndGetAddressOf())))) {
-							status_ = "NR broad/detail allocation failed"; return false;
-						}
+			// Adaptive exposure measures the original scene before anything encodes it.
+			const bool adaptive = resolving && reconstruction.adaptiveExposure && reconstruction.colorIsHDR &&
+				!reconstruction.producerColor;
+			constants.adaptiveExposure = adaptive;
+			constants.exposureBias = reconstruction.exposureBias;
+			if (adaptive) {
+				if (!exposure_) {
+					D3D12_RESOURCE_DESC desc{};
+					desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = desc.Height = 1;
+					desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
+					desc.Format = DXGI_FORMAT_R32_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+					D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+					if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+						D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&exposure_)))) {
+						status_ = "NR exposure allocation failed"; return false;
 					}
-					constants.targetWidth = static_cast<UINT>(work.Width); constants.targetHeight = work.Height;
-					if (!dispatch(13, ResolveKernel::PrepareTone, featureColor, modelResult, nullptr, toneData_.Get())) { return false; }
-					constants.mode = 0;
-					if (!dispatch(14, ResolveKernel::FilterTone, toneData_.Get(), nullptr, nullptr, toneScratch_.Get())) { return false; }
-					constants.mode = 1;
-					if (!dispatch(15, ResolveKernel::FilterTone, toneScratch_.Get(), nullptr, nullptr, toneData_.Get())) { return false; }
-					resolve_.SetTone(toneData_.Get());
 				}
-				constants.mode = 1; constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
-				setJitter(steady);
-				if (!dispatch(3, ResolveKernel::Ratio, featureColor, modelResult, hudless, corrected_.Get())) { return false; }
-				setJitter(false);
-				resolve_.SetTone(nullptr);
+				// Half the remaining difference every quarter second: about a second to settle.
+				const auto now = std::chrono::steady_clock::now();
+				const float seconds = std::clamp(std::chrono::duration<float>(now - exposureTime_).count(), 0.0f, 0.25f);
+				constants.exposureRate = 1.0f - std::exp2(-seconds / 0.25f);
+				constants.exposureReset = reset || !exposureValid_;
+				resolve_.SetExposure(exposure_.Get());
+				if (!dispatch(12, ResolveKernel::MeasureExposure, hudless, nullptr, nullptr, exposure_.Get())) { return false; }
+				exposureTime_ = now; exposureValid_ = true;
+				constants.exposureReset = false;
+			} else {
+				resolve_.SetExposure(nullptr);
+				exposureValid_ = false;
+			}
+			// Before upscaling, Ratio shows NR the frame on the steady grid and moves its
+			// change back to the jittered one; DLSS still receives the jittered pixels.
+			// Only the passes that read the raw frame, and the final resolve, use it.
+			const bool steady = method == NeuralRendering::ResolveMethod::Ratio &&
+				options.beforeUpscaling && std::isfinite(colorJitter[0]) && std::isfinite(colorJitter[1]) &&
+				(colorJitter[0] != 0 || colorJitter[1] != 0);
+			const auto setJitter = [&](bool on) {
+				constants.jitterX = on ? colorJitter[0] : 0; constants.jitterY = on ? colorJitter[1] : 0;
+			};
+			if (resolving) {
+				if (encoded_) {
+					constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
+					setJitter(steady);
+					if (!dispatch(0, ResolveKernel::Ratio, hudless, nullptr, nullptr, encoded_.Get())) { return false; }
+					setJitter(false);
+					featureColor = encoded_.Get();
+				}
+				if (workColor_) {
+					constants.targetWidth = constants.workWidth; constants.targetHeight = constants.workHeight;
+					setJitter(steady && featureColor == hudless);
+					if (!dispatch(1, fusedColor_ ? ResolveKernel::PrepareColor : ResolveKernel::Downsample, featureColor, nullptr, nullptr, workColor_.Get())) { return false; }
+					setJitter(false);
+					featureColor = workColor_.Get();
+				}
+			}
+			if (reconstruction.peripheralCompression) {
+				if (reconstruction.fusedPreparation) {
+					if (!dispatch(4, ResolveKernel::PackGuides, depth, motion, nullptr, packedDepth_.Get(), packedMotion_.Get())) { return false; }
+				} else if (!dispatch(4, ResolveKernel::PackDepth, depth, nullptr, nullptr, packedDepth_.Get()) ||
+					!dispatch(5, ResolveKernel::PackMotion, motion, nullptr, nullptr, packedMotion_.Get())) { return false; }
+				featureDepth = packedDepth_.Get(); featureMotion = packedMotion_.Get();
+				if (ui) {
+					if (!dispatch(6, ResolveKernel::Downsample, ui, nullptr, nullptr, packedUI_.Get())) { return false; }
+					featureUI = packedUI_.Get();
+				}
+			}
+			// NR UI correction reads Backbuffer's existing pixels. The reconstruction
+			// output/backbuffer alias must therefore contain the original scene, not
+			// fresh allocation contents or last frame's NR result. UI remains separate
+			// here because TheosRenderPipeline composes it once after NR for both presentation paths.
+			if (NeuralRendering::UsesReconstructionContract(feature_.Build()) && options.tuning.uiCorrection &&
+				FAILED(Interop::RecordCopy(list, featureColor, featureOutput))) {
+				status_ = "NR correction background copy rejected"; return false;
+			}
+			// Prepare every pass before transitioning shared guides for evaluation.
+			// Each mask samples the raw classification/depth at that model's grid,
+			// including peripheral compression and the existing SDK pixel jitter.
+			std::array<ID3D12Resource*,NeuralRendering::kMaxNeuralPasses> controls{};
+			for (unsigned pass=0;pass<controls.size();++pass) {
+				const bool active=controlWanted[pass];
+				if(active) {
+					auto* output=pass?extra_[pass-1].output.Get():featureOutput;
+					const auto hr=objectControl_.Record(device,list,slot,pass,options.objectMasks.passes[pass],
+						pass?options.EffectiveExtra(pass-1).tuning:options.tuning,objectMask,depth,
+						static_cast<UINT>(output->GetDesc().Width),output->GetDesc().Height,reconstruction.peripheralCompression,objectMaskGuideOffset);
+					if(FAILED(hr)){status_=std::format("NR object controls failed 0x{:08X}",static_cast<UINT>(hr));return false;}
+					controls[pass]=objectControl_.Output(pass);
+				}
+				objectControlActive_[pass]=active;
+				if(pass){extra_[pass-1].controlMask=controls[pass];}
+			}
+			inputs = { featureMotion, featureDepth, featureUI, hudless, composed,
+				featureColor != hudless ? featureColor : nullptr,controls[0],controls[1],controls[2],controls[3],controls[4] };
+			{
+				Barriers barriers{list};
+				transitionInputs(barriers, common, read);
+				barriers.Add(featureOutput, common, write).Flush();
+			}
+			NeuralRendering::FeatureSession::EvaluationInput input;
+			input.commandList = list; input.color = featureColor; input.motionVectors = featureMotion; input.depth = featureDepth;
+			input.output = featureOutput; input.ui = featureUI;
+			// This runtime aliases Backbuffer to output in UAV state. The older
+			// runtime reads the composed input instead.
+			input.backbuffer = NeuralRendering::UsesReconstructionContract(feature_.Build()) ? featureOutput : composed ? composed : hudless;
+			// Uniform mode retains the existing runtime guide/scale contract. Packed
+			// guides already express endpoint displacement in model pixels.
+			const float motionRatio = resolving ? float(constants.workWidth) / constants.sourceWidth : 1.0f;
+			input.motionVectorScaleX = reconstruction.peripheralCompression ? 1.0f : scaleX * motionRatio;
+			input.motionVectorScaleY = reconstruction.peripheralCompression ? 1.0f : scaleY * motionRatio;
+			input.reset = reset; input.depthInverted = depthInverted; input.tuning = options.tuning;
+			input.reset |= controlReset;
+			input.controlMask=controls[0];
+			if (input.controlMask) {
+				// The provider multiplies mask RGB by these global controls. Absolute
+				// pass/group values already live in the mask; do not apply them twice.
+				input.tuning.useAutoSkinMask = false;
+				input.tuning.intensity = input.tuning.localToneStrength = input.tuning.localStructureStrength = 1;
+			}
+			const bool gpuTiming = timestampHeap_ && timestampReadback_ && mappedTimestamps_ && timestampFrequency_;
+			const auto query = static_cast<UINT>(slot * 2);
+			marks.End(D3D12Stage::kNeuralPrepare);
+			marks.Begin(D3D12Stage::kNeuralInference);
+			if (gpuTiming) { list->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query); }
+			// Strength is source-owned, unlike the provider's tone/structure controls.
+			// Blend before the next pass reads this output, retaining that pass's input
+			// at zero. Each pass owns its scratch texture and retired-slot descriptors.
+			// The existing chain timing includes these blends and extra-pass preparation.
+			auto applyObjectStrength = [&](unsigned pass, const NeuralRendering::FeatureSession::EvaluationInput& evaluation) {
+				if (!objectMask) { return true; }
+				const auto strengths = options.objectMasks.passes[pass].Strengths();
+				if (std::all_of(strengths.begin(), strengths.end(), [](float value) { return value == 1; })) { return true; }
+				auto& result = passObjectResult_[pass];
+				if (!result) {
+					D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+					const auto desc = evaluation.output->GetDesc();
+					const auto hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+						common, nullptr, IID_PPV_ARGS(&result));
+					if (FAILED(hr)) { status_ = "NR per-pass object-result allocation failed"; return false; }
+				}
+				// Raw depth remains readable when used directly by the first model;
+				// peripheral preparation instead left it COMMON. Other guides stay put.
+				const bool rawDepthRead = featureDepth == depth;
+				Barriers before{list};
+				before.Add(evaluation.color, read, common).Add(evaluation.output, write, common);
+				if (rawDepthRead) { before.Add(depth, read, common); }
+				before.Flush();
+				NeuralRendering::ObjectBlendRequest request;
+				request.strength = strengths;
+				const auto hr = passObjectBlend_[pass].Record(device, list, slot, request,
+					evaluation.color, evaluation.output, objectMask, depth, result.Get(), objectMaskGuideOffset,
+					reconstruction.peripheralCompression);
+				if (FAILED(hr) || FAILED(Interop::RecordCopy(list, result.Get(), evaluation.output))) {
+					status_ = std::format("NR pass {} object-strength composition failed", pass + 1); return false;
+				}
+				Barriers after{list};
+				after.Add(evaluation.color, common, read).Add(evaluation.output, common, write);
+				if (rawDepthRead) { after.Add(depth, common, read); }
+				after.Flush();
+				return true;
+			};
+			const auto cpuBegin = std::chrono::steady_clock::now();
+			std::array<NeuralRendering::FeatureSession::EvaluationInput, NeuralRendering::kExtraPasses> extras;
+			// The previous pass's result on Pass 1's grid, which the next pass reads.
+			ID3D12Resource* previous = featureOutput;
+			bool evaluated = feature_.RecordEvaluation(input);
+			if (!evaluated) { status_ = feature_.Status(); }
+			if (evaluated) { evaluated = applyObjectStrength(0, input); }
+			for (int pass = 1; evaluated && pass < effectivePasses; ++pass) {
+				auto& evaluation = extras[pass - 1];
+				evaluated = RecordExtra(device, list, slot, pass, options, input, previous, constants, motion, depth, ui, evaluation);
+				if (evaluated) { evaluated = applyObjectStrength(pass, evaluation); }
+				// Every pass but the last is restored here for the next; the last after timing.
+				if (evaluated && pass + 1 < effectivePasses) {
+					evaluated = FinishExtra(device, list, slot, pass, input, previous, evaluation, constants, &previous);
+				}
+			}
+			const auto cpuRecordNanoseconds = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+				std::chrono::steady_clock::now() - cpuBegin).count());
+			if (!evaluated) {
+				telemetry_.RecordCPUOnly(cpuRecordNanoseconds);
+				return false;
+			}
+			if (gpuTiming) {
+				list->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query + 1);
+				list->ResolveQueryData(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, query, 2,
+					timestampReadback_.Get(), sizeof(std::uint64_t) * query);
+				pendingTiming_[slot] = { feature_.EvaluationsRecorded(), cpuRecordNanoseconds, true };
+			} else {
+				telemetry_.RecordCPUOnly(cpuRecordNanoseconds);
+			}
+			marks.End(D3D12Stage::kNeuralInference);
+			marks.Begin(D3D12Stage::kNeuralFinish);
+
+			// With a resolve to follow, it reads the last pass's result in place.
+			auto* modelResult = featureOutput;
+			if (effectivePasses > 1 && !FinishExtra(device, list, slot, effectivePasses - 1, input, previous,
+				extras[effectivePasses - 2], constants, resolving ? &modelResult : nullptr)) { return false; }
+
+			if (resolving) {
+				// The kernels take every input in COMMON and leave it there; nothing
+				// after the resolve reads the NGX inputs again.
+				Barriers barriers{list};
+				transitionInputs(barriers, read, common);
+				// A direct extra-pass result and featureOutput are already COMMON.
+				if (modelResult == featureOutput) { barriers.Add(featureOutput, write, common); }
+				barriers.Flush();
+				if (method == NeuralRendering::ResolveMethod::Residual) {
+					constants.targetWidth = constants.workWidth; constants.targetHeight = constants.workHeight;
+					if (!dispatch(2, ResolveKernel::Residual, featureColor, modelResult, nullptr, residual_.Get())) { return false; }
+					constants.mode = 1;
+					if (!dispatch(3, ResolveKernel::Residual, hudless, residual_.Get(), nullptr, corrected_.Get())) { return false; }
+				} else {
+					// Broad and Detail: NR's change in stops at its grid, blurred across
+					// regions but not across the proxy's own edges, for the resolve to split.
+					const bool bands = !reconstruction.producerColor && reconstruction.ToneBands();
+					constants.broad = reconstruction.broadStrength; constants.detail = reconstruction.detailStrength;
+					constants.toneBands = bands;
+					if (bands) {
+						const auto work = featureColor->GetDesc();
+						for (auto* tone : { std::addressof(toneData_), std::addressof(toneScratch_) }) {
+							if (*tone) { continue; }
+							D3D12_RESOURCE_DESC desc{};
+							desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width = work.Width; desc.Height = work.Height;
+							desc.DepthOrArraySize = desc.MipLevels = 1; desc.SampleDesc.Count = 1;
+							desc.Format = DXGI_FORMAT_R16G16_FLOAT; desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+							D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+							if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+								D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(tone->ReleaseAndGetAddressOf())))) {
+								status_ = "NR broad/detail allocation failed"; return false;
+							}
+						}
+						constants.targetWidth = static_cast<UINT>(work.Width); constants.targetHeight = work.Height;
+						if (!dispatch(13, ResolveKernel::PrepareTone, featureColor, modelResult, nullptr, toneData_.Get())) { return false; }
+						constants.mode = 0;
+						if (!dispatch(14, ResolveKernel::FilterTone, toneData_.Get(), nullptr, nullptr, toneScratch_.Get())) { return false; }
+						constants.mode = 1;
+						if (!dispatch(15, ResolveKernel::FilterTone, toneScratch_.Get(), nullptr, nullptr, toneData_.Get())) { return false; }
+						resolve_.SetTone(toneData_.Get());
+					}
+					constants.mode = 1; constants.targetWidth = constants.sourceWidth; constants.targetHeight = constants.sourceHeight;
+					setJitter(steady);
+					if (!dispatch(3, ResolveKernel::Ratio, featureColor, modelResult, hudless, corrected_.Get())) { return false; }
+					setJitter(false);
+					resolve_.SetTone(nullptr);
+				}
+			}
+			if (rate.storeChange) {
+				// NR's change for the next frame, before the preview or comparison
+				// draws over corrected_. Without a resolve, NGX left corrected_
+				// writable and the inputs readable; the kernel takes them in COMMON.
+				if (!resolving) {
+					Barriers barriers{list};
+					barriers.Add(corrected_.Get(), write, common);
+					transitionInputs(barriers, read, common);
+					barriers.Flush();
+				}
+				if (!dispatch(NeuralResolveKernels::ModelRateStage(2), ResolveKernel::StoreChange, hudless, corrected_.Get(), nullptr,
+					rateChange_.Get())) { return false; }
+				if (!resolving) {
+					Barriers barriers{list};
+					barriers.Add(corrected_.Get(), common, write);
+					transitionInputs(barriers, common, read);
+					barriers.Flush();
+				}
 			}
 		}
+		// NGX wrote corrected_ itself and still holds its inputs readable. A
+		// resolve or a frame without the model left everything in COMMON.
+		const bool ngxStates = !resolving && !skipped;
 
 		StatusKey key;
 		key.workWidth = constants.workWidth; key.workHeight = constants.workHeight;
@@ -600,15 +760,18 @@ namespace TheosRenderPipeline::SourceDLSSG
 		key.passes = effectivePasses; key.worldOnly = options.WorldOnly(); key.beforeUpscaling = options.beforeUpscaling;
 		key.producerColor = reconstruction.producerColor; key.peripheral = reconstruction.peripheralCompression;
 		key.fusionRequested = reconstruction.fusedPreparation; key.fusedColor = fusedColor_; key.method = method;
-		if (effectivePasses == 2) {
-			key.secondWidth = static_cast<UINT>(secondOutput_->GetDesc().Width); key.secondHeight = secondOutput_->GetDesc().Height;
-			key.secondPreset = secondSettings_.preset; key.secondLinked = options.secondPass.linked;
-			key.secondIntensity = secondSettings_.tuning.intensity;
+		for (std::size_t i = 0; i + 1 < static_cast<std::size_t>(effectivePasses); ++i) {
+			const auto& extra = extra_[i];
+			key.extra[i] = { static_cast<UINT>(extra.output->GetDesc().Width), extra.output->GetDesc().Height,
+				extra.settings.preset, options.extraPasses[i].linked, extra.settings.tuning.intensity };
 		}
-		key.passOverride = options.passOverride; key.requestedPasses = options.passes;
+		key.passOverride = options.passOverride; key.requestedPasses = options.passes; key.readyPasses = readyPasses_;
+		key.startablePasses = startablePasses_;
+		key.everyOtherFrame = reconstruction.modelRate == NeuralRendering::ModelRate::EveryOtherFrame;
 		key.objectControls=objectControlActive_;
 		key.objectControlsUnavailable=
-			(options.objectMasks.passes[0].Active()||options.objectMasks.passes[1].Active())&&
+			std::any_of(options.objectMasks.passes.begin(),options.objectMasks.passes.begin()+options.passes,
+				[](const auto& pass){return pass.Active();})&&
 			!NeuralRendering::UsesReconstructionContract(feature_.Build());
 		// The mask preview is drawn over the finished result at full strength;
 		// each pass has already applied its own object strength.
@@ -623,7 +786,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			// The blend and its copy take corrected_ and the inputs in COMMON. A resolve
 			// already left them there; otherwise NGX left corrected_ writable and the
 			// inputs readable, and the code below expects those states back.
-			if (!resolving) {
+			if (ngxStates) {
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), write, common);
 				transitionInputs(barriers, read, common);
@@ -636,7 +799,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(hr)) { status_ = std::format("NR object-mask preview failed 0x{:08X}", static_cast<UINT>(hr)); return false; }
 			const auto copied = Interop::RecordCopy(list, objectResult_.Get(), corrected_.Get());
 			if (FAILED(copied)) { status_ = std::format("NR object-mask preview copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
-			if (!resolving) {
+			if (ngxStates) {
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), common, write);
 				transitionInputs(barriers, common, read);
@@ -655,7 +818,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (const auto hr = resolve_.Initialize(device); FAILED(hr)) {
 				status_ = std::format("NR compare kernels failed 0x{:08X}", static_cast<UINT>(hr)); return false;
 			}
-			if (!resolving) {
+			if (ngxStates) {
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), write, common);
 				transitionInputs(barriers, read, common);
@@ -671,7 +834,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 			const auto copied = Interop::RecordCopy(list, splitResult_.Get(), corrected_.Get());
 			if (FAILED(copied)) { status_ = std::format("NR compare copy failed 0x{:08X}", static_cast<UINT>(copied)); return false; }
-			if (!resolving) {
+			if (ngxStates) {
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), common, write);
 				transitionInputs(barriers, common, read);
@@ -679,7 +842,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 		}
 		if (options.WorldOnly()) {
-			if (!resolving) {
+			if (ngxStates) {
 				// NGX wrote corrected_ directly; return it and its inputs to COMMON.
 				Barriers barriers{list};
 				barriers.Add(corrected_.Get(), write, common);
@@ -696,10 +859,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// In peripheral mode NGX consumed a private warped UI. Composition still
 		// samples the untouched native UI. After a resolve it is COMMON, as it is
 		// when NGX read the warped copy; otherwise it is still in the read state.
-		const bool uiCommon = resolving || featureUI != ui;
+		const bool uiCommon = !ngxStates || featureUI != ui;
 		{
 			Barriers barriers{list};
-			barriers.Add(corrected_.Get(), resolving ? common : write, read);
+			barriers.Add(corrected_.Get(), ngxStates ? write : common, read);
 			if (uiCommon) { barriers.Add(ui, common, read); }
 			barriers.Add(composed_.Get(), common, write).Flush();
 		}
@@ -723,7 +886,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			barriers.Add(composed_.Get(), write, common).Add(corrected_.Get(), read, common);
 			if (uiCommon) { barriers.Add(ui, read, common); }
 			// Without a resolve, the NGX inputs (including a native UI it read) are still readable.
-			if (!resolving) { transitionInputs(barriers, read, common); }
+			if (ngxStates) { transitionInputs(barriers, read, common); }
 			barriers.Flush();
 		}
 		// Preserve the HUD-less tag identity already registered with Streamline.
@@ -752,17 +915,30 @@ namespace TheosRenderPipeline::SourceDLSSG
 					key.method == NeuralRendering::ResolveMethod::Ratio ? "ratio" : key.method == NeuralRendering::ResolveMethod::Residual ? "residual" : "direct",
 					reconstruction, key.fusionRequested, key.fusedColor, key.fusionRequested && key.peripheral);
 			}
-			if (key.passes == 2) {
-				successStatus_ += std::format("; pass2={}x{} preset={} linked={} intensity={:.3f}",
-					key.secondWidth, key.secondHeight, key.secondPreset, key.secondLinked, key.secondIntensity);
+			for (int pass = 2; pass <= key.passes; ++pass) {
+				const auto& extra = key.extra[pass - 2];
+				successStatus_ += std::format("; pass{}={}x{} preset={} linked={} intensity={:.3f}",
+					pass, extra.width, extra.height, extra.preset, extra.linked, extra.intensity);
 			}
 			if (key.passOverride != NeuralRendering::PassOverride::None) {
 				successStatus_ += std::format("; pass override={}; requested={}",
 					NeuralRendering::PassOverrideName(key.passOverride), key.requestedPasses);
 			}
-			if(key.objectControls[0]||key.objectControls[1]){
-				successStatus_+=std::format("; object tone/structure pass1={} pass2={} (auto skin paused on masked passes)",key.objectControls[0],key.objectControls[1]);
+			// A new pass runs from the frame after its feature's creation.
+			if (key.startablePasses < key.requestedPasses) {
+				successStatus_ += "; " + passNote_;
+			} else if (key.readyPasses < key.requestedPasses) {
+				successStatus_ += std::format("; starting passes {}-{}", key.readyPasses + 1, key.requestedPasses);
 			}
+			if(std::ranges::any_of(key.objectControls,std::identity{})){
+				// Masked passes only, for example "1,3".
+				std::string masked;
+				for(std::size_t pass=0;pass<key.objectControls.size();++pass){
+					if(key.objectControls[pass]){masked+=std::format("{}{}",masked.empty()?"":",",pass+1);}
+				}
+				successStatus_+=std::format("; object tone/structure passes={} (auto skin paused on masked passes)",masked);
+			}
+			if (key.everyOtherFrame) { successStatus_ += "; model every other frame"; }
 			if(key.objectControlsUnavailable){successStatus_+="; object tone/structure unavailable on legacy NR; per-pass and final strength retained";}
 		}
 		if (status_ != successStatus_) { status_ = successStatus_; }

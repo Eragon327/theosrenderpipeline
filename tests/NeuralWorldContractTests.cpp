@@ -2,6 +2,7 @@
 #include "RendererSettings.h"
 #include "FrameGen/SourceDLSSGNeuralState.h"
 #include "FrameGen/SourceDLSSGNeuralAvailability.h"
+#include "FrameGen/NativeUIFrame.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -29,6 +30,8 @@ int main()
     external.passes = 2;
     Require(history.ResetFor(external, true, false), "multipass change resets history");
     Require(!history.ResetFor(external, true, false), "multipass history persists across completed frames");
+    external.passes = 5;
+    Require(history.ResetFor(external, true, false) && !history.ResetFor(external, true, false), "five-pass history");
     external.reconstruction.inputScale = 0.5f;
     Require(history.ResetFor(external, true, false), "reconstruction scale change resets history");
     Require(history.ResetFor(external, false, false), "missing world breaks history");
@@ -51,7 +54,7 @@ int main()
             return reset;
         };
         Require(frame(false, true), "initial world resets history");
-        Require(frame(false, false) == !early, "hiding interface preserves early NR history and suspends late NR");
+        Require(frame(false, false) == !early, "missing UI guides preserve early NR history and suspend late NR");
         Require(!frame(false, false), "repeated hidden-interface frames are stable");
         Require(frame(false, true) == !early, "late NR restarts when its guides return");
         Require(frame(true, false), "loading interrupts NR history in either placement");
@@ -61,6 +64,19 @@ int main()
         Require(!NeuralFrameEligible(true, early, false, false, true, true), "unavailable UI state is not an active world");
         Require(!NeuralPreparedEligible(true, false, true, true), "world-only cannot claim an unevaluated early pass");
         Require(!NeuralFrameEligible(false, early, true, false, true, true), "dedicated native UI contract remains required");
+    }
+
+    // A hidden interface (tm, the console, photo modes) hands off a cleared UI
+    // layer and the HUD-less scene, so late NR keeps running; a failed clear
+    // or a UI that is neither drawn nor hidden hands off nothing.
+    Require(HandOffUIAtPresent(true, false, false), "drawn UI is handed off");
+    Require(HandOffUIAtPresent(false, true, true), "a hidden interface hands off a transparent UI layer");
+    Require(!HandOffUIAtPresent(false, true, false), "an uncleared UI layer is never handed off");
+    Require(!HandOffUIAtPresent(false, false, false), "an undrawn, visible interface keeps the old fallback");
+    {
+        NeuralOptions late; late.enabled = true;
+        const bool guides = HandOffUIAtPresent(false, true, true);
+        Require(NeuralFrameEligible(true, late.WorldOnly(), true, false, guides, guides), "late NR stays eligible with the interface hidden");
     }
 
     using namespace TheosRenderPipeline::NeuralRendering;
@@ -165,10 +181,15 @@ int main()
     request.reconstruction.inputScale = 0.5f;
     Require(availability.UnavailableReason(request, classify), "legacy reduced Auto requires unsupported residual reconstruction");
     request.reconstruction.inputScale = 1; request.passes = 2;
-    request.secondPass.linked = false; request.secondPass.inputScale = .5f;
+    request.extraPasses[0].linked = false; request.extraPasses[0].inputScale = .5f;
     Require(availability.UnavailableReason(request, classify), "legacy custom pass resolution rejected before GPU work");
-    request.secondPass.linked = true;
+    request.extraPasses[0].linked = true;
     Require(!availability.UnavailableReason(request, classify), "legacy linked passes recover without restart");
+    request.passes = 4; request.extraPasses[2].linked = false; request.extraPasses[2].inputScale = .5f;
+    Require(availability.UnavailableReason(request, classify), "legacy custom Pass 4 resolution rejected before GPU work");
+    request.passes = 3;
+    Require(!availability.UnavailableReason(request, classify), "an unused pass's resolution does not block legacy NR");
+    request.passes = 2; request.extraPasses[2].linked = true;
     request.reconstruction.inputScale = 1; request.reconstruction.method = ResolveMethod::Ratio;
     Require(availability.UnavailableReason(request, classify), "legacy explicit Ratio is rejected too");
     request.reconstruction.method = ResolveMethod::Auto; request.beforeUpscaling = true; request.worldOnly = false;
@@ -177,7 +198,7 @@ int main()
     request.reconstruction.producerColor = true;
     for (auto modern : {RuntimeBuild::Build14, RuntimeBuild::Nexus3108}) {
         build = modern; availability.Reset();
-        for (float scale : {1.0f, 0.5f}) for (int passes : {1, 2}) {
+        for (float scale : {1.0f, 0.5f}) for (int passes : {1, 2, 5}) {
             request.reconstruction.inputScale = scale; request.passes = passes;
             Require(!availability.UnavailableReason(request, classify), "modern early NR preserves resolution and multipass support");
         }

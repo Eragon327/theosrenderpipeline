@@ -161,6 +161,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         // A running XeFG presenter is recreated on the other SDK copy.
         source.ConfigureXeFGTensor(frameGen_.settings.sourceDLSSG.xefgTensorCores);
         source.ConfigureOutputFPSLimit(frameGen_.settings.sourceDLSSG.outputFPSLimit);
+        source.ConfigureFrameLimit(frameGen_.settings.sourceDLSSG.frameLimit);
         source.ConfigureGeneration(frameGen_.settings.sourceDLSSG.generation);
         source.ConfigureXeFG(frameGen_.settings.sourceDLSSG.xefg);
         // The backend applies Enabled at the next present boundary.
@@ -174,7 +175,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         options.tuning = frameGen_.settings.sourceDLSSG.neuralTuning;
         options.objectMasks = frameGen_.settings.sourceDLSSG.neuralObjectMasks;
         options.reconstruction = frameGen_.settings.sourceDLSSG.neuralReconstruction;
-        options.secondPass = frameGen_.settings.sourceDLSSG.neuralSecondPass;
+        options.extraPasses = frameGen_.settings.sourceDLSSG.neuralExtraPasses;
         options.beforeUpscaling = frameGen_.settings.sourceDLSSG.neuralBeforeUpscaling;
         options.passes = frameGen_.settings.sourceDLSSG.neuralPasses;
         options.combat = frameGen_.settings.sourceDLSSG.neuralCombat;

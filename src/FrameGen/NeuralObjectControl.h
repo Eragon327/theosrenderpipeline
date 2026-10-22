@@ -13,12 +13,13 @@ namespace TheosRenderPipeline::NeuralRendering
         HRESULT Record(ID3D12Device*,ID3D12GraphicsCommandList*,std::size_t slot,unsigned pass,
             const ObjectPassTuning&,const Tuning&,ID3D12Resource* objects,ID3D12Resource* depth,
             UINT width,UINT height,bool peripheral,std::array<float,2> guideOffset);
-        ID3D12Resource* Output(unsigned pass) const { return pass<2 ? outputs_[pass].Get() : nullptr; }
+        ID3D12Resource* Output(unsigned pass) const { return pass<outputs_.size() ? outputs_[pass].Get() : nullptr; }
     private:
         HRESULT Initialize(ID3D12Device*);
         Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
         Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline_;
-        std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,2> outputs_;
-        std::array<std::array<Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>,2>,SourceDLSSG::kCommandSlots> heaps_;
+        std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,kMaxNeuralPasses> outputs_;
+        // A pass's tables are created when it first uses object rules.
+        std::array<std::array<Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>,kMaxNeuralPasses>,SourceDLSSG::kCommandSlots> heaps_;
     };
 }

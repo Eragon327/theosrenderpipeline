@@ -23,10 +23,11 @@ namespace TheosRenderPipeline::NeuralRendering
     void ApplyCombatMode(SourceDLSSG::NeuralOptions& options, bool worldEligible)
     {
         options.passOverride = PassOverride::None;
-        const bool presetOnePass = options.presetOnePass && options.passes == 2;
-        if (!worldEligible || !options.enabled || options.passes != 2 || !options.combat.Enabled() || presetOnePass) {
-            // A preset's single pass already skips Pass 2; combat has nothing to reduce.
-            if (presetOnePass && worldEligible && options.enabled) { options.passOverride = PassOverride::Preset; }
+        const bool presetFewer = options.presetPasses > 0 && options.presetPasses < options.passes;
+        const bool presetOnePass = presetFewer && options.presetPasses == 1;
+        if (!worldEligible || !options.enabled || options.passes < 2 || !options.combat.Enabled() || presetOnePass) {
+            // A preset's single pass already skips the others; combat has nothing to reduce.
+            if (presetFewer && worldEligible && options.enabled) { options.passOverride = PassOverride::Preset; }
             policy.Reset();
             std::scoped_lock lock(sample.mutex);
             sample.state = {};
@@ -78,5 +79,7 @@ namespace TheosRenderPipeline::NeuralRendering
             });
         }
         options.passOverride = policy.Update(options.combat, options.enabled, options.passes, state, gameplaySeconds);
+        // A preset running some of the passes still reports why the rest are skipped.
+        if (options.passOverride == PassOverride::None && presetFewer) { options.passOverride = PassOverride::Preset; }
     }
 }

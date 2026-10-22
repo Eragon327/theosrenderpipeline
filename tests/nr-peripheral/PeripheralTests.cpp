@@ -156,9 +156,9 @@ static void IndependentPasses(GPU& gpu,bool adaptive=false){
         options.beforeUpscaling=route==1 || route==2;options.worldOnly=route>=2;options.passes=2;
         options.tuning.uiCorrection=!world;options.reconstruction.peripheralCompression=peripheral;
         options.reconstruction.producerColor=producer;options.reconstruction.inputScale=.65f;
-        options.secondPass.linked=false;options.secondPass.inputScale=secondScale;
-        options.secondPass.preset=1;options.secondPass.tuning.uiCorrection=!world;
-        if(transform){options.tuning.intensity=.8f;options.secondPass.tuning.intensity=.6f;}
+        options.extraPasses[0].linked=false;options.extraPasses[0].inputScale=secondScale;
+        options.extraPasses[0].preset=1;options.extraPasses[0].tuning.uiCorrection=!world;
+        if(transform){options.tuning.intensity=.8f;options.extraPasses[0].tuning.intensity=.6f;}
         Fixture::peripheral=peripheral;Fixture::worldOnly=world;Fixture::sourceWidth=w;Fixture::sourceHeight=h;
         Fixture::guideWidth=gw;Fixture::guideHeight=gh;
         Fixture::workWidth=ModelExtent(w,options.reconstruction);Fixture::workHeight=ModelExtent(h,options.reconstruction);
@@ -200,15 +200,141 @@ static void IndependentPasses(GPU& gpu,bool adaptive=false){
         Require(Fixture::creations==2 && Fixture::evaluations==(adaptive?12u:8u) && Fixture::resets==(adaptive?5u:4u),
             "retained features execute only active passes and reset resumed history");
         Require(!pass.NeedsRecreation(options,gw,gh),"custom settings stable");
-        auto changed=options;changed.secondPass.tuning.intensity=.1f;
+        auto changed=options;changed.extraPasses[0].tuning.intensity=.1f;
         Require(!pass.NeedsRecreation(changed,gw,gh),"tuning resets history without recreating feature");
         Require(history.ResetFor(changed,true,false),"second tuning change resets histories");
-        changed=options;changed.secondPass.preset=0;Require(pass.NeedsRecreation(changed,gw,gh),"second preset requires retirement");
-        changed=options;changed.secondPass.inputScale=.8f;Require(pass.NeedsRecreation(changed,gw,gh),"second resolution requires retirement");
+        changed=options;changed.extraPasses[0].preset=0;Require(pass.NeedsRecreation(changed,gw,gh),"second preset requires retirement");
+        changed=options;changed.extraPasses[0].inputScale=.8f;Require(pass.NeedsRecreation(changed,gw,gh),"second resolution requires retirement");
         ++cases;
     }
     Fixture::secondWidth=Fixture::secondHeight=0;Fixture::transform=false;
     std::printf("PASS: %u independent pass configurations (adaptive=%d); rounded sizes, larger/smaller/equal second grid, per-pass tuning/preset, identity detail, chained transform and UI/history contracts\n",cases,adaptive);
 }
+// Three and five passes in the production recorder: each extra pass at its own
+// raster (resized, equal and smaller), chained on Pass 1's grid, with the
+// one-new-feature-per-frame start enforced by the feature double.
+static void ManyPasses(GPU& gpu){
+    using namespace TheosRenderPipeline::NeuralRendering;
+    unsigned cases=0;
+    constexpr std::array<float,5> scales{.65f,.5f,1.f,.65f,.25f};
+    for(int passes:{3,5})for(bool peripheral:{false,true})for(int route:{0,1})for(bool masked:{false,true}){
+        const bool world=route!=0;
+        const unsigned w=103,h=61,gw=51,gh=30;
+        NeuralOptions options;options.enabled=true;options.runtimePath="scripted.dll";
+        options.beforeUpscaling=world;options.passes=passes;
+        options.tuning.uiCorrection=!world;options.reconstruction.peripheralCompression=peripheral;
+        options.reconstruction.inputScale=scales[0];options.tuning.intensity=.8f;
+        Fixture::peripheral=peripheral;Fixture::worldOnly=world;Fixture::sourceWidth=w;Fixture::sourceHeight=h;
+        Fixture::guideWidth=gw;Fixture::guideHeight=gh;Fixture::transform=true;
+        Fixture::workWidth=ModelExtent(w,options.reconstruction);Fixture::workHeight=ModelExtent(h,options.reconstruction);
+        // Pass 4 stays linked: it takes Pass 1's raster and tuning, not Pass 3's.
+        for(std::size_t i=0;i<kExtraPasses;++i){
+            auto& extra=options.extraPasses[i];
+            extra.linked=i==2;extra.inputScale=scales[i+1];extra.preset=1;extra.tuning.intensity=.6f;extra.tuning.uiCorrection=!world;
+            auto extent=options.reconstruction;extent.inputScale=options.EffectiveExtra(i).inputScale;
+            Fixture::passWidth[i+1]=ModelExtent(w,extent);Fixture::passHeight[i+1]=ModelExtent(h,extent);
+            Fixture::intensity[i+1]=options.EffectiveExtra(i).tuning.intensity;
+            Fixture::networkPreset[i+1]=options.EffectiveExtra(i).preset?options.EffectiveExtra(i).preset:-1;
+        }
+        if(masked){
+            // Every running pass has a rule; Pass 3's strength blends with its own input.
+            for(auto& rule:options.objectMasks.passes){rule.groups[0].enabled=true;}
+            options.objectMasks.passes[2].groups[0].strength=.5f;
+        }
+        Fixture::creations=Fixture::evaluations=Fixture::resets=0;Fixture::lateCreationFrame=~0u;
+        Fixture::objectControls=masked;Fixture::controlEvaluations=0;
+        auto motion=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{}),DXGI_FORMAT_R32G32_FLOAT);
+        auto depth=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{.4f,0,0,0}),DXGI_FORMAT_R32_FLOAT);
+        auto mask=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{PackObjectPixel(ObjectGroup::FirstPerson,.4f),0,0,0}),DXGI_FORMAT_R32_FLOAT);
+        auto ui=gpu.Texture(w,h,std::vector<Pixel>(w*h,{.05f,.025f,0,.25f})),composed=gpu.Texture(w,h);
+        const std::vector<Pixel> pixels(w*h,{.2f,.3f,.4f,.5f});
+        NeuralPass pass;unsigned expectedEvaluations=0;
+        for(unsigned frame=0;frame<7;++frame){
+            Fixture::frame=frame;
+            // Frame 0 runs Pass 1 and 2; each later pass runs from the frame after its creation.
+            const int running=frame==0?2:std::min(passes,int(frame)+1);
+            auto scene=gpu.Texture(w,h,pixels);
+            gpu.Begin();Require(pass.Record(gpu.device.Get(),gpu.list.Get(),frame%kCommandSlots,options,frame==0,true,float(gw),float(gh),
+                motion.Get(),depth.Get(),world?nullptr:ui.Get(),scene.Get(),world?nullptr:composed.Get(),0,{},masked?mask.Get():nullptr),
+                pass.Status().c_str());gpu.End();
+            expectedEvaluations+=unsigned(running);
+            Require(Fixture::evaluations==expectedEvaluations&&pass.ReadyPasses()==running,"only the ready prefix of passes runs");
+            Require(Fixture::creations==unsigned(frame==0?2:std::min(passes,int(frame)+2)),"one later feature is created per frame");
+            Require((pass.Status().find(std::format("; pass{}=",running))!=std::string::npos)&&
+                pass.Status().find(std::format("; pass{}=",running+1))==std::string::npos,"status lists every running extra pass");
+            Require((pass.Status().find("; starting passes")!=std::string::npos)==(running<passes),"status names passes still starting");
+            const auto actual=gpu.Read(pass.Corrected());
+            for(size_t i=0;i<actual.size();++i)for(unsigned ch=0;ch<4;++ch){
+                float expected=pixels[i][ch];
+                if(ch<3)for(int k=0;k<running;++k){
+                    const float result=expected*Fixture::intensity[k]+(k?.02f:.01f);
+                    const float strength=masked&&k==2?.5f:1.f;
+                    expected+=strength*(result-expected);
+                }
+                Near(actual[i][ch],expected,.0005,"every extra pass chains on the previous result at its own raster");
+            }
+            if(!world){auto tag=gpu.Read(scene.Get());
+                for(size_t i=0;i<actual.size();++i)for(unsigned ch=0;ch<4;++ch)Near(tag[i][ch],actual[i][ch],0,"all passes feed the same real and FG scene");
+            }
+        }
+        // Object controls switching on for a starting pass reset every running
+        // history, as when Pass 2 resumes after combat.
+        unsigned expectedResets=unsigned(passes);
+        if(masked){expectedResets=2;for(int frame=2;frame<passes;++frame)expectedResets+=unsigned(frame+1);}
+        Require(Fixture::creations==unsigned(passes)&&Fixture::resets==expectedResets,"each pass resets its new history once");
+        Require(Fixture::controlEvaluations==(masked?expectedEvaluations:0u),"each running pass receives its own object controls");
+        Require(!pass.NeedsRecreation(options,gw,gh),"many-pass settings stable");
+        auto changed=options;changed.extraPasses[passes-2].tuning.intensity=.1f;
+        Require(!pass.NeedsRecreation(changed,gw,gh),"last pass tuning keeps the features");
+        changed=options;changed.extraPasses[passes-2].inputScale=.8f;
+        Require(pass.NeedsRecreation(changed,gw,gh),"last pass resolution requires retirement");
+        changed=options;changed.extraPasses[2].inputScale=.3f;
+        Require(passes<4||!pass.NeedsRecreation(changed,gw,gh),"a linked pass ignores its own saved resolution");
+        ++cases;
+    }
+    Fixture::secondWidth=Fixture::secondHeight=0;Fixture::passWidth={};Fixture::passHeight={};Fixture::transform=false;
+    Fixture::intensity={.8f,.6f,.6f,.6f,.6f};Fixture::networkPreset={-1,1,1,1,1};Fixture::frame=0;Fixture::objectControls=false;
+    std::printf("PASS: %u three/five-pass configurations; per-pass rasters, Pass 1 linking, ready-prefix start, per-pass object strength and status\n",cases);
+}
+// NGX refusing a later pass's feature keeps the runtime: the passes before it
+// keep running, the refused pass is not tried again and no runtime refusal is reported.
+static void RefusedLaterPass(GPU& gpu){
+    using namespace TheosRenderPipeline::NeuralRendering;
+    unsigned cases=0;
+    for(unsigned refused:{1u,2u,4u}){
+        const unsigned w=64,h=40,gw=32,gh=20;const int passes=5;
+        NeuralOptions options;options.enabled=true;options.runtimePath="scripted.dll";options.passes=passes;
+        options.tuning.uiCorrection=true;
+        Fixture::peripheral=false;Fixture::worldOnly=false;Fixture::sourceWidth=w;Fixture::sourceHeight=h;
+        Fixture::guideWidth=gw;Fixture::guideHeight=gh;Fixture::workWidth=w;Fixture::workHeight=h;
+        Fixture::creations=Fixture::evaluations=Fixture::resets=0;Fixture::lateCreationFrame=~0u;Fixture::refuseIndex=refused;
+        auto motion=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{}),DXGI_FORMAT_R32G32_FLOAT);
+        auto depth=gpu.Texture(gw,gh,std::vector<Pixel>(gw*gh,{.4f,0,0,0}),DXGI_FORMAT_R32_FLOAT);
+        auto ui=gpu.Texture(w,h,std::vector<Pixel>(w*h,{})),composed=gpu.Texture(w,h);
+        const auto pixels=Pattern(w,h);
+        NeuralPass pass;unsigned expected=0;
+        for(unsigned frame=0;frame<8;++frame){
+            Fixture::frame=frame;
+            auto scene=gpu.Texture(w,h,pixels);
+            gpu.Begin();Require(pass.Record(gpu.device.Get(),gpu.list.Get(),frame%kCommandSlots,options,frame==0,true,float(gw),float(gh),
+                motion.Get(),depth.Get(),ui.Get(),scene.Get(),composed.Get()),"a refused later pass must not fail the frame");gpu.End();
+            const int ready=frame==0?(refused==1?1:2):std::min({int(refused),int(frame)+1,passes});
+            Require(pass.ReadyPasses()==ready,"the passes before the refused one keep running");
+            expected+=unsigned(ready);
+            Require(pass.RefusedCreation()==0,"a later pass is never reported as a runtime refusal");
+            auto result=gpu.Read(pass.Corrected());
+            for(size_t i=0;i<result.size();++i)for(unsigned ch=0;ch<4;++ch)Near(result[i][ch],pixels[i][ch],.0002,"identity chain still runs");
+        }
+        const auto note=std::format("Pass {} could not start",refused+1);
+        Require(pass.PassNote().starts_with(note) && pass.Status().find(note)!=std::string::npos &&
+            pass.Status().find("starting passes")==std::string::npos,"the note names the pass and replaces the start message");
+        Require(Fixture::creations==refused && Fixture::evaluations==expected,"the refused pass is not tried again");
+        Require(!pass.NeedsRecreation(options,gw,gh),"the remaining passes keep their features");
+        ++cases;
+    }
+    Fixture::refuseIndex=~0u;Fixture::frame=0;
+    std::printf("PASS: %u refused later-pass cases; the ready prefix keeps running without a runtime refusal\n",cases);
+}
 #include "ObjectMaskCases.h"
-int main(){GPU gpu;ObjectMaskCases(gpu);PassObjectStrengthCases(gpu);Kernels(gpu);DescriptorCache(gpu);Passes(gpu);CombinedPreparation(gpu);PreparationRecorder(gpu);IndependentPasses(gpu);IndependentPasses(gpu,true);}
+#include "ModelRateCases.h"
+int main(){GPU gpu;ObjectMaskCases(gpu);PassObjectStrengthCases(gpu);Kernels(gpu);DescriptorCache(gpu);Passes(gpu);CombinedPreparation(gpu);PreparationRecorder(gpu);IndependentPasses(gpu);IndependentPasses(gpu,true);ManyPasses(gpu);RefusedLaterPass(gpu);ModelRateKernels(gpu);ModelRatePasses(gpu);}

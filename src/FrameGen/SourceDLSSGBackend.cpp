@@ -376,7 +376,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			!Check(xess_.Open(device12_.Get(), PluginPaths::IntelDirectory()), "XeSS context", "XeSS")) { return fault_; }
 		if (intelStartup) {
 			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_)) ||
-				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, true, &native, 0,
+				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, XeFGStartupInvertedDepth(communityShaders), &native, 0,
 					XeFGConfiguration(), IntelPipelines(XeFGPipelineCache(), xefg_.PipelineCacheName(), xefg_.RuntimeModule())))) { return fault_; }
 			providerStatus_ = "Intel XeFG presenter; latency owner=XeLL";
 		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), "Streamline swapchain")) { return fault_; }
@@ -404,7 +404,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		session_.RequestReflexMode(ReflexConfiguration());
 		session_.RequestUIRecomposition(UIRecompositionConfiguration());
 		session_.RequestOnlyGenerated(XeFGOnlyGenerated());
-		session_.RequestOutputFPSLimit(outputFPSLimit_.load(std::memory_order_relaxed));
+		// Steady measures first; only a Fixed cap applies from the first frame.
+		session_.RequestOutputFPSLimit(static_cast<FrameLimitMode>(frameLimit_.load(std::memory_order_relaxed)) == FrameLimitMode::Fixed ?
+			outputFPSLimit_.load(std::memory_order_relaxed) : 0);
 		if (!intelStartup) {
 			if (!CheckSession(session_.Start(api_, 1))) { return fault_; }
 			nvidiaSessionStarted_ = true;
@@ -689,7 +691,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				PresetLabel(PresetConfiguration()));
 		}
 		session_.RequestOnlyGenerated(XeFGOnlyGenerated());
-		session_.RequestOutputFPSLimit(outputFPSLimit_.load(std::memory_order_relaxed));
+		session_.RequestOutputFPSLimit(UpdateFrameLimit());
 		const bool prepared = provider_ == FrameGenerationProvider::XeFG ? xefg_.Snapshot().prepared :
 			session_.Snapshot().stage == SessionStage::Rendering;
 		if (prepared) {
@@ -801,7 +803,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			marks.Begin(D3D12Stage::kXeFGInputs);
 			if (!CheckXeFG(xefg_.BeforePresent(list, motion_.texture12.Get(), depth_.texture12.Get(), intelHudless, intelUI,
 				generationAllowed && prepared && compatible, UIRecompositionConfiguration(),
-				outputFPSLimit_.load(), XeFGConfiguration().generatedFrames))) { return fault_; }
+				frameOutputLimit_, XeFGConfiguration().generatedFrames))) { return fault_; }
 			marks.End(D3D12Stage::kXeFGInputs);
 		}
 		if (!Check(outputResult, "record native output copy/conversion") ||
@@ -843,8 +845,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 			std::scoped_lock lock(neuralMutex_);
 			const bool changed = neuralSnapshot_.active != active;
 			neuralSnapshot_.active = active;
-			neuralSnapshot_.effectivePasses = options.EffectivePasses();
+			// A new pass runs from the frame after its feature's creation.
+			neuralSnapshot_.effectivePasses = active && neuralPass_ ?
+				(std::max)(1, (std::min)(options.EffectivePasses(), neuralPass_->ReadyPasses())) : options.EffectivePasses();
 			neuralSnapshot_.passOverride = active ? options.passOverride : NeuralRendering::PassOverride::None;
+			neuralSnapshot_.passNote = active && neuralPass_ ? neuralPass_->PassNote() : std::string{};
 			if (active) { ++neuralSnapshot_.evaluations; }
 			if (reset) { ++neuralSnapshot_.resets; }
 			if (active) { neuralSnapshot_.telemetry = neuralPass_->Telemetry(); }
@@ -1305,6 +1310,28 @@ namespace TheosRenderPipeline::SourceDLSSG
 			}
 		}
 		return true;
+	}
+	int Backend::UpdateFrameLimit()
+	{
+		const auto mode = static_cast<FrameLimitMode>(frameLimit_.load(std::memory_order_relaxed));
+		const auto now = std::chrono::steady_clock::now();
+		const bool measured = steadyLast_.time_since_epoch().count() != 0;
+		const double intervalUs = measured ? std::chrono::duration<double, std::micro>(now - steadyLast_).count() : 0;
+		steadyLast_ = now;
+		if (mode != FrameLimitMode::Steady) {
+			steadyPacing_.Reset();
+			steadyRenderedFPS_.store(0, std::memory_order_relaxed);
+			return frameOutputLimit_ = mode == FrameLimitMode::Fixed ? outputFPSLimit_.load(std::memory_order_relaxed) : 0;
+		}
+		if (measured && steadyPacing_.Observe(intervalUs)) {
+			logger::info("[FrameLimit] steady cap {:.1f} rendered FPS", steadyPacing_.TargetFPS());
+		}
+		steadyRenderedFPS_.store(static_cast<float>(steadyPacing_.TargetFPS()), std::memory_order_relaxed);
+		// The limiters cap output, so scale the rendered cap by this frame's multiplier.
+		const unsigned outputs = provider_ == FrameGenerationProvider::XeFG ?
+			(xefg_.Snapshot().enabled ? xefg_.Snapshot().generatedFrames + 1 : 1u) :
+			(GenerationEnabled(session_.Snapshot().options.mode) ? session_.Snapshot().options.numFramesToGenerate + 1 : 1u);
+		return frameOutputLimit_ = SteadyOutputLimit(steadyPacing_.TargetUs(), outputs);
 	}
 	HRESULT Backend::CreatePresenter(FrameGenerationProvider provider, IDXGISwapChain** result)
 	{

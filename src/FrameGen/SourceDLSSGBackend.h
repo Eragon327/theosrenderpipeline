@@ -1,4 +1,6 @@
 #pragma once
+#include "SteadyPacing.h"
+#include <chrono>
 #include "SourceRetirementPolicy.h"
 #include "PresentationVSync.h"
 
@@ -159,6 +161,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 			outputFPSLimit_.store(a_fps, std::memory_order_relaxed);
 			return true;
 		}
+		void ConfigureFrameLimit(FrameLimitMode a_mode) { frameLimit_.store(static_cast<int>(a_mode), std::memory_order_relaxed); }
+		// Steady's current rendered-frame cap, 0 while measuring or off.
+		float SteadyRenderedFPS() const { return steadyRenderedFPS_.load(std::memory_order_relaxed); }
 		// Applied at the next present boundary (UpdateHDRRequest); calibration applies live.
 		void ConfigureHDROutput(const HDROutput::Settings& a_settings)
 		{
@@ -306,6 +311,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		std::uint64_t presenterPresents_{}; // Since the current presenter was created.
 		bool presenterReplaced_{}; // ApplyProviderSwitch replaced it during this Present.
 		std::atomic<int> outputFPSLimit_{ 0 };
+		std::atomic<int> frameLimit_{ 0 };
+		std::atomic<float> steadyRenderedFPS_{ 0 };
+		// Render thread only. The output cap Present hands the limiters this frame.
+		SteadyPacing steadyPacing_;
+		std::chrono::steady_clock::time_point steadyLast_{};
+		int frameOutputLimit_{ 0 };
+		int UpdateFrameLimit();
 		mutable std::mutex presentationFeedbackMutex_;
 		PresentationFeedbackTracker presentationFeedback_;
 		std::uint64_t presentationQueryFailures_{};

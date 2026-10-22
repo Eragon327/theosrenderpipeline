@@ -48,10 +48,10 @@ int main()
     settings = {true, true, 0};
     Require(update(combat, 109) == PassOverride::Combat && update(calm, 110) == PassOverride::None,
         "zero delay restores immediately");
-    for (int passes : {1, 2}) for (bool enabled : {false, true}) {
+    for (int passes : {1, 2, 3, 5}) for (bool enabled : {false, true}) {
         policy.Reset();
-        Require((policy.Update(settings, enabled, passes, both, 0) != PassOverride::None) == (enabled && passes == 2),
-            "NR off and configured one pass are unaffected");
+        Require((policy.Update(settings, enabled, passes, both, 0) != PassOverride::None) == (enabled && passes >= 2),
+            "NR off and configured one pass are unaffected; two to five passes drop to one");
     }
     Require(policy.Update({}, true, 2, both, 1) == PassOverride::None, "defaults are opt-in");
     Require(SanitizeCombatSettings({true, true, -1}).recoverySeconds == 0, "negative delay clamped");

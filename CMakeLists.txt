@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	TheosRenderPipeline
-	VERSION 0.5.1
+	VERSION 0.5.2
 	LANGUAGES C CXX
 )
 
@@ -602,6 +602,19 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_include_directories(TRPNeuralWorldContractTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/include" "${TRP_STREAMLINE_INCLUDE_DIR}")
     add_test(NAME NeuralWorldContract COMMAND TRPNeuralWorldContractTests)
+    add_executable(TRPSteadyPacingTests tests/SteadyPacingTests.cpp)
+    target_compile_features(TRPSteadyPacingTests PRIVATE cxx_std_23)
+    target_include_directories(TRPSteadyPacingTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    add_test(NAME SteadyPacing COMMAND TRPSteadyPacingTests)
+    add_executable(TRPNeuralModelRateTests tests/NeuralModelRateTests.cpp)
+    target_compile_features(TRPNeuralModelRateTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPNeuralModelRateTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(TRPNeuralModelRateTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    add_test(NAME NeuralModelRate COMMAND TRPNeuralModelRateTests)
+    add_executable(TRPRenderDrawDataScanTests tests/RenderDrawDataScanTests.cpp)
+    target_compile_features(TRPRenderDrawDataScanTests PRIVATE cxx_std_23)
+    target_include_directories(TRPRenderDrawDataScanTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/compatibility/ImGuiCompat")
+    add_test(NAME RenderDrawDataScan COMMAND TRPRenderDrawDataScanTests)
     add_executable(TRPNeuralRuntimeSelectionTests tests/NeuralRuntimeSelectionTests.cpp)
     target_compile_features(TRPNeuralRuntimeSelectionTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPNeuralRuntimeSelectionTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

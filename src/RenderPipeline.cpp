@@ -61,6 +61,7 @@ void RenderPipeline::LoadINI()
 	mEnableNRHotkeys = TheosRenderPipeline::Overlay::LoadNRHotkeysEnabled(ini);
 	logger::info("[Overlay Input] NR shortcuts enabled={}", mEnableNRHotkeys);
 	mLogMenuMetrics = ini.GetBoolValue("Debug", "LogMenuMetrics", false);
+	mScreenshotDiagnostics = ini.GetBoolValue("Debug", "ScreenshotDiagnostics", false);
 	mQualityLevel = std::clamp(mQualityLevel, 0, 4);
     TheosRenderPipeline::Appearance::Runtime::Get().Configure(TheosRenderPipeline::Appearance::Runtime::Load(ini));
 

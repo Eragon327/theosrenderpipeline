@@ -123,7 +123,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         auto& draft = settingsDraft.sourceDLSSG;
         auto& request = draft.generation;
         const auto& style = ImGui::GetStyle();
-        const float label = LabelWidth({"Frame generation", "Output FPS limit", "Scene change", "Flip metering"});
+        const float label = LabelWidth({"Frame generation", "Frame limit", "Scene change", "Flip metering"});
         if (!sourceDLSSGActive)
         {
             ImGui::TextColored(kOchre, "NVIDIA host is unavailable. Check runtime status and restart Skyrim.");
@@ -265,14 +265,36 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                                  "apply. DLSS-G manages its final output timing.");
                 return changed;
             });
-            SettingRow("Output FPS limit", nullptr, false, false, [&] {
-                ImGui::SetNextItemWidth(Px(64.0f));
-                const bool changed = ImGui::InputInt("##limit", &draft.outputFPSLimit, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
-                draft.outputFPSLimit = std::clamp(draft.outputFPSLimit, 0, 1000);
-                DrawSettingsHelp("The cap includes generated frames. Avoid stacking it with another limiter.");
+            SettingRow("Frame limit", nullptr, false, false, [&] {
+                int mode = static_cast<int>(draft.frameLimit);
+                ImGui::SetNextItemWidth(Px(200.0f));
+                bool changed = Segmented("frameLimit", mode, {
+                    {"Off", true, "No cap from TRP."},
+                    {"Fixed", true, "Caps output at the FPS you set, including generated frames."},
+                    {"Steady", true, "TRP measures recent frame times and caps rendered frames just below what the "
+                                     "slower frames manage, so frames arrive evenly. Average FPS drops a little; dips "
+                                     "and stutter go. Frame generation multiplies from there."}});
+                if (changed) {
+                    draft.frameLimit = static_cast<SD::FrameLimitMode>(mode);
+                    // Fixed needs a number to start from.
+                    if (draft.frameLimit == SD::FrameLimitMode::Fixed && !draft.outputFPSLimit) { draft.outputFPSLimit = 120; }
+                }
+                DrawSettingsHelp("Avoid stacking it with another limiter. Apply changes it live.");
                 ImGui::SameLine();
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("%s", draft.outputFPSLimit ? "FPS, including generated frames" : "no cap");
+                if (draft.frameLimit == SD::FrameLimitMode::Fixed) {
+                    ImGui::SetNextItemWidth(Px(64.0f));
+                    changed |= ImGui::InputInt("##limit", &draft.outputFPSLimit, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
+                    draft.outputFPSLimit = std::clamp(draft.outputFPSLimit, 1, 1000);
+                    DrawSettingsHelp("Output FPS, including generated frames.");
+                    ImGui::SameLine();
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextDisabled("output FPS");
+                } else {
+                    ImGui::AlignTextToFramePadding();
+                    const bool steadyApplied = draft.frameLimit == SD::FrameLimitMode::Steady && view.steadyRenderedFPS > 0;
+                    ImGui::TextDisabled("%s", draft.frameLimit == SD::FrameLimitMode::Off ? "no cap" :
+                        steadyApplied ? std::format("now {:.0f} FPS rendered", view.steadyRenderedFPS).c_str() : "measuring");
+                }
                 return changed;
             });
             ImGui::EndTable();

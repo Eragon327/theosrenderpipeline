@@ -232,11 +232,11 @@ void OverlayUI::DrawReportingDetails(const FrameView& view)
                     neural.beforeUpscaling ? "before" : "after", neural.passes, neural.passes == 1 ? "pass" : "passes");
         ImGui::Text("NR Pass 1: %.1f%% | network %s", neural.reconstruction.inputScale * 100,
                     neural.reconstruction.preset == 1 ? "Shipping" : "Default");
-        if (neural.passes == 2)
+        for (int pass = 2; pass <= neural.passes; ++pass)
         {
-            const auto second = neural.EffectiveSecond();
-            ImGui::Text("NR Pass 2: %s | %.1f%% | network %s", second.linked ? "linked" : "custom",
-                        second.inputScale * 100, second.preset == 1 ? "Shipping" : "Default");
+            const auto extra = neural.EffectiveExtra(static_cast<std::size_t>(pass - 2));
+            ImGui::Text("NR Pass %d: %s | %.1f%% | network %s", pass, extra.linked ? "linked" : "custom",
+                        extra.inputScale * 100, extra.preset == 1 ? "Shipping" : "Default");
         }
         ImGui::TextWrapped(
             "Include your GPU, driver, game and TRP versions, the active renderer, settings and reproduction steps.");
