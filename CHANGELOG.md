@@ -1,7 +1,7 @@
 # 0.5.2
 
-Game-tested on an RTX 4080 SUPER with XeFG frame generation. NVIDIA DLSS-G with
-NR Model rate has not been tested in game.
+Game-tested on an RTX 4080 SUPER with XeFG and DLSS-G frame generation, including
+NR Model rate's Every other frame with both.
 
 - NR runs up to five passes. **+** on the pass strip adds the next one; each extra
   pass processes the previous pass's result with its own history, input
