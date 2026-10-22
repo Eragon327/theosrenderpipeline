@@ -22,7 +22,7 @@ int main()
     // a cap just above 20 ms, and stay there instead of drifting.
     {
         SteadyPacing pacing;
-        for (int frame = 0; frame < 120; ++frame) { pacing.Observe(frame % 2 ? 20000 : 10000); }
+        for (int frame = 0; frame < 119; ++frame) { pacing.Observe(frame % 2 ? 20000 : 10000); }
         Require(pacing.TargetUs() == 0, "nothing is capped before the first full window");
         for (int frame = 0; frame < 60; ++frame) { pacing.Observe(frame % 2 ? 20000 : 10000); }
         Require(pacing.TargetUs() >= 20000 && pacing.TargetUs() <= 21000, "the first cap sits just above the slow frames");
@@ -39,8 +39,24 @@ int main()
         for (int frame = 0; frame < 600; ++frame) { pacing.Observe(Paced(pacing, 16000)); }
         const double before = pacing.TargetUs();
         for (int frame = 0; frame < 900; ++frame) { pacing.Observe(Paced(pacing, 22000)); }
-        // Frames within the 2% tolerance no longer count as misses.
-        Require(before < 17000 && pacing.TargetUs() * SteadyPacing::kMissTolerance >= 22000, "a heavier scene backs the cap off");
+        Require(before < 17000 && pacing.TargetUs() * SteadyPacing::kSlowTolerance >= 22000, "a heavier scene backs the cap off");
+    }
+    // 2026-10-22 game test: while the limiter holds frames to the cap, single
+    // intervals land up to 15% either side of it but average to it. The old
+    // miss count read that wobble as overload and walked a 28.6 FPS cap down to
+    // 21.3. Model every other frame before upscaling: 14 ms and 34 ms frames.
+    {
+        SteadyPacing pacing;
+        constexpr double wobble[]{ 0.15, -0.10, -0.05, 0.08, -0.08 };
+        double low = 1e9, high = 0;
+        for (int frame = 0; frame < 9000; ++frame) {
+            const double cost = frame % 2 ? 34000 : 14000;
+            const double held = Paced(pacing, cost);
+            pacing.Observe(pacing.TargetUs() > 0 && cost < pacing.TargetUs() ? held * (1 + wobble[frame % 5]) : held);
+            if (frame > 1200) { low = (std::min)(low, pacing.TargetUs()); high = (std::max)(high, pacing.TargetUs()); }
+        }
+        // Probing may dip a few percent under the 34 ms frames before the average notices.
+        Require(low >= 32500 && high <= 36500, "limiter wobble does not walk the cap away");
     }
     // Lighter scenes are found by probing, slowly.
     {
@@ -63,5 +79,5 @@ int main()
     Require(SteadyOutputLimit(20000, 4) == 200, "x4: four outputs per rendered frame");
     Require(SteadyOutputLimit(0, 4) == 0 && SteadyOutputLimit(20000, 0) == 0, "unmeasured or invalid: no cap");
     Require(SteadyOutputLimit(500, 4) == 1000, "clamped to the limiters' range");
-    std::puts("Steady pacing: alternating cost, heavier and lighter scenes, gaps and output conversion passed.");
+    std::puts("Steady pacing: alternating cost, heavier and lighter scenes, limiter wobble, gaps and output conversion passed.");
 }
