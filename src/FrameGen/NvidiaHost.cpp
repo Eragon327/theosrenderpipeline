@@ -1,4 +1,5 @@
 #include "NvidiaHost.h"
+#include "Localization.h"
 #include "DLSSBackend.h"
 #include "RenderPipeline.h"
 #include "NativeInput.h"
@@ -21,7 +22,7 @@ bool NvidiaHost::EvaluateFrame(IDXGISwapChain* a_swapChain, bool a_nativeUIHando
     if (!upscaler->mMotionVectors.mImage || !upscaler->mDepthBuffer.mImage)
     {
         SetRuntimeEnabled(false);
-        status_ = "NVIDIA source upscaler waiting for motion and depth";
+        status_ = TR("NVIDIA source upscaler waiting for motion and depth");
         return false;
     }
     D3D11_TEXTURE2D_DESC motionDesc{};
@@ -32,7 +33,7 @@ bool NvidiaHost::EvaluateFrame(IDXGISwapChain* a_swapChain, bool a_nativeUIHando
         depthDesc.Height != renderHeight_)
     {
         SetRuntimeEnabled(false);
-        status_ = "NVIDIA source upscaler rejected stale guide extents";
+        status_ = TR("NVIDIA source upscaler rejected stale guide extents");
         if (!evaluationFailureLogged_)
         {
             evaluationFailureLogged_ = true;
@@ -45,7 +46,7 @@ bool NvidiaHost::EvaluateFrame(IDXGISwapChain* a_swapChain, bool a_nativeUIHando
     if (!PresentationBackendReadyForEvaluation())
     {
         SetRuntimeEnabled(false);
-        status_ = "NVIDIA Streamline presentation backend is not ready";
+        status_ = TR("NVIDIA Streamline presentation backend is not ready");
         return false;
     }
 

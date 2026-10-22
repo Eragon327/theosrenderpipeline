@@ -1,4 +1,5 @@
 #include "OverlayUI.h"
+#include "Localization.h"
 #include "OverlayUIStyle.h"
 #include "OverlaySettingRows.h"
 #include "OverlayFrameView.h"
@@ -27,8 +28,8 @@ void DrawNRAppliedPasses(const OverlayUI::FrameView& view, const TheosRenderPipe
 {
     const auto width = applied.beforeUpscaling ? view.renderWidth : view.outputWidth;
     const auto height = applied.beforeUpscaling ? view.renderHeight : view.outputHeight;
-    DrawSettingsValue("Placement", applied.beforeUpscaling ? "Before upscaling" : "After upscaling");
-    DrawSettingsValue("Scene", std::format("{} x {}", width, height).c_str());
+    DrawSettingsValue(TR("Placement"), applied.beforeUpscaling ? TR("Before upscaling") : TR("After upscaling"));
+    DrawSettingsValue(TR("Scene"), std::format("{} x {}", width, height).c_str());
     auto pass = [&](const char* label, float scale, int preset) {
         auto config = applied.reconstruction;
         config.inputScale = scale;
@@ -37,21 +38,21 @@ void DrawNRAppliedPasses(const OverlayUI::FrameView& view, const TheosRenderPipe
                           std::format("{} x {}", TheosRenderPipeline::NeuralRendering::ModelExtent(width, config),
                                       TheosRenderPipeline::NeuralRendering::ModelExtent(height, config))
                               .c_str());
-        DrawSettingsValue("Network", NeuralNetworkName(preset));
+        DrawSettingsValue(TR("Network"), NeuralNetworkName(preset));
     };
-    pass("Pass 1", applied.reconstruction.inputScale, applied.reconstruction.preset);
+    pass(TR("Pass 1"), applied.reconstruction.inputScale, applied.reconstruction.preset);
     if (applied.passes == 2)
     {
         const auto second = applied.EffectiveSecond();
-        pass("Pass 2", second.inputScale, second.preset);
-        DrawSettingsValue("Settings", second.linked ? "Linked" : "Independent");
+        pass(TR("Pass 2"), second.inputScale, second.preset);
+        DrawSettingsValue(TR("Settings"), second.linked ? TR("Linked") : TR("Independent"));
     }
 }
 
 // Why NR cannot run now, or null. Shown above Base's controls.
 const char* NeuralUnavailableReason(const OverlayUI::FrameView& view, int upscaleType, bool nrRuntimePresent)
 {
-    if (view.sourceReady && !view.nvidiaAdapter) { return "Neural Rendering requires NVIDIA RTX hardware. XeSS upscaling and XeFG remain available."; }
+    if (view.sourceReady && !view.nvidiaAdapter) { return TR("Neural Rendering requires NVIDIA RTX hardware. XeSS upscaling and XeFG remain available."); }
     if (view.neuralRuntimePath.empty())
     {
         return "NR runtime path is empty. Configure NeuralRenderingRuntimePath in TheosRenderPipeline.ini "
@@ -59,19 +60,19 @@ const char* NeuralUnavailableReason(const OverlayUI::FrameView& view, int upscal
     }
     if (!nrRuntimePresent)
     {
-        return "NR runtime DLL not found. Install the optional nvngx_dlssnr.dll at the path below and restart Skyrim.";
+        return TR("NR runtime DLL not found. Install the optional nvngx_dlssnr.dll at the path below and restart Skyrim.");
     }
     if (!view.sourceReady)
     {
-        return "The NVIDIA host is not ready. Check runtime status and restart Skyrim.";
+        return TR("The NVIDIA host is not ready. Check runtime status and restart Skyrim.");
     }
     if (view.neuralState.failed)
     {
-        return "NR failed. See the error in the left column.";
+        return TR("NR failed. See the error in the left column.");
     }
     if (!TheosRenderPipeline::SupportsNeuralRenderingMode(upscaleType, view.communityShaders))
     {
-        return "NR requires DLSS or DLAA mode. Select either in Image and restart Skyrim.";
+        return TR("NR requires DLSS or DLAA mode. Select either in Image and restart Skyrim.");
     }
     if (!view.communityShaders && !view.dedicatedUITexture)
     {
@@ -142,15 +143,15 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     const auto* grid = Rows::ActiveGrid();
     const float tableX = ImGui::GetCursorScreenPos().x;
     const float label = grid ? (std::max)(Px(40.0f), grid->controlX - Rows::ColumnStart(tableX, 0))
-                             : LabelWidth({"Peripheral compression"});
+                             : LabelWidth({TR("Peripheral compression")});
     const float control = grid ? grid->controlWidth : Px(Rows::MaxControl);
     const float check = ImGui::GetFrameHeight();
     const float slider = (std::max)(Px(30.0f), (control - check - style.ItemSpacing.x * 3) / 3);
     const bool legacy = LegacyNeuralRuntime(view);
     const bool locked = unavailable || preset || !view.neuralObjectsAvailable;
-    const char* lockedReason = preset ? "Object rules are set in Base; weather overrides do not change them."
+    const char* lockedReason = preset ? TR("Object rules are set in Base; weather overrides do not change them.")
                              : !view.neuralObjectsAvailable ? view.neuralObjectStatus.c_str()
-                                                            : "Neural Rendering is unavailable.";
+                                                            : TR("Neural Rendering is unavailable.");
     auto& rules = masks.passes[pass];
     if (!ImGui::BeginTable("passObjects", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX)) { return; }
     ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, label);
@@ -160,9 +161,9 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Objects");
+    ImGui::TextUnformatted(TR("Objects"));
     ImGui::SameLine();
-    ImGui::TextDisabled("experimental");
+    ImGui::TextDisabled(TR("experimental"));
     DrawSettingsHelp(locked ? lockedReason
         : "Tick a group to override it in this pass. Strength blends this pass's result with its input: 0 keeps "
           "the input, 1 the full result, so Pass 2 at 0 keeps Pass 1's work. Tone and structure replace this "
@@ -201,7 +202,7 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
         const bool eyeHovered = ImGui::IsItemHovered();
         if (eyeHovered)
         {
-            ImGui::SetTooltip(shown ? "Hide %s in the mask preview." : "Show %s in the mask preview.", names[i]);
+            ImGui::SetTooltip(shown ? TR("Hide %s in the mask preview.") : TR("Show %s in the mask preview."), names[i]);
         }
         const auto eyeMin = ImGui::GetItemRectMin();
         DrawEye(ImGui::GetWindowDrawList(), ImVec2(eyeMin.x, eyeMin.y + (frame - eye) * 0.5f), eye, shown, eyeHovered);
@@ -215,25 +216,25 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
         ImGui::SameLine(0, style.ItemInnerSpacing.x);
         ImGui::AlignTextToFramePadding();
         // An overriding group's name is amber, as a changed setting is.
-        if (rule.enabled) { ImGui::TextColored(kAmber, "%s", names[i]); } else { ImGui::TextUnformatted(names[i]); }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", NR::kObjectGroups[i]); }
+        if (rule.enabled) { ImGui::TextColored(kAmber, "%s", TR(names[i])); } else { ImGui::TextUnformatted(TR(names[i])); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", TR(NR::kObjectGroups[i])); }
         ImGui::TableNextColumn();
         ImGui::Checkbox("##override", &rule.enabled);
-        DrawSettingsHelp(rule.enabled ? "Overriding this group in this pass." : "Override this group in this pass.");
+        DrawSettingsHelp(rule.enabled ? TR("Overriding this group in this pass.") : TR("Override this group in this pass."));
         ImGui::BeginDisabled(!rule.enabled);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(slider);
         ImGui::SliderFloat("##strength", &rule.strength, 0, 1, "%.2f");
-        DrawSettingsHelp("Strength: 0 keeps this pass's input, 1 its full result.");
+        DrawSettingsHelp(TR("Strength: 0 keeps this pass's input, 1 its full result."));
         ImGui::BeginDisabled(legacy);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(slider);
         ImGui::SliderFloat("##tone", &rule.tone, 0, 1, "%.2f");
-        DrawSettingsHelp(legacy ? "Tone needs the 310.9.16 runtime; Strength still applies." : "Local tone for this group in this pass.");
+        DrawSettingsHelp(legacy ? TR("Tone needs the 310.9.16 runtime; Strength still applies.") : TR("Local tone for this group in this pass."));
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::SliderFloat("##structure", &rule.structure, 0, 1, "%.2f");
-        DrawSettingsHelp(legacy ? "Structure needs the 310.9.16 runtime; Strength still applies." : "Local structure for this group in this pass.");
+        DrawSettingsHelp(legacy ? TR("Structure needs the 310.9.16 runtime; Strength still applies.") : TR("Local structure for this group in this pass."));
         ImGui::EndDisabled();
         ImGui::EndDisabled();
         ImGui::PopID();
@@ -242,19 +243,19 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     ImGui::TableNextColumn();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Px(14.0f));
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("Mask preview");
+    ImGui::TextDisabled(TR("Mask preview"));
     ImGui::TableNextColumn();
     ImGui::BeginDisabled(!masks.previewGroups);
-    ImGui::Checkbox("Classes only", &masks.previewClassesOnly);
+    ImGui::Checkbox(TR("Classes only"), &masks.previewClassesOnly);
     ImGui::EndDisabled();
-    DrawSettingsHelp(masks.previewGroups ? "Shows only the chosen groups' colours on black."
-                                         : "Open a group's eye to start the preview.");
+    DrawSettingsHelp(masks.previewGroups ? TR("Shows only the chosen groups' colours on black.")
+                                         : TR("Open a group's eye to start the preview."));
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     const auto shownText = masks.previewGroups ? "showing " + ShownGroups(masks.previewGroups, names) + " | not saved"
                                                : std::string("open an eye to preview a group | not saved");
     ImGui::TextDisabled("%s", shownText.c_str());
-    DrawSettingsHelp("The preview covers the whole finished image, so it is the same on both pass tabs.");
+    DrawSettingsHelp(TR("The preview covers the whole finished image, so it is the same on both pass tabs."));
     ImGui::EndDisabled();
     ImGui::EndTable();
 
@@ -323,7 +324,7 @@ struct PassDecor final : PresetDecor
             {
             case Kind::Style: text = NeuralStyleName(static_cast<int>(value)); break;
             case Kind::Percent: text = std::format("{:.1f}%", value * 100); break;
-            case Kind::Toggle: text = value != 0 ? "On" : "Off"; break;
+            case Kind::Toggle: text = value != 0 ? TR("On") : TR("Off"); break;
             case Kind::Network: text = NeuralNetworkName(value != 0 ? 1 : 0); break;
             default: text = std::format("{:.3f}", value); break;
             }
@@ -335,7 +336,7 @@ struct PassDecor final : PresetDecor
         With(key, [](auto& own, const auto& reference, Kind) { own = reference; });
     }
     const char* EditingTime() const override { return nullptr; }
-    const char* Reference() const override { return "Pass 1"; }
+    const char* Reference() const override { return TR("Pass 1"); }
     int Differences() const
     {
         return static_cast<int>(std::ranges::count_if(kKeys, [&](const char* key) { return Changed(key); }));
@@ -402,7 +403,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         const bool hovered = ImGui::IsItemHovered();
         if (hovered)
         {
-            ImGui::SetTooltip("%s", pass == 0 ? "Runs on the scene."
+            ImGui::SetTooltip("%s", pass == 0 ? TR("Runs on the scene.")
                                               : "Processes Pass 1's result with its own history. Adds GPU time and "
                                                 "memory; weather overrides switch it on and off without restarting NR.");
         }
@@ -412,7 +413,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         FillRect(draw, x, top, x + tabWidth, top + line, border);
         FillRect(draw, x + tabWidth - line, top, x + tabWidth, bottom, border);
         if (active) { FillRect(draw, x, top, x + tabWidth, top + Px(2.0f), ImGui::GetColorU32(kAmber)); }
-        const auto name = std::format("Pass {}", pass + 1);
+        const auto name = TRF("Pass {}", pass + 1);
         const float textY = top + ((bottom - top) - ImGui::GetTextLineHeight()) * 0.5f;
         const auto nameColor = changed[pass] ? (active ? kAmber : kAmberDim) : active ? kIvory : kMuted;
         draw->AddText(ImVec2(x + style.FramePadding.x, textY), ImGui::GetColorU32(nameColor), name.c_str());
@@ -425,7 +426,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
             ImGui::SetCursorScreenPos(ImVec2(right - size, textY));
             if (ImGui::InvisibleButton("remove", ImVec2(size, size))) { action = PassAction::Remove; }
             const bool over = ImGui::IsItemHovered();
-            if (over) { ImGui::SetTooltip("Remove Pass 2. Its own settings are kept for later."); }
+            if (over) { ImGui::SetTooltip(TR("Remove Pass 2. Its own settings are kept for later.")); }
             const float inset = size * 0.28f;
             const auto color = ImGui::GetColorU32(over ? kAmber : kMuted);
             draw->AddLine(ImVec2(right - size + inset, textY + inset), ImVec2(right - inset, textY + size - inset), color, Px(1.5f));
@@ -437,7 +438,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         ImVec4 badgeColor = kSage;
         if (live.active && pass < view.neuralApplied.passes)
         {
-            badge = pass == 0 || live.effectivePasses == 2 ? "ON" : "PAUSED";
+            badge = pass == 0 || live.effectivePasses == 2 ? TR("ON") : TR("PAUSED");
             if (pass == 1 && live.effectivePasses != 2) { badgeColor = kOchre; }
         }
         if (badge)
@@ -457,7 +458,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         if (ImGui::InvisibleButton("add", ImVec2(addWidth, bottom - top))) { action = PassAction::Add; }
         ImGui::EndDisabled();
         const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
-        if (hovered) { ImGui::SetTooltip("Add Pass 2. It starts out following Pass 1."); }
+        if (hovered) { ImGui::SetTooltip(TR("Add Pass 2. It starts out following Pass 1.")); }
         FillRect(draw, x, top, x + addWidth, bottom,
                  ImGui::GetColorU32(hovered && editable ? ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered) : kPassBehind));
         FillRect(draw, x, top, x + line, bottom, border);
@@ -472,7 +473,7 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
     {
         // A tab on the page's own background at the strip's right end, open into
         // the panel like the selected tab, so it reads as part of Pass 2's page.
-        const char* label = "Reset all to Pass 1";
+        const char* label = TR("Reset all to Pass 1");
         const float width = ImGui::CalcTextSize(label).x + style.FramePadding.x * 3;
         const float left = right - width;
         const float top = origin.y + lift, bottom = origin.y + height;
@@ -484,8 +485,8 @@ PassAction DrawPassTabs(const OverlayUI::FrameView& view, int& selected, int pas
         const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         if (hovered)
         {
-            ImGui::SetTooltip("%s", usable ? "Pass 2 follows Pass 1 again. Its own settings are kept for later."
-                                           : "Pass 2 already follows Pass 1; nothing to reset.");
+            ImGui::SetTooltip("%s", usable ? TR("Pass 2 follows Pass 1 again. Its own settings are kept for later.")
+                                           : TR("Pass 2 already follows Pass 1; nothing to reset."));
         }
         FillRect(draw, left, top, right, bottom + line, ImGui::GetColorU32(kPassPanel));
         FillRect(draw, left, top, left + line, bottom, border);
@@ -556,7 +557,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     const bool cs = view.communityShaders;
     const bool producerColor = cs && draft.neuralBeforeUpscaling;
     const bool twoPasses = draft.neuralPasses == 2;
-    const float label = LabelWidth({"Scene normalization"});
+    const float label = LabelWidth({TR("Scene normalization")});
     const auto grid = NeuralRowsGrid();
     const GridScope gridScope(grid);
     const auto width = draft.neuralBeforeUpscaling ? view.renderWidth : view.outputWidth;
@@ -568,7 +569,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         // The runtime is not a preset setting, so presets show only the switch.
         const bool base = !ActivePresetDecor();
         const bool lockSwitch = !TheosRenderPipeline::CanEditNeuralEnabled(draft.neuralEnabled, !unavailable);
-        SettingRow("Neural Rendering", "NeuralRendering", false, base ? false : lockSwitch, [&] {
+        SettingRow(TR("Neural Rendering"), "NeuralRendering", false, base ? false : lockSwitch, [&] {
             ImGui::BeginDisabled(base && lockSwitch);
             bool changed = ImGui::Checkbox("##v", &draft.neuralEnabled);
             ImGui::EndDisabled();
@@ -581,32 +582,32 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextColored(kOchre, "!");
-                if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Changing the runtime restarts NR briefly."); }
+                if (ImGui::IsItemHovered()) { ImGui::SetTooltip(TR("Changing the runtime restarts NR briefly.")); }
             }
             return changed;
         });
-        SettingRow("Placement", "BeforeUpscaling", true, unavailable, [&] {
+        SettingRow(TR("Placement"), "BeforeUpscaling", true, unavailable, [&] {
             int placement = draft.neuralBeforeUpscaling ? 0 : 1;
             const bool changed = Segmented("placement", placement, {
-                {"Before upscaling", true, "NR runs on the render-resolution scene, before DLSS or XeSS."},
-                {"After upscaling", true, "NR runs on the output-resolution image, after upscaling."}});
+                {TR("Before upscaling"), true, TR("NR runs on the render-resolution scene, before DLSS or XeSS.")},
+                {TR("After upscaling"), true, TR("NR runs on the output-resolution image, after upscaling.")}});
             if (changed) { draft.neuralBeforeUpscaling = placement == 0; }
-            DrawSettingsHelp("Both passes use the selected side of upscaling. UI is composed afterwards.");
+            DrawSettingsHelp(TR("Both passes use the selected side of upscaling. UI is composed afterwards."));
             return changed;
         });
         if (base && g_setCompare)
         {
             // Applies at once and is never saved, so it is not a draft change.
-            SettingRow("Compare", nullptr, false, unavailable, [&] {
+            SettingRow(TR("Compare"), nullptr, false, unavailable, [&] {
                 auto compare = view.neuralApplied.compare;
-                bool changed = ImGui::Checkbox("Split", &compare.split);
-                DrawSettingsHelp("Session only, never saved. Left of the line shows the frame without NR.");
+                bool changed = ImGui::Checkbox(TR("Split"), &compare.split);
+                DrawSettingsHelp(TR("Session only, never saved. Left of the line shows the frame without NR."));
                 ImGui::SameLine();
                 ImGui::BeginDisabled(!compare.split);
                 // The slider takes what Freeze frame leaves of the column.
                 const auto& style = ImGui::GetStyle();
                 const float freezeWidth = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x +
-                                          ImGui::CalcTextSize("Freeze frame").x;
+                                          ImGui::CalcTextSize(TR("Freeze frame")).x;
                 ImGui::SetNextItemWidth((std::max)(Px(48.0f), ImGui::GetContentRegionAvail().x - freezeWidth -
                                                                   style.ItemSpacing.x * 3));
                 float percent = compare.splitPosition * 100.0f;
@@ -616,19 +617,19 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                     changed = true;
                 }
                 ImGui::EndDisabled();
-                DrawSettingsHelp("Where the line sits, from the left edge.");
+                DrawSettingsHelp(TR("Where the line sits, from the left edge."));
                 // Follows the applied placement: the comparison is live, the draft is not.
                 const bool before = view.neuralApplied.beforeUpscaling;
                 ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
                 ImGui::BeginDisabled(before);
                 bool freeze = compare.freeze && !before;
-                if (ImGui::Checkbox("Freeze frame", &freeze))
+                if (ImGui::Checkbox(TR("Freeze frame"), &freeze))
                 {
                     compare.freeze = freeze;
                     changed = true;
                 }
                 ImGui::EndDisabled();
-                DrawSettingsHelp(before ? "Freeze frame needs After upscaling: before upscaling, DLSS needs a moving frame."
+                DrawSettingsHelp(before ? TR("Freeze frame needs After upscaling: before upscaling, DLSS needs a moving frame.")
                                         : "Session only. NR keeps working on one held frame while the game runs on, so "
                                           "setting changes compare on identical content. Turn frame generation off for a "
                                           "steady image.");
@@ -656,7 +657,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 return decor->Changed((prefix + (key + 5)).c_str());
             });
         }
-        tabChanged[1] |= AnyChanged({"Passes", "Pass2SameAsPass1"});
+        tabChanged[1] |= AnyChanged({TR("Passes"), "Pass2SameAsPass1"});
     }
     else
     {
@@ -679,15 +680,15 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     const bool comparePasses = pass2 && !decor;
     if (comparePasses) { ActivePresetDecor() = &passDecor; }
     const auto panel = BeginPassPanel();
-    if (decor && AnyChanged({"Passes", "Pass2SameAsPass1"}))
+    if (decor && AnyChanged({TR("Passes"), "Pass2SameAsPass1"}))
     {
         // A preset that turns Pass 2 on or off, or makes it follow Pass 1.
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(kAmber, "Passes differ from %s", decor->Reference());
+        ImGui::TextColored(kAmber, TR("Passes differ from %s"), decor->Reference());
         ImGui::SameLine();
-        if (ImGui::SmallButton("Reset##passes"))
+        if (ImGui::SmallButton(TR("Reset##passes")))
         {
-            for (const auto* key : {"Passes", "Pass2SameAsPass1"}) { if (decor->Changed(key)) { decor->Reset(key); } }
+            for (const auto* key : {TR("Passes"), "Pass2SameAsPass1"}) { if (decor->Changed(key)) { decor->Reset(key); } }
         }
     }
 
@@ -699,7 +700,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     const float passLabel = label;
     if (BeginSettingRows("passLook", passLabel))
     {
-        SettingRow("Style", key("Style").c_str(), false, unavailable, [&] {
+        SettingRow(TR("Style"), key("Style").c_str(), false, unavailable, [&] {
             // Named styles as in OptiScaler forks. Custom keeps any other number for
             // users and for runtimes that may add styles: clicking it edits the
             // number in place, and it then reads "Custom 7".
@@ -715,15 +716,15 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             // menu closed) is dropped rather than applied later.
             if (editing && storage->GetInt(frameId, -1) != ImGui::GetFrameCount() - 1) { editing = 0; }
             storage->SetInt(frameId, ImGui::GetFrameCount());
-            const auto customLabel = tuning.style > 2 ? std::format("Custom {}", tuning.style) : std::string("Custom");
+            const auto customLabel = tuning.style > 2 ? TRF("Custom {}", tuning.style) : std::string(TR("Custom"));
             int index = (std::min)(tuning.style, 3);
             SegmentedLayout layout;
             bool changed = Segmented("style", index, {
-                {"Default", true, "Style 0."},
-                {"Natural", true, "Style 1."},
-                {"Cinematic", true, "Style 2."},
+                {TR("Default"), true, TR("Style 0.")},
+                {TR("Natural"), true, TR("Style 1.")},
+                {TR("Cinematic"), true, TR("Style 2.")},
                 {customLabel.c_str(), !legacy, legacy ? "310.8 runs styles 0 to 2 only."
-                    : "Click to type a style number, 3 to 255."}}, &layout);
+                    : TR("Click to type a style number, 3 to 255.")}}, &layout);
             if (changed) { tuning.style = index == 3 ? (std::max)(tuning.style, 3) : index; }
             if (layout.clicked == 3 && !legacy) {
                 editing = 1;
@@ -745,7 +746,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 ImGui::InputInt("##customStyle", &number, 0, 0, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsDecimal);
                 ImGui::PopStyleColor(4);
                 storage->SetInt(draftId, number);
-                DrawSettingsHelp("Style number, 3 to 255. Press Enter or click away to set it.");
+                DrawSettingsHelp(TR("Style number, 3 to 255. Press Enter or click away to set it."));
                 // Enter or clicking elsewhere sets the number.
                 if (ImGui::IsItemDeactivated()) {
                     const int value = std::clamp(number, 3, 255);
@@ -759,26 +760,26 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             ImGui::PopID();
             return changed;
         });
-        SettingRow("Intensity", key("Intensity").c_str(), false, unavailable,
+        SettingRow(TR("Intensity"), key("Intensity").c_str(), false, unavailable,
                    [&] { return ImGui::SliderFloat("##v", &tuning.intensity, 0, 2); });
-        SettingRow("Local tone", key("LocalTone").c_str(), false, unavailable,
+        SettingRow(TR("Local tone"), key("LocalTone").c_str(), false, unavailable,
                    [&] { return ImGui::SliderFloat("##v", &tuning.localToneStrength, 0, 2); });
-        SettingRow("Local structure", key("LocalStructure").c_str(), false, unavailable,
+        SettingRow(TR("Local structure"), key("LocalStructure").c_str(), false, unavailable,
                    [&] { return ImGui::SliderFloat("##v", &tuning.localStructureStrength, 0, 2); });
         const auto skinKey = key("SkinStructure"), maskKey = key("AutoSkinMask");
-        SettingRowFor("Skin structure", {skinKey.c_str(), maskKey.c_str()}, false, unavailable, [&] {
-            const char* mask = "Auto mask";
+        SettingRowFor(TR("Skin structure"), {skinKey.c_str(), maskKey.c_str()}, false, unavailable, [&] {
+            const char* mask = TR("Auto mask");
             const float maskWidth = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x +
                                     ImGui::CalcTextSize(mask).x;
             ImGui::SetNextItemWidth((std::max)(Px(60.0f), ImGui::GetContentRegionAvail().x - maskWidth -
                                                                  ImGui::GetStyle().ItemSpacing.x));
             // -1 follows local structure; the slider says so.
             bool changed = ImGui::SliderFloat("##v", &tuning.skinStructureStrength, -1, 2,
-                                              tuning.skinStructureStrength <= -0.999f ? "Follows local" : "%.3f");
-            DrawSettingsHelp("Structure on skin. At -1 it follows Local structure. Ctrl-click to type a value.");
+                                              tuning.skinStructureStrength <= -0.999f ? TR("Follows local") : "%.3f");
+            DrawSettingsHelp(TR("Structure on skin. At -1 it follows Local structure. Ctrl-click to type a value."));
             ImGui::SameLine();
             changed |= ImGui::Checkbox(mask, &tuning.useAutoSkinMask);
-            DrawSettingsHelp("Finds skin automatically for Skin structure.");
+            DrawSettingsHelp(TR("Finds skin automatically for Skin structure."));
             return changed;
         });
         ImGui::EndTable();
@@ -792,36 +793,36 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         const auto format = width && height ? std::format("%.1f%% | {} x {}", NR::ModelExtent(width, extent),
                                                           NR::ModelExtent(height, extent))
                                             : std::string("%.1f%%");
-        SettingRow("Input", key("InputScale").c_str(), true, unavailable, [&] {
+        SettingRow(TR("Input"), key("InputScale").c_str(), true, unavailable, [&] {
             float percent = scale * 100;
             const bool changed = ImGui::SliderFloat("##v", &percent, 25, 100, format.c_str());
             if (changed) { scale = percent / 100; }
-            DrawSettingsHelp("NR input resolution, relative to the selected stage's scene size, and the model input it "
-                             "gives. Apply to update.");
+            DrawSettingsHelp(TR("NR input resolution, relative to the selected stage's scene size, and the model input it "
+                                "gives. Apply to update."));
             return changed;
         });
-        SettingRow("Network", key("Network").c_str(), true, unavailable, [&] {
+        SettingRow(TR("Network"), key("Network").c_str(), true, unavailable, [&] {
             // 310.8 has only the old model, so it runs Old whichever is saved.
             const bool legacy = LegacyNeuralRuntime(view);
             int index = legacy || network != 0 ? 1 : 0;
             const bool changed = Segmented("network", index, {
-                {"Small", !legacy, legacy ? "310.9.16 only. 310.8 always runs the old model."
+                {TR("Small"), !legacy, legacy ? "310.9.16 only. 310.8 always runs the old model."
                                           : "310.9.16's small FP8 model: faster and softer. NVIDIA's "
                                             "CC_SMALL_FP8; Preset B in OptiScaler forks."},
-                {"Old", true, "The model 310.8 runs, also included in 310.9.16. NVIDIA's CC_SILVER_AARDWOLD; "
+                {TR("Old"), true, "The model 310.8 runs, also included in 310.9.16. NVIDIA's CC_SILVER_AARDWOLD; "
                               "Preset A in OptiScaler forks."}});
             if (changed) { network = index; }
-            DrawSettingsHelp("NR network, separate from the DLSS model preset.");
+            DrawSettingsHelp(TR("NR network, separate from the DLSS model preset."));
             return changed;
         });
-        SettingRowFor("Peripheral compression", {"PeripheralCompression", "CombinedPreparation"}, true, unavailable, [&] {
+        SettingRowFor(TR("Peripheral compression"), {"PeripheralCompression", "CombinedPreparation"}, true, unavailable, [&] {
             bool changed = ImGui::Checkbox("##peripheral", &reconstruction.peripheralCompression);
             DrawSettingsHelp("Peripheral compression preserves sampling density across the central 80% of each axis and "
                              "compresses the edges. Uses about 19% fewer model pixels at the same input resolution. Pass 1 "
                              "compresses the image once and Pass 2 works on it, so it applies to both passes. Inspect "
                              "edge quality when moving.");
             ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
-            changed |= ImGui::Checkbox("Combined preparation", &reconstruction.fusedPreparation);
+            changed |= ImGui::Checkbox(TR("Combined preparation"), &reconstruction.fusedPreparation);
             DrawSettingsHelp("Combines colour encoding with downsampling where needed, and depth/motion packing with "
                              "peripheral compression. Some configurations have no passes to combine. Applies to both "
                              "passes.");
@@ -829,7 +830,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         });
         // UI correction applies only after upscaling without Community Shaders.
         const bool noUICorrection = cs || draft.neuralBeforeUpscaling;
-        SettingRow("UI correction", key("UICorrection").c_str(), false, unavailable || noUICorrection, [&] {
+        SettingRow(TR("UI correction"), key("UICorrection").c_str(), false, unavailable || noUICorrection, [&] {
             const bool changed = ImGui::Checkbox("##v", &tuning.uiCorrection);
             DrawSettingsHelp(cs ? "NVIDIA's UI correction flag. Asks NR to treat the area around the HUD separately. Only "
                                   "used when NR runs after upscaling. Community Shaders draws the UI after NR, so it is off."
@@ -849,22 +850,22 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         ImGui::Spacing();
         if (BeginSettingRows("passSkip", passLabel))
         {
-            SettingRowFor("Skip during", {"OnePassInCombat", "OnePassWeaponsDrawn"}, false, unavailable, [&] {
+            SettingRowFor(TR("Skip during"), {"OnePassInCombat", "OnePassWeaponsDrawn"}, false, unavailable, [&] {
                 const char* help = "Temporarily skips Pass 2 while the condition is active. Keeps your NR resolution, "
                                    "tuning and saved two-pass setting. The image may change when switching.";
-                bool changed = ImGui::Checkbox("Combat", &draft.neuralCombat.inCombat);
+                bool changed = ImGui::Checkbox(TR("Combat"), &draft.neuralCombat.inCombat);
                 DrawSettingsHelp(help);
                 ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
-                changed |= ImGui::Checkbox("Weapons drawn", &draft.neuralCombat.weaponsDrawn);
+                changed |= ImGui::Checkbox(TR("Weapons drawn"), &draft.neuralCombat.weaponsDrawn);
                 DrawSettingsHelp(help);
                 return changed;
             });
-            SettingRow("Resume after", "ReturnDelay", false, unavailable || !draft.neuralCombat.Enabled(), [&] {
-                const bool changed = ImGui::SliderFloat("##v", &draft.neuralCombat.recoverySeconds, 0.0f, 30.0f, "%.1f s");
+            SettingRow(TR("Resume after"), "ReturnDelay", false, unavailable || !draft.neuralCombat.Enabled(), [&] {
+                const bool changed = ImGui::SliderFloat("##v", &draft.neuralCombat.recoverySeconds, 0.0f, 30.0f, TR("%.1f s"));
                 DrawSettingsHelp(draft.neuralCombat.Enabled()
                                      ? "Waits this long after the conditions clear before running Pass 2 again. Pausing "
                                        "the game pauses the delay."
-                                     : "Tick Combat or Weapons drawn first.");
+                                     : TR("Tick Combat or Weapons drawn first."));
                 return changed;
             });
             ImGui::EndTable();
@@ -882,15 +883,15 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     ImGui::Spacing();
     if (BeginSettingRows("sharpening", label))
     {
-        SettingRowFor("Sharpening", {"SharpeningEnabled", "Sharpness"}, false, cs, [&] {
+        SettingRowFor(TR("Sharpening"), {"SharpeningEnabled", "Sharpness"}, false, cs, [&] {
             bool changed = ImGui::Checkbox("##enabled", &sharpening);
-            DrawSettingsHelp(cs ? "Community Shaders controls sharpening." : "Applies with or without NR.");
+            DrawSettingsHelp(cs ? TR("Community Shaders controls sharpening.") : TR("Applies with or without NR."));
             ImGui::SameLine();
             ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::BeginDisabled(!sharpening);
             changed |= ImGui::SliderFloat("##strength", &sharpness, 0, 1, "%.2f");
             ImGui::EndDisabled();
-            DrawSettingsHelp(cs ? "Community Shaders controls sharpening." : "Sharpening strength.");
+            DrawSettingsHelp(cs ? TR("Community Shaders controls sharpening.") : TR("Sharpening strength."));
             return changed;
         });
         ImGui::EndTable();
@@ -899,36 +900,36 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
     ImGui::Spacing();
     if (BeginSettingRows("reconstruction", label))
     {
-        SettingRow("Reconstruction", "ReconstructionMethod", true, unavailable || producerColor, [&] {
+        SettingRow(TR("Reconstruction"), "ReconstructionMethod", true, unavailable || producerColor, [&] {
             int method = std::clamp(static_cast<int>(reconstruction.method), 0, 2);
             const bool changed = Segmented("method", method, {
-                {"Auto", true, "Reconstructs reduced input."},
-                {"Residual", true, "Adds NR's changes; clamps colour to 0..1."},
-                {"Ratio", true, "Transfers lighting and colour; use for linear HDR input."}});
+                {TR("Auto"), true, TR("Reconstructs reduced input.")},
+                {TR("Residual"), true, TR("Adds NR's changes; clamps colour to 0..1.")},
+                {TR("Ratio"), true, TR("Transfers lighting and colour; use for linear HDR input.")}});
             if (changed) { reconstruction.method = static_cast<NR::ResolveMethod>(method); }
-            DrawSettingsHelp(producerColor ? "CS restores scene colour automatically before DLSS."
-                                           : "Residual clamps colour to 0..1. Use Ratio for linear HDR input.");
+            DrawSettingsHelp(producerColor ? TR("CS restores scene colour automatically before DLSS.")
+                                           : TR("Residual clamps colour to 0..1. Use Ratio for linear HDR input."));
             return changed;
         });
         // Ratio's settings stay visible, greyed, until Ratio is selected.
         const bool ratioOff = unavailable || (!producerColor && reconstruction.method != NR::ResolveMethod::Ratio);
         const char* ratioHelp = producerColor ? "" : " Used by Ratio reconstruction.";
-        SettingRowFor("Effect \xC2\xB7 colour", {"EffectStrength", "ColourStrength"}, false, ratioOff, [&] {
+        SettingRowFor(TR("Effect \xC2\xB7 colour"), {"EffectStrength", "ColourStrength"}, false, ratioOff, [&] {
             const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
             ImGui::SetNextItemWidth(half);
             bool changed = ImGui::SliderFloat("##effect", &reconstruction.transferStrength, 0, 2);
-            DrawSettingsHelp(std::format("{}{}", producerColor ? "Effect strength." : "Ratio effect strength.", ratioHelp).c_str());
+            DrawSettingsHelp(std::format("{}{}", producerColor ? TR("Effect strength.") : TR("Ratio effect strength."), ratioHelp).c_str());
             ImGui::SameLine();
             ImGui::SetNextItemWidth(-FLT_MIN);
             changed |= ImGui::SliderFloat("##colour", &reconstruction.colourStrength, 0, 2);
-            DrawSettingsHelp(std::format("{}{}", producerColor ? "Colour strength." : "Ratio colour strength.", ratioHelp).c_str());
+            DrawSettingsHelp(std::format("{}{}", producerColor ? TR("Colour strength.") : TR("Ratio colour strength."), ratioHelp).c_str());
             return changed;
         });
         // Applied after NR, like Effect and colour; changing them keeps NR's history.
         const bool bandsOff = unavailable || producerColor || reconstruction.method != NR::ResolveMethod::Ratio;
-        SettingRowFor("Broad \xC2\xB7 detail", {"BroadStrength", "DetailStrength"}, false, bandsOff, [&] {
+        SettingRowFor(TR("Broad \xC2\xB7 detail"), {"BroadStrength", "DetailStrength"}, false, bandsOff, [&] {
             const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-            const char* reason = producerColor ? "Not on the Community Shaders route yet." : "Used by Ratio reconstruction.";
+            const char* reason = producerColor ? TR("Not on the Community Shaders route yet.") : TR("Used by Ratio reconstruction.");
             ImGui::SetNextItemWidth(half);
             bool changed = ImGui::SliderFloat("##broad", &reconstruction.broadStrength, 0, 2);
             DrawSettingsHelp(bandsOff ? reason : "Broad: how much NR relights whole areas and objects. Lower it if shadows on "
@@ -936,20 +937,20 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             ImGui::SameLine();
             ImGui::SetNextItemWidth(-FLT_MIN);
             changed |= ImGui::SliderFloat("##detail", &reconstruction.detailStrength, 0, 2);
-            DrawSettingsHelp(bandsOff ? reason : "Detail: NR's local contrast and fine shading.");
+            DrawSettingsHelp(bandsOff ? reason : TR("Detail: NR's local contrast and fine shading."));
             return changed;
         });
-        SettingRow(producerColor ? "Maximum scene gain" : "Maximum luma ratio", "MaximumRatio", false, ratioOff,
+        SettingRow(producerColor ? TR("Maximum scene gain") : TR("Maximum luma ratio"), "MaximumRatio", false, ratioOff,
                    [&] { return ImGui::SliderFloat("##v", &reconstruction.maxRatio, producerColor ? 1.0f : 0.01f, 16); });
         if (!producerColor)
         {
-            SettingRow("HDR input", "InputHDR", true, ratioOff, [&] {
+            SettingRow(TR("HDR input"), "InputHDR", true, ratioOff, [&] {
                 const bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
                 DrawSettingsHelp("Input colour is linear HDR. Used by Ratio reconstruction; it does not change "
                                  "the display HDR mode.");
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("linear HDR");
+                ImGui::TextDisabled(TR("linear HDR"));
                 return changed;
             });
             // How linear HDR is scaled for NR's view. Ratio's result is applied to
@@ -958,14 +959,14 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             SettingRow("Exposure", "AdaptiveExposure", false, exposureOff, [&] {
                 int mode = reconstruction.adaptiveExposure ? 1 : 0;
                 bool changed = Segmented("exposure", mode, {
-                    {"Fixed", true, "Divides linear HDR input by the white point before NR sees it."},
+                    {"Fixed", true, TR("Divides linear HDR input by the white point before NR sees it.")},
                     {"Adaptive", true, "TRP measures the frame's average brightness and adapts over about a second, so "
                                        "NR sees interiors and exteriors at a similar brightness. Only NR's view "
                                        "changes; its effect is carried back onto the untouched frame. NR may relight "
                                        "objects as the view's brightness changes; Fixed keeps its view steady."}});
                 if (changed) { reconstruction.adaptiveExposure = mode == 1; }
-                DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
-                                             : "How linear HDR input is scaled for NR's view.");
+                DrawSettingsHelp(exposureOff ? TR("Used by Ratio reconstruction with linear HDR input.")
+                                             : TR("How linear HDR input is scaled for NR's view."));
                 return changed;
             });
             // The value row follows the choice: a fixed white point or an EV bias.
@@ -973,36 +974,36 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             {
                 SettingRow("Bias", "ExposureBias", false, exposureOff, [&] {
                     const bool changed = ImGui::SliderFloat("##bias", &reconstruction.exposureBias, -2, 2, "%+.1f EV");
-                    DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
-                                                 : "Brightens NR's view when positive, darkens it when negative.");
+                    DrawSettingsHelp(exposureOff ? TR("Used by Ratio reconstruction with linear HDR input.")
+                                                 : TR("Brightens NR's view when positive, darkens it when negative."));
                     return changed;
                 });
             }
             else
             {
-                SettingRow("White point", "WhitePoint", false, exposureOff, [&] {
+                SettingRow(TR("White point"), "WhitePoint", false, exposureOff, [&] {
                     const bool changed = ImGui::InputFloat("##white", &reconstruction.whitePoint, 0, 0, "%.4f");
-                    DrawSettingsHelp(exposureOff ? "Used by Ratio reconstruction with linear HDR input."
-                                                 : "White point for encoding linear HDR input before model evaluation.");
+                    DrawSettingsHelp(exposureOff ? TR("Used by Ratio reconstruction with linear HDR input.")
+                                                 : TR("White point for encoding linear HDR input before model evaluation."));
                     return changed;
                 });
             }
         }
-        else SettingRowFor("Scene normalization", {"InputHDR", "WhitePoint"}, true, ratioOff, [&] {
+        else SettingRowFor(TR("Scene normalization"), {"InputHDR", "WhitePoint"}, true, ratioOff, [&] {
             ImGui::BeginDisabled(producerColor);
             bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
             ImGui::EndDisabled();
-            DrawSettingsHelp(producerColor ? "Community Shaders supplies scene colour; the input is not switched here."
+            DrawSettingsHelp(producerColor ? TR("Community Shaders supplies scene colour; the input is not switched here.")
                                            : "Input colour is linear HDR. Used by Ratio reconstruction; it does not change "
                                              "the display HDR mode.");
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled("white point");
+            ImGui::TextDisabled(TR("white point"));
             ImGui::SameLine();
             ImGui::SetNextItemWidth(-FLT_MIN);
             changed |= ImGui::InputFloat("##white", &reconstruction.whitePoint, 0, 0, "%.4f");
-            DrawSettingsHelp(producerColor ? "Scene normalization sets the brightness range NR sees."
-                                           : "White point for encoding linear HDR input before model evaluation.");
+            DrawSettingsHelp(producerColor ? TR("Scene normalization sets the brightness range NR sees.")
+                                           : TR("White point for encoding linear HDR input before model evaluation."));
             return changed;
         });
         ImGui::EndTable();
@@ -1036,7 +1037,7 @@ bool DrawNeuralRuntimeCombo(const OverlayUI::FrameView& view, TheosRenderPipelin
                 changed = true;
             }
             if (selected) { ImGui::SetItemDefaultFocus(); }
-            if (ImGui::IsItemHovered()) { ImGui::SetTooltip("File: %s", runtime.c_str()); }
+            if (ImGui::IsItemHovered()) { ImGui::SetTooltip(TR("File: %s"), runtime.c_str()); }
             ImGui::PopID();
         }
         ImGui::EndCombo();
@@ -1078,7 +1079,7 @@ void DrawSourceNeuralControls(const OverlayUI::FrameView& view, TheosRenderPipel
     if (unavailable)
     {
         ImGui::TextWrapped("%s", unavailableReason);
-        ImGui::TextWrapped("NR runtime path: %s", view.neuralRuntimePath.c_str());
+        ImGui::TextWrapped(TR("NR runtime path: %s"), view.neuralRuntimePath.c_str());
     }
     if (applied.enabled && !state.active && !unavailable)
     {
@@ -1096,24 +1097,24 @@ void DrawSourceNeuralControls(const OverlayUI::FrameView& view, TheosRenderPipel
 
 void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
 {
-    if (!ImGui::BeginTabItem("Neural Rendering", nullptr,
+    if (!ImGui::BeginTabItem(TR("Neural Rendering"), nullptr,
                              requestedPage == SettingsPage::NeuralRendering ? ImGuiTabItemFlags_SetSelected : 0))
         return;
     if (BeginSettingsColumns("neural", height, view))
     {
         const auto& applied = view.neuralApplied;
         const auto& state = view.sourceNeural;
-        DrawStatusLabel(state.failed      ? "NR failed"
-                        : state.active    ? "NR active"
-                        : applied.enabled ? "NR inactive"
-                                          : "NR off",
+        DrawStatusLabel(state.failed      ? TR("NR failed")
+                        : state.active    ? TR("NR active")
+                        : applied.enabled ? TR("NR inactive")
+                                          : TR("NR off"),
                         state.failed   ? UIHealth::kError
                         : state.active ? UIHealth::kHealthy
                                        : UIHealth::kIdle);
         const auto& timing = state.telemetry;
-        DrawSettingsValue("Inference", state.active && timing.gpuSamples
-                                           ? std::format("{:.2f} ms", timing.AverageGPUMicroseconds() / 1000.0).c_str()
-                                           : "unavailable");
+        DrawSettingsValue(TR("Inference"), state.active && timing.gpuSamples
+                                           ? TRF("{:.2f} ms", timing.AverageGPUMicroseconds() / 1000.0).c_str()
+                                           : TR("unavailable"));
         DrawSettingsHelp("Combined model inference and inter-pass preparation. Excludes input preparation, final Pass "
                          "2 restoration, reconstruction, UI composition and the D3D11/D3D12 handoff.");
         if (state.active)
@@ -1121,9 +1122,9 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
         DrawNRAppliedPasses(view, applied);
         if (state.active) {
             const auto execution = state.passOverride == TheosRenderPipeline::NeuralRendering::PassOverride::None ?
-                std::format("{} pass(es)", state.effectivePasses) :
-                std::format("1 pass - {}", TheosRenderPipeline::NeuralRendering::PassOverrideName(state.passOverride));
-            DrawSettingsValue("Running", execution.c_str());
+                TRF("{} pass(es)", state.effectivePasses) :
+                TRF("1 pass - {}", TheosRenderPipeline::NeuralRendering::PassOverrideName(state.passOverride));
+            DrawSettingsValue(TR("Running"), execution.c_str());
         }
         if (state.failed || (applied.enabled && !state.active))
             ImGui::TextWrapped("%s", state.status.c_str());
@@ -1132,11 +1133,11 @@ void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
             ImGui::Separator();
             if (!state.failed && (!applied.enabled || state.active))
                 ImGui::TextWrapped("%s", state.status.c_str());
-            ImGui::TextWrapped("Submitted frames %llu | history resets %llu",
+            ImGui::TextWrapped(TR("Submitted frames %llu | history resets %llu"),
                                static_cast<unsigned long long>(state.evaluations),
                                static_cast<unsigned long long>(state.resets));
             if (timing.gpuSamples)
-                ImGui::TextWrapped("Inference max %.3f ms | %llu samples | %llu query failures",
+                ImGui::TextWrapped(TR("Inference max %.3f ms | %llu samples | %llu query failures"),
                                    timing.MaximumGPUMicroseconds() / 1000.0,
                                    static_cast<unsigned long long>(timing.gpuSamples),
                                    static_cast<unsigned long long>(timing.gpuQueryFailures));

@@ -1,4 +1,5 @@
 #include "NeuralRuntimeKernelsInternal.h"
+#include "Localization.h"
 #include "NeuralRuntimeKernels.h"
 
 #include <algorithm>
@@ -40,18 +41,18 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
         const auto refuse = [&](const char* why) { reason = why; return false; };
         if (pack.size() != PackSize || std::memcmp(pack.data(), "TRPNRK1\0", 8) ||
             Value<std::uint32_t>(pack, 8) != 1 || Value<std::uint32_t>(pack, 12) != std::size(Bundles)) {
-            return refuse("invalid NR compatibility kernel pack header or size");
+            return refuse(TR("invalid NR compatibility kernel pack header or size"));
         }
         constexpr char hex[] = "0123456789ABCDEF";
         for (std::size_t i = 0; i < 32; ++i) {
             if (hex[pack[16+i] >> 4] != kKernelRuntimeSha256[2*i] ||
                 hex[pack[16+i] & 15] != kKernelRuntimeSha256[2*i+1]) {
-                return refuse("NR compatibility kernel pack targets another runtime");
+                return refuse(TR("NR compatibility kernel pack targets another runtime"));
             }
         }
         if (!module || !storage || module > INTPTR_MAX - ImageSize || storage > INTPTR_MAX - pack.size() ||
             (module < storage+pack.size() && storage < module+ImageSize)) {
-            return refuse("invalid module or pack address");
+            return refuse(TR("invalid module or pack address"));
         }
         std::vector<Patch> pending;
         pending.reserve(38);
@@ -62,12 +63,12 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
             const auto offset = Value<std::uint64_t>(pack, at+8), size = Value<std::uint64_t>(pack, at+16);
             if (Value<std::uint32_t>(pack, at) != b.original || Value<std::uint32_t>(pack, at+4) != b.bytes ||
                 offset != ((end+255) & ~std::uint64_t(255)) || size < 16 || offset > pack.size() || size > pack.size()-offset) {
-                return refuse("NR bundle table range or source identity differs");
+                return refuse(TR("NR bundle table range or source identity differs"));
             }
             constexpr std::array<std::uint8_t, 8> magic{0x50,0xED,0x55,0xBA,1,0,0x10,0};
             if (!std::equal(magic.begin(), magic.end(), pack.begin()+offset) ||
                 Value<std::uint64_t>(pack, static_cast<std::size_t>(offset)+8) != size-16) {
-                return refuse("NR bundle is not a complete fatbin");
+                return refuse(TR("NR bundle is not a complete fatbin"));
             }
             end = offset + size;
             const auto target = storage + offset;
@@ -80,7 +81,7 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
             } else {
                 const auto next = module + b.site + 7;
                 const auto distance = static_cast<std::int64_t>(target) - static_cast<std::int64_t>(next);
-                if (distance < INT32_MIN || distance > INT32_MAX) { return refuse("NR bundle is outside RIP-relative reach"); }
+                if (distance < INT32_MIN || distance > INT32_MAX) { return refuse(TR("NR bundle is outside RIP-relative reach")); }
                 std::vector<std::uint8_t> original{static_cast<std::uint8_t>(i < 7 ? 0x4C : 0x48),0x8D,0x05};
                 const auto displacement = Bytes<std::int32_t>(static_cast<std::int32_t>(b.original-b.site-7));
                 original.insert(original.end(), displacement.begin(), displacement.end());
@@ -91,7 +92,7 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
             }
             pending.push_back({b.length, Bytes<std::uint64_t>(b.bytes), Bytes<std::uint64_t>(size)});
         }
-        if (end != pack.size()) { return refuse("NR compatibility kernel pack has trailing bytes"); }
+        if (end != pack.size()) { return refuse(TR("NR compatibility kernel pack has trailing bytes")); }
         for (const auto site : {0x136E0u, 0x15580u}) {
             pending.push_back({site, {0xC7,0x44,0x24,0x3C,0xB0,1,0,0}, {0xC7,0x44,0x24,0x3C,0x60,1,0,0}});
         }
@@ -116,24 +117,24 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
     {
         struct Page { DWORD old{}; bool writable{}; };
         std::map<std::uint32_t, Page> pages;
-        if (patches.empty()) { reason = "empty patch transaction"; return Publication::Refused; }
+        if (patches.empty()) { reason = TR("empty patch transaction"); return Publication::Refused; }
         for (std::size_t i = 0; i < patches.size(); ++i) {
             const auto& p = patches[i];
             if (p.original.empty() || p.original.size() > 8 || p.original.size() != p.replacement.size() ||
                 p.rva > ImageSize || p.original.size() > ImageSize-p.rva) {
-                reason = "invalid patch range"; return Publication::Refused;
+                reason = TR("invalid patch range"); return Publication::Refused;
             }
             for (std::size_t j = 0; j < i; ++j) {
                 const auto& other = patches[j];
                 if (p.rva < other.rva+other.original.size() && other.rva < p.rva+p.original.size()) {
-                    reason = "overlapping patch ranges"; return Publication::Refused;
+                    reason = TR("overlapping patch ranges"); return Publication::Refused;
                 }
             }
             for (auto page = p.rva & ~(PageSize-1); page <= ((p.rva+static_cast<std::uint32_t>(p.original.size())-1) & ~(PageSize-1)); page += PageSize) {
                 pages.try_emplace(page);
             }
         }
-        if (!Matches(memory, patches, false)) { reason = "original runtime bytes differ"; return Publication::Refused; }
+        if (!Matches(memory, patches, false)) { reason = TR("original runtime bytes differ"); return Publication::Refused; }
         // All allocations finish before changing protection or writing bytes.
         reason.reserve(128);
         const auto restore = [&]() {
@@ -150,14 +151,14 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
         for (auto& [page, state] : pages) {
             if (!memory.Protect(page, PAGE_EXECUTE_READWRITE, state.old)) {
                 const bool restored = restore();
-                reason = "runtime page protection refused";
+                reason = TR("runtime page protection refused");
                 return restored && Matches(memory, patches, false) ? Publication::Refused : Publication::Unsafe;
             }
             state.writable = true;
         }
         if (!Matches(memory, patches, false)) {
             restore();
-            reason = "runtime bytes changed during admission";
+            reason = TR("runtime bytes changed during admission");
             return Publication::Unsafe; // Never overwrite another owner's edit.
         }
         bool wrote = true;
@@ -165,7 +166,7 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
         const bool verified = wrote && Matches(memory, patches, true);
         const bool flushed = verified && memory.Flush();
         const bool protectedAgain = restore();
-        if (verified && flushed && protectedAgain) { reason = "NR compatibility kernel pack installed in memory"; return Publication::Applied; }
+        if (verified && flushed && protectedAgain) { reason = TR("NR compatibility kernel pack installed in memory"); return Publication::Applied; }
         bool writable = true;
         for (auto& [page, state] : pages) {
             DWORD ignored{};
@@ -181,7 +182,7 @@ namespace TheosRenderPipeline::NeuralRendering::KernelPacks
         const bool rollbackFlushed = memory.Flush();
         const bool rollbackProtected = restore();
         const bool clean = originals && rollbackFlushed && rollbackProtected;
-        reason = clean ? "NR installation failed; original runtime restored" : "NR rollback unconfirmed; relaunch required";
+        reason = clean ? TR("NR installation failed; original runtime restored") : TR("NR rollback unconfirmed; relaunch required");
         return clean ? Publication::Refused : Publication::Unsafe;
     }
 }

@@ -1,0 +1,56 @@
+[
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "Apply changes the request live; Save as default keeps it. Other mods' frame limits still apply. DLSS-G manages its final output timing.",
+    "chinese": "应用会立即更改请求；保存为默认会保留它。其他模组的帧率上限仍然生效。DLSS-G 自行管理最终输出时序。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "no cap",
+    "chinese": "无上限",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "Switching to NVIDIA needs a restart this session: NR started before NVIDIA's runtime. Save as default, then restart Skyrim.",
+    "chinese": "本次会话内切换到 NVIDIA 需要重启：神经渲染在 NVIDIA 运行时之前启动。请保存为默认，然后重启 Skyrim。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "How readily XeFG treats a sudden change, such as a camera cut or a fast turn, as a new scene and shows the rendered frame instead of generating one. Higher avoids smeared transitions but generates less in fast motion. Apply to compare live.",
+    "chinese": "XeFG 多大程度上把突然变化（如镜头切换或快速转身）视为新场景并显示已渲染帧而非生成帧。较高值可避免拖影过渡，但在快速运动中生成得更少。应用后可即时对比。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "At Intel's default (0.70).",
+    "chinese": "Intel 的默认值（0.70）。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "Was 0.70 (Intel's default). Click to reset.",
+    "chinese": "原为 0.70（Intel 的默认值）。点击复位。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "Gives Intel's frame pacing the measured frame time. On AMD and NVIDIA cards Intel uses it to sanity-check pacing. Apply to compare live.",
+    "chinese": "把实测帧时间提供给 Intel 的帧节奏控制。在 AMD 和 NVIDIA 显卡上，Intel 用它来校验节奏。应用后可即时对比。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "Uses the optional XeFG tensor helper on NVIDIA when its bundle is installed; otherwise XeFG uses its normal path. Apply switches it, with a short pause while XeFG restarts.",
+    "chinese": "在 NVIDIA 上使用可选的 XeFG 张量辅助（需安装其组件包）；否则 XeFG 走常规路径。应用会切换它，期间 XeFG 短暂重启。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "NVIDIA flip metering: compares driver timing with software timing. Changes live and is not saved. The driver must accept metering for it to become active.",
+    "chinese": "NVIDIA flip metering：把驱动计时与软件计时作比较。即时生效且不会保存。需驱动接受 metering 才会真正启用。",
+    "context": ""
+  }
+]

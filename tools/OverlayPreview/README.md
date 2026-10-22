@@ -27,6 +27,7 @@ cropped to the menu window. Options:
 | `--zoom PERCENT` | Fixed menu zoom; default automatic, as in game |
 | `--menu WxH` | Menu window size at 100% zoom, for narrow or tall layouts |
 | `--ini PATH` | Read the `[Overlay]` layout from a TheosRenderPipeline.ini |
+| `--language CODE` | Overlay language: `auto` (default), `en`, or a dictionary code |
 | `--full` | Keep the whole output rather than cropping to the menu |
 | `--warp` | Use the WARP software rasterizer |
 | `--out DIR` | Output folder |

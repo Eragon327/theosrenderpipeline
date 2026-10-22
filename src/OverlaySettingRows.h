@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OverlayPresetDecor.h"
+#include "Localization.h"
 #include "OverlayUIStyle.h"
 #include <algorithm>
 #include <cfloat>
@@ -198,14 +199,14 @@ inline std::string NeuralStyleName(int style)
 {
     switch (style)
     {
-    case 0: return "Default";
-    case 1: return "Natural";
-    case 2: return "Cinematic";
-    default: return std::format("Custom {}", style);
+    case 0: return TR("Default");
+    case 1: return TR("Natural");
+    case 2: return TR("Cinematic");
+    default: return TRF("Custom {}", style);
     }
 }
 // NR network presets: 0 is 310.9.16's small FP8 model, 1 the older model 310.8 also runs.
-inline const char* NeuralNetworkName(int preset) { return preset != 0 ? "Old" : "Small"; }
+inline const char* NeuralNetworkName(int preset) { return preset != 0 ? TR("Old") : TR("Small"); }
 
 // One option of a segmented control. A disabled option shows greyed, with
 // reason as its tooltip.
@@ -408,7 +409,7 @@ inline void StateCell(std::initializer_list<const char*> keys)
         for (const auto* key : keys) { if (key && decor->Changed(key)) { decor->Reset(key); } }
     }
     ImGui::PopID();
-    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Was %s in %s. Click to reset.", base.c_str(), decor->Reference()); }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip(TR("Was %s in %s. Click to reset."), base.c_str(), decor->Reference()); }
 }
 // One row for the settings in keys; Reset restores all of them that differ.
 // disabled greys the label and control that cannot apply now; the state cell stays usable.
@@ -446,9 +447,9 @@ inline Rows::Grid NeuralRowsGrid()
     const float origin = ImGui::GetCursorScreenPos().x;
     const float available = ImGui::GetContentRegionAvail().x;
     const float inset = style.WindowPadding.x;
-    const float outside = LabelWidth({"Object-specific NR", "Scene normalization", "Maximum scene gain",
-                                      "Maximum luma ratio", "Neural Rendering", "Reconstruction"});
-    const float inside = LabelWidth({"Peripheral compression", "Local structure", "UI correction", "Skin structure"});
+    const float outside = LabelWidth({TR("Object-specific NR"), TR("Scene normalization"), TR("Maximum scene gain"),
+                                      TR("Maximum luma ratio"), TR("Neural Rendering"), TR("Reconstruction")});
+    const float inside = LabelWidth({TR("Peripheral compression"), TR("Local structure"), TR("UI correction"), TR("Skin structure")});
     Rows::Grid grid;
     grid.controlX = Rows::ColumnStart(origin, (std::max)(outside, inset + inside));
     // Controls fill the column up to the undo button, which ends at the pass

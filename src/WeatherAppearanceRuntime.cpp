@@ -1,4 +1,5 @@
 #include <PCH.h>
+#include "Localization.h"
 #include "WeatherAppearanceRuntime.h"
 #include "WeatherAppearanceFiles.h"
 #include "FrameGen/SourceDLSSGSettings.h"
@@ -119,7 +120,7 @@ Settings Runtime::Load(const CSimpleIniA& ini)
     base.reconstruction = nr.neuralReconstruction;
     base.tuning = nr.neuralTuning;
     base.second = NeuralRendering::EffectiveSecondPass(nr.neuralSecondPass, nr.neuralReconstruction, nr.neuralTuning);
-    base.sharpening = ini.GetBoolValue("Settings", "Sharpening", false);
+    base.sharpening = ini.GetBoolValue(TR("Settings"), TR("Sharpening"), false);
     base.sharpness = static_cast<float>(ini.GetDoubleValue("Settings", "Sharpness", 0.3));
     auto settings = LoadSettings(ini, views, &base);
     logger::info("[Appearance] loaded {} presets ({} preset files)", settings.presets.size(), folder.files.size());

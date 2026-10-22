@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FrameGen/NeuralRenderingPassSettings.h"
+#include "Localization.h"
 #include "FrameGen/NeuralRenderingReconstruction.h"
 #include "FrameGen/NeuralRenderingTuning.h"
 #include "NeuralCombatPolicy.h"
@@ -48,7 +49,7 @@ inline const auto& Fields()
     static const std::array fields{
         TRP_APPEARANCE_FIELD("NeuralRendering", false, 0, 1, true, neural),
         TRP_APPEARANCE_FIELD("BeforeUpscaling", false, 0, 1, true, beforeUpscaling),
-        TRP_APPEARANCE_FIELD("Passes", false, 1, 2, true, passes),
+        TRP_APPEARANCE_FIELD(TR("Passes"), false, 1, 2, true, passes),
         TRP_APPEARANCE_FIELD("OnePassInCombat", false, 0, 1, true, combat.inCombat),
         TRP_APPEARANCE_FIELD("OnePassWeaponsDrawn", false, 0, 1, true, combat.weaponsDrawn),
         TRP_APPEARANCE_FIELD("ReturnDelay", false, 0, 30, false, combat.recoverySeconds),

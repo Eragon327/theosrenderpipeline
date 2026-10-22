@@ -1,4 +1,5 @@
 #include "RenderPipeline.h"
+#include "Localization.h"
 
 #include "DLSSBackend.h"
 #include "DLSSPreset.h"
@@ -34,22 +35,22 @@ void RenderPipeline::LoadINI()
 	}
 	mUpscaleType = (int)ini.GetLongValue("Settings", "UpscaleType", 0);
 	mQualityLevel = (int)ini.GetLongValue("Settings", "QualityLevel", 2);
-	mUseOptimalMipLodBias = ini.GetBoolValue("Settings", "UseOptimalMipLodBias", true);
+	mUseOptimalMipLodBias = ini.GetBoolValue(TR("Settings"), "UseOptimalMipLodBias", true);
 	mMipLodBias = (float)ini.GetDoubleValue("Settings", "MipLodBias", 0.0);
-	mSharpening = ini.GetBoolValue("Settings", "Sharpening", false);
+	mSharpening = ini.GetBoolValue(TR("Settings"), TR("Sharpening"), false);
 	mSharpness = (float)ini.GetDoubleValue("Settings", "Sharpness", 0.3);
-	mEnableJitter = ini.GetBoolValue("Settings", "EnableJitter", true);
-	mAutoExposure = ini.GetBoolValue("Settings", "AutoExposure", true);
+	mEnableJitter = ini.GetBoolValue(TR("Settings"), "EnableJitter", true);
+	mAutoExposure = ini.GetBoolValue(TR("Settings"), "AutoExposure", true);
 	mDLSSPreset = TheosRenderPipeline::DLSSPreset::Sanitize((int)ini.GetLongValue("Settings", "DLSSPreset", 0));
-	mNativeUI = ini.GetBoolValue("Settings", "NativeUI", true);
+	mNativeUI = ini.GetBoolValue(TR("Settings"), "NativeUI", true);
     mReShadeBeforeUpscaling = ini.GetBoolValue("Compatibility", "ReShadeBeforeUpscaling", false);
-	mRequestLoadingArtwork.store(ini.GetBoolValue("Settings", "RequestLoadingArtwork", true), std::memory_order_relaxed);
+	mRequestLoadingArtwork.store(ini.GetBoolValue(TR("Settings"), "RequestLoadingArtwork", true), std::memory_order_relaxed);
 	mWheelerLateOverlayBridge = ini.GetBoolValue("Compatibility", "WheelerLateOverlayBridge", true);
 	PerformanceTuning::Settings performanceSettings{};
-	performanceSettings.enableGPUTimings = ini.GetBoolValue("Performance", "EnableGPUTimings", true);
-	performanceSettings.enableFrameTrace = ini.GetBoolValue("Performance", "EnableFrameTrace", false);
-	performanceSettings.directRCASOutput = ini.GetBoolValue("Performance", "DirectRCASOutput", true);
-	performanceSettings.directDLSSOutput = ini.GetBoolValue("Performance", "DirectDLSSOutput", true);
+	performanceSettings.enableGPUTimings = ini.GetBoolValue(TR("Performance"), "EnableGPUTimings", true);
+	performanceSettings.enableFrameTrace = ini.GetBoolValue(TR("Performance"), "EnableFrameTrace", false);
+	performanceSettings.directRCASOutput = ini.GetBoolValue(TR("Performance"), "DirectRCASOutput", true);
+	performanceSettings.directDLSSOutput = ini.GetBoolValue(TR("Performance"), "DirectDLSSOutput", true);
 	PerformanceTuning::GetSingleton()->ApplySettings(performanceSettings);
 	const bool unsupportedDynamicResolution = ini.GetBoolValue("DynamicResolution", "Enabled", false) ||
 		ini.GetBoolValue("DynamicResolution", "Oscillate", false);
@@ -60,6 +61,10 @@ void RenderPipeline::LoadINI()
 	mToggleOverlayHotkey = TheosRenderPipeline::Overlay::LoadMenuHotkey(ini);
 	mEnableNRHotkeys = TheosRenderPipeline::Overlay::LoadNRHotkeysEnabled(ini);
 	logger::info("[Overlay Input] NR shortcuts enabled={}", mEnableNRHotkeys);
+	// [Overlay] Language picks the dictionary every TR() label is read from. The
+	// overlay activates it before the first font atlas exists; "auto" follows the
+	// Windows UI language and a missing dictionary keeps the English labels.
+	mLanguage = ini.GetValue("Overlay", "Language", "auto");
 	mLogMenuMetrics = ini.GetBoolValue("Debug", "LogMenuMetrics", false);
 	mQualityLevel = std::clamp(mQualityLevel, 0, 4);
     TheosRenderPipeline::Appearance::Runtime::Get().Configure(TheosRenderPipeline::Appearance::Runtime::Load(ini));
@@ -106,22 +111,22 @@ bool RenderPipeline::SaveINI(const TheosRenderPipeline::Overlay::Layout* layout)
 		TheosRenderPipeline::Upscaler::Creation{mUpscaleType, mQualityLevel, mDLSSPreset, mSharpening, mAutoExposure};
 	ini.SetLongValue("Settings", "UpscaleType", creation.mode);
 	ini.SetLongValue("Settings", "QualityLevel", creation.quality);
-	ini.SetBoolValue("Settings", "UseOptimalMipLodBias", mUseOptimalMipLodBias);
-	ini.SetDoubleValue("Settings", "MipLodBias", mMipLodBias);
-	ini.SetBoolValue("Settings", "Sharpening", creation.sharpening);
-	ini.SetDoubleValue("Settings", "Sharpness", mSharpness);
-	ini.SetBoolValue("Settings", "EnableJitter", mEnableJitter);
-	ini.SetBoolValue("Settings", "AutoExposure", creation.autoExposure);
+	ini.SetBoolValue(TR("Settings"), "UseOptimalMipLodBias", mUseOptimalMipLodBias);
+	ini.SetDoubleValue(TR("Settings"), "MipLodBias", mMipLodBias);
+	ini.SetBoolValue(TR("Settings"), TR("Sharpening"), creation.sharpening);
+	ini.SetDoubleValue(TR("Settings"), "Sharpness", mSharpness);
+	ini.SetBoolValue(TR("Settings"), "EnableJitter", mEnableJitter);
+	ini.SetBoolValue(TR("Settings"), "AutoExposure", creation.autoExposure);
 	ini.SetLongValue("Settings", "DLSSPreset", creation.preset);
-	ini.SetBoolValue("Settings", "NativeUI", mNativeUI);
+	ini.SetBoolValue(TR("Settings"), "NativeUI", mNativeUI);
     ini.SetBoolValue("Compatibility", "ReShadeBeforeUpscaling", mReShadeBeforeUpscaling);
-	ini.SetBoolValue("Settings", "RequestLoadingArtwork", mRequestLoadingArtwork.load(std::memory_order_relaxed));
+	ini.SetBoolValue(TR("Settings"), "RequestLoadingArtwork", mRequestLoadingArtwork.load(std::memory_order_relaxed));
 	ini.SetBoolValue("Compatibility", "WheelerLateOverlayBridge", mWheelerLateOverlayBridge);
 	const auto& performanceSettings = PerformanceTuning::GetSingleton()->settings;
-	ini.SetBoolValue("Performance", "EnableGPUTimings", performanceSettings.enableGPUTimings);
-	ini.SetBoolValue("Performance", "EnableFrameTrace", performanceSettings.enableFrameTrace);
-	ini.SetBoolValue("Performance", "DirectRCASOutput", performanceSettings.directRCASOutput);
-	ini.SetBoolValue("Performance", "DirectDLSSOutput", performanceSettings.directDLSSOutput);
+	ini.SetBoolValue(TR("Performance"), "EnableGPUTimings", performanceSettings.enableGPUTimings);
+	ini.SetBoolValue(TR("Performance"), "EnableFrameTrace", performanceSettings.enableFrameTrace);
+	ini.SetBoolValue(TR("Performance"), "DirectRCASOutput", performanceSettings.directRCASOutput);
+	ini.SetBoolValue(TR("Performance"), "DirectDLSSOutput", performanceSettings.directDLSSOutput);
     // Preserve unrecognized and retired research keys from the loaded INI.
     const auto* frameGeneration = SourceFrameGeneration::GetSingleton();
     ini.SetBoolValue("FrameGeneration", "Enabled", frameGeneration->RuntimeInterpolationRequested());
@@ -140,6 +145,7 @@ bool RenderPipeline::SaveINI(const TheosRenderPipeline::Overlay::Layout* layout)
     const bool presetsSaved = presets.Ok();
 	ini.SetBoolValue("Debug", "LogMenuMetrics", mLogMenuMetrics);
 	TheosRenderPipeline::Overlay::StoreMenuHotkey(ini, mToggleOverlayHotkey);
+	ini.SetValue("Overlay", "Language", mLanguage.c_str());
     if (layout) { TheosRenderPipeline::Overlay::StoreLayout(ini, *layout); }
 	std::vector<std::string> changed;
 	if (!TheosRenderPipeline::UserSettings::Save(ini, TheosRenderPipeline::UserSettings::GamePaths(),
@@ -285,7 +291,7 @@ void RenderPipeline::InitUpscaler()
 	}
 	logger::info(
 		"NVIDIA host topology initialized: sourceOwner={} {} x {} -> {} x {} (scale {:.3f}, mip bias {:.2f})",
-		nvidiaHost->XeSSActive() ? "TheosRenderPipeline-XeSS" : nvidiaHost->SplitSourceDLSSActive() ? "TheosRenderPipeline-DLSS" : "unavailable",
+		nvidiaHost->XeSSActive() ? "TheosRenderPipeline-XeSS" : nvidiaHost->SplitSourceDLSSActive() ? "TheosRenderPipeline-DLSS" : TR("unavailable"),
 		mRenderSizeX,
 		mRenderSizeY,
 		mDisplaySizeX,

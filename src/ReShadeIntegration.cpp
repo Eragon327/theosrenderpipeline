@@ -1,4 +1,5 @@
 #include "ReShadeIntegration.h"
+#include "Localization.h"
 #include "ScreenshotWorker.h"
 #include "ReShadeSwapChain.h"
 #include "FrameGen/D3D11ContextIsolation.h"
@@ -407,7 +408,7 @@ namespace TheosRenderPipeline
             // reached the destroy event; never treat it as still seeded.
             if (!created) { bridge.seeded = nullptr; return E_FAIL; }
             overlayRuntime = runtime;
-            status = bridged ? "ReShade source-frame stage active; ReGrade+ device events bridged" : "ReShade source-frame stage active";
+            status = bridged ? TR("ReShade source-frame stage active; ReGrade+ device events bridged") : TR("ReShade source-frame stage active");
             return S_OK;
         }
     };
@@ -445,14 +446,14 @@ namespace TheosRenderPipeline
             const auto basePath = reinterpret_cast<void (*)(char*, size_t*)>(GetProcAddress(module, "ReShadeGetBasePath"));
             if (!registerAddon) { continue; }
             if (!registerEvent || !create || !destroy || !update || !basePath) {
-                s.status = "ReShade public runtime exports unavailable; keeping automatic effects";
+                s.status = TR("ReShade public runtime exports unavailable; keeping automatic effects");
                 continue;
             }
             HMODULE retained{};
             if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCWSTR>(module), &retained)) { continue; }
             GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                 reinterpret_cast<LPCWSTR>(&State::InitDevice), &s.addon);
-            if (!registerAddon(s.addon, 14)) { FreeLibrary(retained); s.status = "ReShade rejected add-on API 14"; continue; }
+            if (!registerAddon(s.addon, 14)) { FreeLibrary(retained); s.status = TR("ReShade rejected add-on API 14"); continue; }
             s.module = retained; s.create = create; s.destroy = destroy; s.update = update;
             size_t length{}; basePath(nullptr, &length);
             std::string base(length, '\0'); basePath(base.data(), &length); base.resize(std::strlen(base.c_str()));
@@ -467,7 +468,7 @@ namespace TheosRenderPipeline
             registerEvent(Event::init_device, reinterpret_cast<void*>(&State::InitDevice));
             registerEvent(Event::reshade_open_overlay, reinterpret_cast<void*>(&State::Open));
             registerEvent(Event::reshade_screenshot, reinterpret_cast<void*>(&State::Screenshot));
-            s.status = s.disabled ? "ReShade disabled in ReShade.ini" : "ReShade API 14 registered; waiting for source color";
+            s.status = s.disabled ? TR("ReShade disabled in ReShade.ini") : TR("ReShade API 14 registered; waiting for source color");
             return;
         }
     }
@@ -487,15 +488,15 @@ namespace TheosRenderPipeline
         if (FAILED(result)) { return result; }
         s.nativeOutput = native != nullptr;
         if (s.module && s.nativeOutput && !s.disabled) {
-            s.status = "ReShade native output isolated; waiting for source UI";
+            s.status = TR("ReShade native output isolated; waiting for source UI");
             // ReShade's device hooks have loaded its add-ons by now, so the
             // startup log reports the block. EnsureRuntime checks again.
             if (!s.BlockIncompatibleAddon() && s.bridged) {
-                s.status = "ReShade native output isolated; ReGrade+ device events bridged; waiting for source UI";
+                s.status = TR("ReShade native output isolated; ReGrade+ device events bridged; waiting for source UI");
             }
         }
         if (s.module && !s.nativeOutput) {
-            s.status = "ReShade native output ownership unavailable; keeping automatic effects";
+            s.status = TR("ReShade native output ownership unavailable; keeping automatic effects");
         }
         *out = native ? native.Detach() : exposed.Detach();
         return result;
@@ -576,7 +577,7 @@ namespace TheosRenderPipeline
         s.runtime->render_effects(s.runtime->get_command_queue()->get_immediate_command_list(),
             {reinterpret_cast<uint64_t>(s.colorRTV.Get())}, {reinterpret_cast<uint64_t>(s.colorSRGB.Get())});
         ++s.counts.effects;
-        s.status = before ? "ReShade before upscaling" : "ReShade after upscaling";
+        s.status = before ? TR("ReShade before upscaling") : TR("ReShade after upscaling");
         // API 14 queues a shader reload when the target extent/format changes,
         // but can still issue the old-size passes in that first call. Discard
         // that transitional result instead of displaying a partially shaded frame.

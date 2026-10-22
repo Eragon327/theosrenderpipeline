@@ -1,4 +1,5 @@
 #include "ReShadeIntegration.h"
+#include "Localization.h"
 #include "SourceDLSSGBackend.h"
 #include "XeFGLayerSelection.h"
 #include <PCH.h>
@@ -63,7 +64,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (SUCCEEDED(a_result)) { return true; }
 		if (routing.latch) {
 			fault_ = a_result;
-			status_ = std::format("{} failed HRESULT=0x{:08X}", a_operation, static_cast<std::uint32_t>(a_result));
+			status_ = TRF("{} failed HRESULT=0x{:08X}", a_operation, static_cast<std::uint32_t>(a_result));
 			logger::error("[{}] {}", a_source, status_);
 			deviceLoss_.Report(a_result, a_operation, FrameIndex(),
 				device11_.Get(), device12_.Get(), failure);
@@ -112,7 +113,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 		using namespace TheosRenderPipeline::PluginPaths;
 		if (!a_directory.is_absolute()) {
-			return Check(E_INVALIDARG, "Streamline directory must be absolute");
+			return Check(E_INVALIDARG, TR("Streamline directory must be absolute"));
 		}
 		if (::GetModuleHandleW(L"PDPerfPlugin.dll") || ::GetModuleHandleW(L"SkyrimUpscaler.dll")) {
 			return Check(E_UNEXPECTED, "another frame-generation mod is already loaded; disable the competing mod");
@@ -188,7 +189,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	bool Backend::InitializeNvidia(const std::filesystem::path& directory)
 	{
 		if (nvidiaInitialized_) { return true; }
-		if (!NvidiaAdapter()) { return Check(DXGI_ERROR_UNSUPPORTED, "NVIDIA provider requires NVIDIA hardware"); }
+		if (!NvidiaAdapter()) { return Check(DXGI_ERROR_UNSUPPORTED, TR("NVIDIA provider requires NVIDIA hardware")); }
 		MFGUnlock::StartupScope startupScope(mfgUnlock_);
 		if (!Load(directory)) { return false; }
 		void* upgraded = device12_.Get();
@@ -224,7 +225,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				const auto otherPath = PluginPaths::ModulePath(GetModuleHandleW(name));
 				const bool overrideObserved = runtimeDiagnostics_.FrameGenerationOverrideObserved();
 				logger::error("[SourceDLSSG] module retention failed configured={} filePresent={} sameNameLoadedPath={} fgOverrideObserved={}",
-					configured.string(), exists, otherPath.empty() ? "none" : otherPath.string(), overrideObserved);
+					configured.string(), exists, otherPath.empty() ? TR("none") : otherPath.string(), overrideObserved);
 				Check(E_FAIL, RuntimeModuleFailureMessage(std::filesystem::path(name).string(), overrideObserved).c_str());
 				return false;
 			}
@@ -277,7 +278,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		BOOL tearing = FALSE;
 		if (FAILED(a_factory->QueryInterface(IID_PPV_ARGS(&capabilities))) ||
 			FAILED(capabilities->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing, sizeof(tearing))) || !tearing) {
-			Check(DXGI_ERROR_UNSUPPORTED, "Streamline immediate presentation requires tearing support");
+			Check(DXGI_ERROR_UNSUPPORTED, TR("Streamline immediate presentation requires tearing support"));
 			return fault_;
 		}
 		device11_ = a_device;
@@ -287,9 +288,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 		deviceLoss_.Configure(DeviceLossDiagnostics::ReadDREDSetting(diagnosticsPath.c_str()));
 		ComPtr<IDXGIDevice> dxgiDevice;
 		ComPtr<IDXGIAdapter> adapter;
-		if (!Check(device11_.As(&dxgiDevice), "D3D11 DXGI device") ||
-			!Check(dxgiDevice->GetAdapter(&adapter), "D3D11 adapter") ||
-			!Check(ReShadeIntegration::Get().CreateSourceDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_0, &device12_), "D3D12 device")) { return fault_; }
+		if (!Check(device11_.As(&dxgiDevice), TR("D3D11 DXGI device")) ||
+			!Check(dxgiDevice->GetAdapter(&adapter), TR("D3D11 adapter")) ||
+			!Check(ReShadeIntegration::Get().CreateSourceDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_0, &device12_), TR("D3D12 device"))) { return fault_; }
 		DXGI_ADAPTER_DESC adapterDesc{};
 		if (SUCCEEDED(adapter->GetDesc(&adapterDesc))) {
 			logger::info("[SourceDLSSG] rendering adapter={} vendor=0x{:04X} device=0x{:04X} LUID={:08X}:{:08X}",
@@ -350,7 +351,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			const auto hdr = HDROutputConfiguration();
 			const char* reason = "not requested";
 			if (hdr.enabled) {
-				if (CommunityShaders::Active()) { reason = "Community Shaders owns HDR on this route"; }
+				if (CommunityShaders::Active()) { reason = TR("Community Shaders owns HDR on this route"); }
 				else if (!HDROutputEligibleFormat(a_desc.BufferDesc.Format)) { reason = "producer does not finish in 8-bit SDR"; }
 				else { hdrNative_ = true; reason = "waiting for display state"; }
 			}
@@ -373,13 +374,13 @@ namespace TheosRenderPipeline::SourceDLSSG
 		// Upscaling and presentation are independent. XeSS also needs its SR
 		// context when the saved presenter is NVIDIA.
 		if (xeSSStartup &&
-			!Check(xess_.Open(device12_.Get(), PluginPaths::IntelDirectory()), "XeSS context", "XeSS")) { return fault_; }
+			!Check(xess_.Open(device12_.Get(), PluginPaths::IntelDirectory()), TR("XeSS context"), "XeSS")) { return fault_; }
 		if (intelStartup) {
 			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_)) ||
 				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, true, &native, 0,
 					XeFGConfiguration(), IntelPipelines(XeFGPipelineCache(), xefg_.PipelineCacheName(), xefg_.RuntimeModule())))) { return fault_; }
-			providerStatus_ = "Intel XeFG presenter; latency owner=XeLL";
-		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), "Streamline swapchain")) { return fault_; }
+			providerStatus_ = TR("Intel XeFG presenter; latency owner=XeLL");
+		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), TR("Streamline swapchain"))) { return fault_; }
 		retainedNative_ = native;
 		PollDisplayHDR(true);
 		api_.context = this;
@@ -417,7 +418,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const auto rebuild = wrapper->RebuildBuffers();
 		if (FAILED(rebuild)) { wrapper->Release(); return rebuild; }
 		ready_ = true;
-		status_ = "source Streamline swapchain ready; generation off until valid inputs";
+		status_ = TR("source Streamline swapchain ready; generation off until valid inputs");
 		logger::info("[SourceDLSSG] {} {}x{} format={} buffers=2", status_, desc.BufferDesc.Width, desc.BufferDesc.Height, static_cast<int>(desc.BufferDesc.Format));
 		*a_result = wrapper;
 		return S_OK;
@@ -443,7 +444,7 @@ namespace TheosRenderPipeline::SourceDLSSG
             logger::warn("[NR Objects] shared classification texture unavailable; object masks off for this session, normal NR continues");
             return true;
         }
-        if (!Check(interop_.CopyInputRegion(source,objectMask_,extent),"NR object-classification copy")) { return false; }
+        if (!Check(interop_.CopyInputRegion(source,objectMask_,extent),TR("NR object-classification copy"))) { return false; }
         objectMaskCurrent_ = true;
 #endif
         return true;
@@ -496,7 +497,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		} else if (!EnsureGuide(a_motion, motion_, DXGI_FORMAT_UNKNOWN, a_renderExtent) ||
 			!EnsureGuide(a_depth, depth_, DXGI_FORMAT_R32_FLOAT, a_renderExtent) ||
 			!CopyDepth(a_depth) || !Check(interop_.CopyInputRegion(a_motion, motion_, a_renderExtent), "motion copy")) { return false; }
-		if (a_hudless && (!EnsureGuide(a_hudless, hudless_) || !Check(interop_.CopyInput(a_hudless, hudless_), "HUD-less copy"))) { return false; }
+		if (a_hudless && (!EnsureGuide(a_hudless, hudless_) || !Check(interop_.CopyInput(a_hudless, hudless_), TR("HUD-less copy")))) { return false; }
 		if (a_ui && !EnsureGuide(a_ui, ui_)) { return false; }
 		uiSource_ = a_ui;
 		frameConstants_ = a_constants;
@@ -568,7 +569,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				xefg_.ProbedTensorRequest() != xefgTensorRequested_.load();
 			return true; // Intel copies the final HUD-less image after late NR, at Present.
 		}
-		if (!Check(interop_.SignalD3D11(Work::FrameGeneration), "D3D11 guides ready")) { return false; }
+		if (!Check(interop_.SignalD3D11(Work::FrameGeneration), TR("D3D11 guides ready"))) { return false; }
 		ID3D12GraphicsCommandList* list = nullptr;
 		if (!Check(interop_.Begin(Work::FrameGeneration, &list), "begin guide tags") ||
 			!CheckSession(session_.Prepare(frameConstants_, guides, list)) ||
@@ -723,7 +724,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				}
 				// This frame presents without NR; the next one uses the next runtime.
 				active = false;
-				unavailable = "NR runtime refused for this GPU; switching runtime";
+				unavailable = TR("NR runtime refused for this GPU; switching runtime");
 			} else {
 				realSource = neuralPass_->Composed();
 			}
@@ -849,7 +850,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (reset) { ++neuralSnapshot_.resets; }
 			if (active) { neuralSnapshot_.telemetry = neuralPass_->Telemetry(); }
 			neuralSnapshot_.status = unavailable ? unavailable : active ? neuralPass_->Status() : options.enabled ?
-				"NR waiting for world inputs and dedicated native UI; standard DLSS active" : "standard DLSS; source NR is off";
+				TR("NR waiting for world inputs and dedicated native UI; standard DLSS active") : TR("standard DLSS; source NR is off");
 			if (changed || (active && (reset || neuralSnapshot_.evaluations % 600 == 0))) {
 				logger::info("[SourceDLSSG NR] frame={} active={} evaluations={} reset={} style={} fgRequested={} {}",
 					FrameIndex(), active, neuralSnapshot_.evaluations, reset,
@@ -915,7 +916,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				session_.SetMFGUnlockState(mfgUnlock_.Snapshot().UsesCompatibilityUnlock(), mfgUnlock_.Snapshot().Ready());
 			} else if (!CheckSession(session_.ResumeAfterResize(resumeFrame))) { return fault_; }
 			nvidiaNeedsPresent_ = false;
-			providerStatus_ = "NVIDIA presenter; latency owner=Reflex";
+			providerStatus_ = TR("NVIDIA presenter; latency owner=Reflex");
 			logger::info("[FrameGeneration] NVIDIA replacement presented; Reflex resumed frame={}", FrameIndex());
 		} else if (!CheckSession(session_.AfterPresent(true, false, providerSwitchPending_))) { return fault_; }
 		// Between frames: the next Prepare and BeforePresent both see any new
@@ -1066,8 +1067,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 			std::scoped_lock lock(neuralMutex_);
 			neuralSnapshot_.active = false;
 			neuralSnapshot_.status = purpose == RetirementPurpose::Resize ?
-				"NR retired for resize; next eligible frame recreates the feature" :
-				"NR retained for fixed-size upscaler replacement; next eligible frame resets history";
+				TR("NR retired for resize; next eligible frame recreates the feature") :
+				TR("NR retained for fixed-size upscaler replacement; next eligible frame resets history");
 		}
 		});
 		if (retired) {
@@ -1122,15 +1123,15 @@ namespace TheosRenderPipeline::SourceDLSSG
 	const char* Backend::HDRDisplayReason(bool a_known) const
 	{
 		if (!hdrRequested_) { return "off; RGB10A2 swapchain kept until restart"; }
-		return hdrDisplay_ ? "HDR10 output" : a_known ?
-			"Windows HDR is off for this display; SDR output" : "display HDR state unavailable; SDR output";
+		return hdrDisplay_ ? TR("HDR10 output") : a_known ?
+			TR("Windows HDR is off for this display; SDR output") : "display HDR state unavailable; SDR output";
 	}
 	bool Backend::UpdateHDRRequest(DXGI_FORMAT a_gameFormat)
 	{
 		const bool requested = HDROutputConfiguration().enabled;
 		if (requested == hdrRequested_ || !Ready()) { return false; }
 		const char* refused = !requested || hdrNative_ ? nullptr :
-			CommunityShaders::Active() ? "Community Shaders owns HDR on this route" :
+			CommunityShaders::Active() ? TR("Community Shaders owns HDR on this route") :
 			!HDROutputEligibleFormat(a_gameFormat) ? "producer does not finish in 8-bit SDR" : nullptr;
 		if (requested && !hdrNative_ && !refused) { return true; } // FinishHDRStart publishes the result.
 		hdrRequested_ = requested;
@@ -1217,7 +1218,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (hdrOutputPass_->TargetsMatch(a_width, a_height)) { return true; }
 		if (hdrOutputPass_->HudlessTarget() && (!Check(interop_.SignalD3D11(Work::FrameGeneration), "retire HDR output targets") ||
 			!Check(interop_.Drain(), "drain HDR output targets"))) { return false; }
-		return Check(hdrOutputPass_->CreateTargets(device12_.Get(), a_width, a_height), "HDR output target allocation");
+		return Check(hdrOutputPass_->CreateTargets(device12_.Get(), a_width, a_height), TR("HDR output target allocation"));
 	}
 	HRESULT Backend::RecordOutput(ID3D12GraphicsCommandList* a_list, ID3D12Resource* a_source, ID3D12Resource* a_destination,
 		bool a_prepared, DXGI_COLOR_SPACE_TYPE& a_colorSpace)
@@ -1283,11 +1284,11 @@ namespace TheosRenderPipeline::SourceDLSSG
 		const auto request = RequestedProvider();
 		if ((request == provider_ && !recreateXeFG_) || !cameraAvailable_ || TransitionBlocked()) { return false; }
 		if (request == FrameGenerationProvider::NVIDIA && !NvidiaAdapter()) {
-			providerStatus_ = "NVIDIA frame generation requires NVIDIA hardware; Intel presenter retained";
+			providerStatus_ = TR("NVIDIA frame generation requires NVIDIA hardware; Intel presenter retained");
 			RequestProvider(provider_); return false;
 		}
 		if (request == FrameGenerationProvider::NVIDIA && NvidiaSwitchBlocked()) {
-			providerStatus_ = "NVIDIA switch needs a restart (NR started first); Intel presenter retained";
+			providerStatus_ = TR("NVIDIA switch needs a restart (NR started first); Intel presenter retained");
 			logger::warn("[FrameGeneration] NVIDIA frame generation needs a restart: NR started NVIDIA NGX before "
 				"Streamline in this XeSS session. Intel presenter retained; save NVIDIA and restart, or switch before enabling NR.");
 			RequestProvider(provider_); return false;
@@ -1297,7 +1298,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 				hudless_.texture12 && XeFGPresenter::SupportsFormat(hudless_.desc.Format);
 			const auto result = compatible ? xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_) : DXGI_ERROR_UNSUPPORTED;
 			if (FAILED(result)) {
-				providerStatus_ = std::format("XeFG unavailable: {} (0x{:08X}); current presenter retained",
+				providerStatus_ = TRF("XeFG unavailable: {} (0x{:08X}); current presenter retained",
 					compatible ? xefg_.Status() : "requires compatible SDR/HDR10 inputs", static_cast<unsigned>(result));
 				logger::warn("[FrameGeneration] {}", providerStatus_);
 				RequestProvider(provider_); recreateXeFG_ = false;
@@ -1348,8 +1349,8 @@ namespace TheosRenderPipeline::SourceDLSSG
 		neuralHistory_.Invalidate();
 		hdrColorSpaceApplied_ = false; ApplyNativeColorSpace();
 		nvidiaNeedsPresent_ = next == FrameGenerationProvider::NVIDIA;
-		providerStatus_ = std::format("{} presenter; latency owner={}", ProviderName(next), next == FrameGenerationProvider::XeFG ? "XeLL" : "Reflex");
-		if (nvidiaNeedsPresent_) { providerStatus_ = "NVIDIA replacement waiting for first Present; Reflex suspended"; }
+		providerStatus_ = TRF("{} presenter; latency owner={}", ProviderName(next), next == FrameGenerationProvider::XeFG ? "XeLL" : "Reflex");
+		if (nvidiaNeedsPresent_) { providerStatus_ = TR("NVIDIA replacement waiting for first Present; Reflex suspended"); }
 		logger::info("[FrameGeneration] provider change complete {}; shared DLSS/NR resources retained", providerStatus_);
 		return true;
 	}

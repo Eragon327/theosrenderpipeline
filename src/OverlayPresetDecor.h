@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "Localization.h"
 #include <string>
 
 namespace TheosRenderPipeline::Overlay
@@ -18,7 +19,7 @@ public:
     // The time of day being edited, or null when the preset looks the same all day.
     virtual const char* EditingTime() const = 0;
     // What unchanged rows follow, as the state column names it.
-    virtual const char* Reference() const { return "Base"; }
+    virtual const char* Reference() const { return TR("Base"); }
 };
 inline PresetDecor*& ActivePresetDecor()
 {

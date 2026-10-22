@@ -1,0 +1,56 @@
+[
+ {
+  "file": "src/OverlayAdvancedPanel.cpp",
+  "english": "NR Pass 1: %.1f%% | network %s",
+  "chinese": "NR 第 1 遍：%.1f%% | 网络 %s",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayAdvancedPanel.cpp",
+  "english": "pass",
+  "chinese": "遍",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayAdvancedPanel.cpp",
+  "english": "passes",
+  "chinese": "遍",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayAdvancedPanel.cpp",
+  "english": "NR session request: %s | %s upscaling | %d %s",
+  "chinese": "NR 会话请求：%s | %s放大 | %d %s",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayAdvancedPanel.cpp",
+  "english": "Shipping",
+  "chinese": "发行版",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayAdvancedPanel.cpp",
+  "english": "Default",
+  "chinese": "默认",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayFrameView.cpp",
+  "english": "%s %s | %d %s",
+  "chinese": "%s %s | %d %s",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "{} (display reports {:.0f} nits)",
+  "chinese": "{}（显示器报告 {:.0f} 尼特）",
+  "context": ""
+ },
+ {
+  "file": "src/OverlaySettingRows.h",
+  "english": "Base",
+  "chinese": "Base",
+  "context": ""
+ }
+]

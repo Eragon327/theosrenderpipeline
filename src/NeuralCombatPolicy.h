@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include "Localization.h"
 #include <cmath>
 
 namespace TheosRenderPipeline::NeuralRendering
@@ -30,7 +31,7 @@ namespace TheosRenderPipeline::NeuralRendering
         case PassOverride::WeaponsDrawn: return "weapons/spells drawn";
         case PassOverride::Recovery: return "recovery delay";
         case PassOverride::Preset: return "preset";
-        default: return "none";
+        default: return TR("none");
         }
     }
 

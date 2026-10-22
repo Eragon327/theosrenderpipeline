@@ -1,4 +1,5 @@
 #include "XeFGPresenter.h"
+#include "Localization.h"
 #include "XeFGUnlock.h"
 #include "../PluginPaths.h"
 #include <psapi.h>
@@ -220,7 +221,7 @@ namespace TheosRenderPipeline
         snapshot_.unlockReady = false;
         snapshot_.maxGeneratedFrames = 1;
         snapshot_.generatedFrames = 1;
-        unlockStatus_="Experimental MFG off; official x2";
+        unlockStatus_=TR("Experimental MFG off; official x2");
         snapshot_.tensorModel = usingTensor_ && tensor_.ModelReady();
         snapshot_.tensorActive = usingTensor_ && (tensor_.Snapshot().flags & XeFGTensor::TensorReady) != 0;
         if (usingTensor_) {
@@ -239,7 +240,7 @@ namespace TheosRenderPipeline
                 return E_UNEXPECTED;
             }
             snapshot_.unlockReady = patched == XeFGUnlock::PatchResult::Applied;
-            if (!snapshot_.unlockReady) unlockStatus_ += "; official x2 retained";
+            if (!snapshot_.unlockReady) unlockStatus_ += TR("; official x2 retained");
         }
         XeFGUnlock::NewContextEpoch(); // Previous SDK context must already have retired.
         Trace("create latency context");
@@ -424,7 +425,7 @@ namespace TheosRenderPipeline
         if (generate) {
             if (!list) { return E_POINTER; }
             if (FAILED(hr = FG(xefgSwapChainSetUiCompositionState_(fg_, uiComposition ?
-                XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_ENABLED : XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_DISABLED), "UI composition"))) { return hr; }
+                XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_ENABLED : XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_DISABLED), TR("UI composition")))) { return hr; }
             const std::pair<xefg_swapchain_resource_type_t, ID3D12Resource*> inputs[]{{XEFG_SWAPCHAIN_RES_DEPTH, depth},
                 {XEFG_SWAPCHAIN_RES_MOTION_VECTOR, motion}, {XEFG_SWAPCHAIN_RES_HUDLESS_COLOR, hudless}, {XEFG_SWAPCHAIN_RES_UI, ui}};
             for (const auto& pair : std::span(inputs, tagUI ? 4 : 3)) {

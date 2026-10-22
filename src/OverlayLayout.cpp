@@ -1,4 +1,5 @@
 #include "OverlayLayout.h"
+#include "Localization.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -25,7 +26,7 @@ ColumnSizes DrawColumnSplitter(float width, float height, float& leftFraction, f
     }
     if (ImGui::IsItemHovered())
     {
-        ImGui::SetTooltip("Drag to resize columns. Save as default remembers the layout.");
+        ImGui::SetTooltip(TR("Drag to resize columns. Save as default remembers the layout."));
     }
     return columns;
 }

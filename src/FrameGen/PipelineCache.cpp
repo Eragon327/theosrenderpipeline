@@ -1,4 +1,5 @@
 #include "PipelineCache.h"
+#include "Localization.h"
 #include <ShlObj.h>
 #include <format>
 #include <fstream>
@@ -62,7 +63,7 @@ namespace TheosRenderPipeline
 
     std::string ModuleFingerprint(HMODULE module)
     {
-        if (!module) { return "none"; }
+        if (!module) { return TR("none"); }
         const auto* base = reinterpret_cast<const std::uint8_t*>(module);
         const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
         if (dos->e_magic != IMAGE_DOS_SIGNATURE) { return "unknown"; }

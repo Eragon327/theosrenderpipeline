@@ -1,6 +1,7 @@
 #pragma once
 
 #include "WeatherAppearance.h"
+#include "Localization.h"
 #include <charconv>
 #include <limits>
 #include <format>
@@ -40,7 +41,7 @@ template<class Ini> Profile LoadProfile(const Ini& ini, const std::string& secti
     profile.enabled = ini.GetBoolValue(section.c_str(), "Enabled", format >= 3);
     if (format < 3) {
         const bool neural = ini.GetBoolValue(section.c_str(), "NR", true);
-        const bool sharpening = ini.GetBoolValue(section.c_str(), "Sharpening", true);
+        const bool sharpening = ini.GetBoolValue(section.c_str(), TR("Sharpening"), true);
         for (const auto* key : LegacyLookKeys) {
             const bool sharpness = std::string_view(key) == "Sharpness";
             if (sharpness ? !sharpening : !neural) { continue; }
@@ -155,7 +156,7 @@ template<class Ini> bool LoadPresetFile(const Ini& file, NamedProfile& preset)
 {
     if (!file.GetSection("Preset")) { return false; }
     preset.profile = LoadProfile(file, "Changes", 3);
-    preset.profile.enabled = file.GetBoolValue("Preset", "Enabled", true);
+    preset.profile.enabled = file.GetBoolValue(TR("Preset"), "Enabled", true);
     for (const auto& group : Split(file.GetValue("Preset", "UseWhen", ""), '|')) {
         if (const auto index = ParseGroup(group)) { preset.groups[*index] = true; }
     }
@@ -169,7 +170,7 @@ template<class Ini> void StorePresetFile(Ini& file, const NamedProfile& preset)
 {
     file.Reset();
     file.SetLongValue("Preset", "Format", 1);
-    file.SetBoolValue("Preset", "Enabled", preset.profile.enabled);
+    file.SetBoolValue(TR("Preset"), "Enabled", preset.profile.enabled);
     std::string groups;
     for (std::size_t i = 0; i < GroupLabels.size(); ++i) {
         if (preset.groups[i]) { groups += std::format("{}{}", groups.empty() ? "" : "|", GroupLabels[i]); }

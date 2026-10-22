@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SourceDLSSGInterop.h"
+#include "Localization.h"
 #include "UpscalerInputResolution.h"
 #include "../RCASParameters.h"
 #include <xess/xess_d3d12.h>
@@ -64,6 +65,6 @@ namespace TheosRenderPipeline
         int quality_{};
         bool initialized_{}, invertedDepth_{};
         std::uint64_t frames_{};
-        std::string status_{"not initialized"};
+        std::string status_{TR("not initialized")};
     };
 }

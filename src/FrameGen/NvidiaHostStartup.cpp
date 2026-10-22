@@ -1,4 +1,5 @@
 #include "DLSSBackend.h"
+#include "Localization.h"
 #include "RenderPipeline.h"
 #include "GameSwapChain.h"
 #include "NativeInput.h"
@@ -16,7 +17,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     if (FAILED(FailureResult())) { return FailureResult(); }
     if (!a_factory || !a_device || !a_desc || !a_swapChain)
     {
-        status_ = "NVIDIA DLSS-G swapchain inputs are incomplete";
+        status_ = TR("NVIDIA DLSS-G swapchain inputs are incomplete");
         return E_INVALIDARG;
     }
     auto* upscalerSettings = RenderPipeline::GetSingleton();
@@ -103,13 +104,13 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     const auto deviceResult = innerSwapChain_->GetDevice(IID_PPV_ARGS(&device_));
     if (FAILED(deviceResult) || !device_)
     {
-        status_ = std::format("NVIDIA DLSS-G inner D3D11 device query failed (0x{:08X})", static_cast<std::uint32_t>(deviceResult));
+        status_ = TRF("NVIDIA DLSS-G inner D3D11 device query failed (0x{:08X})", static_cast<std::uint32_t>(deviceResult));
         return E_FAIL;
     }
     device_->GetImmediateContext(&context_);
     if (!CreateGameFacingResources(*a_swapChain))
     {
-        status_ = "NVIDIA DLSS-G stable game-facing buffer creation failed";
+        status_ = TR("NVIDIA DLSS-G stable game-facing buffer creation failed");
         (*a_swapChain)->Release();
         *a_swapChain = nullptr;
         return E_FAIL;
@@ -122,7 +123,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     auto* outer = new (std::nothrow) GameSwapChain(*a_swapChain, this);
     if (!outer)
     {
-        status_ = "NVIDIA DLSS-G game-facing swapchain wrapper allocation failed";
+        status_ = TR("NVIDIA DLSS-G game-facing swapchain wrapper allocation failed");
         (*a_swapChain)->Release();
         *a_swapChain = nullptr;
         return E_OUTOFMEMORY;
@@ -136,7 +137,7 @@ HRESULT NvidiaHost::CreateSwapChain(IDXGIFactory* a_factory, ID3D11Device* a_dev
     // disable against the completed proxy before its first game-facing Present.
     frameGenerationStateKnown_ = false;
     SetRuntimeEnabled(false);
-    status_ = "NVIDIA DLSS-G proxy active; waiting for complete frame inputs";
+    status_ = TR("NVIDIA DLSS-G proxy active; waiting for complete frame inputs");
     logger::info("[NvidiaHost] source swapchain active format={}", static_cast<std::uint32_t>(a_desc->BufferDesc.Format));
     logger::info("[NvidiaHost] outer stable-buffer swapchain returned during "
                  "factory creation");
@@ -269,7 +270,7 @@ bool NvidiaHost::CompleteStartupAfterDeviceCreation()
     const auto expectedRenderHeight = renderHeight_;
     if (!InitializeSourceUpscaler(outputDesc))
     {
-        status_ = std::format("Source DLSS startup failed: {}", status_);
+        status_ = TRF("Source DLSS startup failed: {}", status_);
         logger::error("[NvidiaHost] {}", status_);
         return false;
     }
@@ -296,12 +297,12 @@ bool NvidiaHost::InitializeSourceUpscaler(const D3D11_TEXTURE2D_DESC& a_outputDe
     if (TheosRenderPipeline::CommunityShaders::Active()) {
         upscalerReady_ = true;
         splitSourceDLSSActive_ = false;
-        status_ = "CS owns upscaling; NVIDIA frame adapter initialized";
+        status_ = TR("CS owns upscaling; NVIDIA frame adapter initialized");
         return true;
     }
     if (!device_ || !context_ || renderWidth_ == 0 || renderHeight_ == 0)
     {
-        status_ = "TheosRenderPipeline DLSS split source prerequisites are incomplete";
+        status_ = TR("TheosRenderPipeline DLSS split source prerequisites are incomplete");
         return false;
     }
 
@@ -316,7 +317,7 @@ bool NvidiaHost::InitializeSourceUpscaler(const D3D11_TEXTURE2D_DESC& a_outputDe
                  static_cast<std::uint32_t>(allocation.deviceRemovedReason), static_cast<std::uint32_t>(outputResult));
     if (FAILED(outputResult) || !gameTargets_.UpscaleOutput())
     {
-        status_ = std::format("TheosRenderPipeline DLSS native handoff texture creation failed (0x{:08X})", static_cast<std::uint32_t>(outputResult));
+        status_ = TRF("TheosRenderPipeline DLSS native handoff texture creation failed (0x{:08X})", static_cast<std::uint32_t>(outputResult));
         return false;
     }
     {
@@ -336,11 +337,11 @@ bool NvidiaHost::InitializeSourceUpscaler(const D3D11_TEXTURE2D_DESC& a_outputDe
         const auto hr = backend.XeSS().Initialize(backend.Transport(), device_.Get(),
             {outputWidth_, outputHeight_}, creation.AllocationQuality(), a_outputDesc.Format, true, backend.XeSSPipelines());
         sourceUpscalerSettings_.Completed(SUCCEEDED(hr));
-        if (FAILED(hr)) { status_ = std::format("XeSS initialization failed: {} (0x{:08X})", backend.XeSS().Status(), static_cast<unsigned>(hr)); return false; }
+        if (FAILED(hr)) { status_ = TRF("XeSS initialization failed: {} (0x{:08X})", backend.XeSS().Status(), static_cast<unsigned>(hr)); return false; }
         xeSSActive_ = upscalerReady_ = true;
         AdoptEffectiveSourceUpscalerSettings();
         if (!CreateNativeUIExtractionResources(a_outputDesc)) { logger::warn("[XeSS] native UI extraction unavailable; retaining HUD-less fallback"); }
-        status_ = "XeSS upscaling ready; native UI and shared frame-generation bridge retained";
+        status_ = TR("XeSS upscaling ready; native UI and shared frame-generation bridge retained");
         logger::info("[XeSS] initialized render={}x{} output={}x{} quality={} NVIDIAAdapter={}", renderWidth_, renderHeight_, outputWidth_, outputHeight_, creation.quality, backend.NvidiaAdapter());
         return true;
     }
@@ -352,7 +353,7 @@ bool NvidiaHost::InitializeSourceUpscaler(const D3D11_TEXTURE2D_DESC& a_outputDe
                            creation.AllocationQuality()))
     {
         sourceUpscalerSettings_.Completed(false);
-        status_ = "TheosRenderPipeline direct DLSS feature initialization failed";
+        status_ = TR("TheosRenderPipeline direct DLSS feature initialization failed");
         gameTargets_.ResetUpscaleOutputAfterRetirement();
         return false;
     }
@@ -363,7 +364,7 @@ bool NvidiaHost::InitializeSourceUpscaler(const D3D11_TEXTURE2D_DESC& a_outputDe
     if (dlss->RenderWidth() != static_cast<int>(renderWidth_) || dlss->RenderHeight() != static_cast<int>(renderHeight_))
     {
         sourceUpscalerSettings_.Completed(false);
-        status_ = "TheosRenderPipeline direct DLSS disagreed with the prepared render extent";
+        status_ = TR("TheosRenderPipeline direct DLSS disagreed with the prepared render extent");
         return false;
     }
 
@@ -374,7 +375,7 @@ bool NvidiaHost::InitializeSourceUpscaler(const D3D11_TEXTURE2D_DESC& a_outputDe
         logger::warn("[NvidiaHost] explicit native UI extraction unavailable on "
                      "split source; retaining HUD-less-only fallback");
     }
-    status_ = "Source DLSS and NVIDIA frame-generation path ready";
+    status_ = TR("Source DLSS and NVIDIA frame-generation path ready");
     logger::info("[NvidiaHost] split source initialized owner=TheosRenderPipeline-DLSS render={}x{} "
                  "output={}x{} format={} quality={} evaluator=SourceNvidiaFrameEvaluator",
                  renderWidth_, renderHeight_, a_outputDesc.Width, a_outputDesc.Height, static_cast<std::uint32_t>(a_outputDesc.Format),

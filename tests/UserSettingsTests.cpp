@@ -1,5 +1,6 @@
 #include "UserSettings.h"
 #include "PackagedDefaults.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -158,7 +159,14 @@ int main(int argc, char** argv)
     }
     {   // The embedded defaults are this package's INI: a fresh install never migrates.
         const std::filesystem::path packaged = argv[1];
-        Require(Read(packaged) == UserSettings::PackagedDefaults, "embedded defaults match the packaged INI");
+        // CMake writes the generated header with the build host's newline, so compare content
+        // rather than line endings; the INI itself stays LF in the repository.
+        const auto withoutCarriageReturns = [](std::string text) {
+            text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+            return text;
+        };
+        Require(withoutCarriageReturns(Read(packaged)) == withoutCarriageReturns(UserSettings::PackagedDefaults),
+            "embedded defaults match the packaged INI");
         const UserSettings::Paths fresh{packaged, root / L"Fresh.User.ini"};
         Require(UserSettings::Migrate(UserSettings::PackagedDefaults, fresh) == UserSettings::Migration::NotNeeded &&
             !UserSettings::Exists(fresh.user), "the shipped INI needs no migration");

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "WeatherAppearanceSetup.h"
+#include "Localization.h"
 #include <Windows.h>
 #include <algorithm>
 #include <array>
@@ -165,7 +166,7 @@ inline std::string PresetFileName(std::string name)
         if (static_cast<unsigned char>(c) < 32 || std::string_view("<>:\"/\\|?*").find(c) != std::string_view::npos) { c = '_'; }
     }
     while (!name.empty() && (name.back() == '.' || name.back() == ' ')) { name.pop_back(); }
-    if (name.empty()) { name = "Preset"; }
+    if (name.empty()) { name = TR("Preset"); }
     const auto stem = Lower(name.substr(0, name.find('.')));
     static constexpr std::array<std::string_view, 22> reserved{"con", "prn", "aux", "nul", "com1", "com2", "com3", "com4",
         "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"};
@@ -258,7 +259,7 @@ inline bool UsesPresets(const Settings& settings)
 inline bool PresetsRequestTwoPasses(const Settings& settings)
 {
     return std::ranges::any_of(settings.presets, [](const auto& preset) {
-        const auto* passes = FindChange(preset.profile, "Passes");
+        const auto* passes = FindChange(preset.profile, TR("Passes"));
         const bool used = std::ranges::any_of(preset.groups, std::identity{}) || !preset.weathers.empty();
         return preset.profile.enabled && used && passes && passes->points[0] == 2;
     });
@@ -441,14 +442,14 @@ inline std::string Names(const Selection& selection)
     for (auto it = selection.layers.rbegin(); it != selection.layers.rend(); ++it) {
         if (*it) { text += std::format("{}{}", text.empty() ? "" : " + ", (*it)->name); }
     }
-    return text.empty() ? "Base" : text;
+    return text.empty() ? TR("Base") : text;
 }
 inline std::string SourceOf(const Selection& selection, std::string_view key)
 {
     for (auto it = selection.layers.rbegin(); it != selection.layers.rend(); ++it) {
         if (*it && FindChange((*it)->profile, key)) { return (*it)->name; }
     }
-    return "Base";
+    return TR("Base");
 }
 // A selection's changes with their fields looked up once, least specific first.
 using Changes = std::vector<std::pair<const Field*, const Change*>>;
@@ -477,8 +478,8 @@ inline Setup Resolve(const Changes& changes, const Settings& settings, float hou
 struct Evaluation
 {
     Setup setup;
-    std::string outgoing{"Base"}, incoming{"Base"};
-    std::string sharpnessSource{"Base"};
+    std::string outgoing{TR("Base")}, incoming{TR("Base")};
+    std::string sharpnessSource{TR("Base")};
     bool active{};
 };
 inline Evaluation Evaluate(const Settings& settings, const Context& context, Setup base)

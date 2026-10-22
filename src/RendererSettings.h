@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TextureProviderBridge.h"
+#include "Localization.h"
 #include "UpscaleType.h"
 #include "NeuralRenderingMode.h"
 #include "FrameGen/SourceDLSSGSettings.h"
@@ -91,14 +92,14 @@ inline bool SameNeuralPreferences(const SourceDLSSG::Preferences& a, const Sourc
 
 inline const char* NeuralSettingsUnavailable(int mode, RendererSettingsCapabilities capabilities)
 {
-    if (!capabilities.nvidiaAdapter) { return "Neural Rendering requires NVIDIA RTX hardware; XeSS and XeFG remain available."; }
+    if (!capabilities.nvidiaAdapter) { return TR("Neural Rendering requires NVIDIA RTX hardware; XeSS and XeFG remain available."); }
     if (!capabilities.neuralRuntime) {
-        return "NR runtime DLL not found. Install nvngx_dlssnr.dll at the configured path and restart Skyrim.";
+        return TR("NR runtime DLL not found. Install nvngx_dlssnr.dll at the configured path and restart Skyrim.");
     }
-    if (!capabilities.neuralOperational) { return "NR is unavailable after a runtime failure; turn NR off or restart Skyrim."; }
+    if (!capabilities.neuralOperational) { return TR("NR is unavailable after a runtime failure; turn NR off or restart Skyrim."); }
     if (!SupportsNeuralRenderingMode(mode, capabilities.externalWorld) ||
         (!capabilities.externalWorld && !capabilities.dedicatedUI)) {
-        return "NR requires dedicated UI composition. Turn NR off to apply other changes, or set NativeUICompositionMode=0 in the INI and restart Skyrim.";
+        return TR("NR requires dedicated UI composition. Turn NR off to apply other changes, or set NativeUICompositionMode=0 in the INI and restart Skyrim.");
     }
     return nullptr;
 }
@@ -109,31 +110,31 @@ inline const char* ValidateRendererSettings(const RendererSettingsDraft& draft,
 {
     if (!capabilities.sourceHost)
     {
-        return "NVIDIA host is unavailable; settings were not applied.";
+        return TR("NVIDIA host is unavailable; settings were not applied.");
     }
     if (draft.menuHotkey <= 0 || draft.menuHotkey > 0xFE)
     {
-        return "Choose a valid menu key.";
+        return TR("Choose a valid menu key.");
     }
     if (draft.upscaleType != DLSS && draft.upscaleType != DLAA && draft.upscaleType != XeSS)
     {
-        return "Choose DLSS, DLAA or XeSS.";
+        return TR("Choose DLSS, DLAA or XeSS.");
     }
     if (!capabilities.nvidiaAdapter && !capabilities.externalWorld && draft.upscaleType != XeSS) {
-        return "DLSS/DLAA require NVIDIA RTX hardware. Select XeSS for this GPU.";
+        return TR("DLSS/DLAA require NVIDIA RTX hardware. Select XeSS for this GPU.");
     }
     if (!Appearance::ValidHours(draft.appearance.hours)) {
-        return "Preset times must increase from Night to Dusk and stay between 0 and 24 hours.";
+        return TR("Preset times must increase from Night to Dusk and stay between 0 and 24 hours.");
     }
     if (!TheosRenderPipeline::SourceDLSSG::ValidGenerationRequest(draft.sourceDLSSG.generation))
     {
-        return "Dynamic target output FPS must be 0 or between 61 and 1000.";
+        return TR("Dynamic target output FPS must be 0 or between 61 and 1000.");
     }
     if (!TheosRenderPipeline::ValidProvider(static_cast<int>(draft.sourceDLSSG.provider))) {
-        return "Choose NVIDIA DLSS-G or Intel XeFG.";
+        return TR("Choose NVIDIA DLSS-G or Intel XeFG.");
     }
     if (!SourceDLSSG::ValidVSync(static_cast<int>(draft.sourceDLSSG.vsync))) {
-        return "Choose Auto, Off or On for VSync.";
+        return TR("Choose Auto, Off or On for VSync.");
     }
 #if !defined(TRP_NO_NEURAL_RENDERING)
     if (draft.sourceDLSSG.neuralEnabled)

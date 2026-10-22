@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SimpleIni.h>
+#include "Localization.h"
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
@@ -83,8 +84,8 @@ inline bool Number(const std::string& text, double& value)
 }
 inline int Boolean(const std::string& text)
 {
-    for (const auto* word : {"true", "yes", "on"}) { if (_stricmp(text.c_str(), word) == 0) { return 1; } }
-    for (const auto* word : {"false", "no", "off"}) { if (_stricmp(text.c_str(), word) == 0) { return 0; } }
+    for (const auto* word : {"true", TR("yes"), "on"}) { if (_stricmp(text.c_str(), word) == 0) { return 1; } }
+    for (const auto* word : {"false", TR("no"), "off"}) { if (_stricmp(text.c_str(), word) == 0) { return 0; } }
     return -1;
 }
 } // namespace detail

@@ -1,4 +1,5 @@
 #include "VideoMemoryTelemetry.h"
+#include "Localization.h"
 
 #include <PCH.h>
 
@@ -14,7 +15,7 @@ void VideoMemoryTelemetry::Init(ID3D11Device* a_device)
 	lastSampleTick_ = 0;
 
 	if (!a_device) {
-		status_ = "D3D11 device unavailable";
+		status_ = TR("D3D11 device unavailable");
 		return;
 	}
 
@@ -23,7 +24,7 @@ void VideoMemoryTelemetry::Init(ID3D11Device* a_device)
 	if (FAILED(a_device->QueryInterface(IID_PPV_ARGS(&dxgiDevice))) ||
 		FAILED(dxgiDevice->GetAdapter(&adapter)) ||
 		FAILED(adapter.As(&adapter_))) {
-		status_ = "DXGI 1.4 video-memory telemetry unavailable";
+		status_ = TR("DXGI 1.4 video-memory telemetry unavailable");
 		logger::warn("[VideoMemory] could not acquire IDXGIAdapter3");
 		return;
 	}
@@ -32,7 +33,7 @@ void VideoMemoryTelemetry::Init(ID3D11Device* a_device)
 	if (SUCCEEDED(adapter_->GetDesc(&description))) {
 		snapshot_.dedicatedCapacity = description.DedicatedVideoMemory;
 	}
-	status_ = "waiting for first DXGI memory sample";
+	status_ = TR("waiting for first DXGI memory sample");
 	Update();
 }
 
@@ -52,7 +53,7 @@ void VideoMemoryTelemetry::Update()
 	const auto result = adapter_->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info);
 	if (FAILED(result)) {
 		snapshot_.available = false;
-		status_ = "DXGI local-memory query failed";
+		status_ = TR("DXGI local-memory query failed");
 		return;
 	}
 
@@ -61,5 +62,5 @@ void VideoMemoryTelemetry::Update()
 	snapshot_.budget = info.Budget;
 	snapshot_.availableForReservation = info.AvailableForReservation;
 	snapshot_.currentReservation = info.CurrentReservation;
-	status_ = "DXGI local-memory budget available";
+	status_ = TR("DXGI local-memory budget available");
 }

@@ -1,4 +1,5 @@
 #include <PCH.h>
+#include "Localization.h"
 #include "CommunityShaderIntegration.h"
 #include "CommunityShaderUIBoundary.h"
 #include "HookDetour.h"
@@ -140,7 +141,7 @@ namespace TheosRenderPipeline::CommunityShaders
                 logger::info("[CS Adapter] renderer context=0x{:X} device=0x{:X} host=0x{:X}; entry observers={} Dispatch={} CopyResource={}",
                     reinterpret_cast<std::uintptr_t>(producerContext), reinterpret_cast<std::uintptr_t>(deviceContext),
                     reinterpret_cast<std::uintptr_t>(RenderPipeline::GetSingleton()->mContext),
-                    observed ? "installed" : "FAILED", Owner(table[41]), Owner(table[47]));
+                    observed ? "installed" : TR("FAILED"), Owner(table[41]), Owner(table[47]));
                 reported = true; failed = !observed;
             }
         }

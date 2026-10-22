@@ -1,3 +1,32 @@
+# Unreleased
+
+- Add dictionary-based overlay languages. Every label stays English in the
+  source and is looked up in
+  `Data/SKSE/Plugins/TheosRenderPipeline/Lang/<code>.ini`; with no dictionary
+  loaded the overlay reads exactly as before, and a partial dictionary falls
+  back to English per label. Simplified Chinese ships as `zh-CN.ini` and
+  covers the XeFG, Compare and NR Exposure controls of 0.5.1.
+- Select the language with `[Overlay] Language` or the **Language** combo in
+  the action bar, which applies at once and is kept by **Save as default**.
+  `auto` follows the Windows UI language, `en` or an empty value keeps English,
+  and any other value names a dictionary by file name, `[Language]` Code or
+  primary language, so `zh-TW` finds `zh-CN`. A value that matches no dictionary
+  keeps the current language and logs why.
+- Merge the glyphs the active dictionary needs from the fonts it lists, then
+  from the fonts Windows ships for Chinese, Japanese and Korean, into the
+  overlay's font instead of replacing it, so Latin keeps the embedded metrics.
+  Changing the language rebuilds the glyph atlas; a character no available font
+  covers still draws as `?`.
+- Add `tools/lang`, which wraps the English literals against an existing
+  dictionary (`wrap`), audits sources and dictionary against each other
+  (`audit`, `check`, `render`) and merges reviewed wording from
+  `tools/lang/review/*.json`. `TRPLocalizationTests` covers the file format,
+  contexts, translated formatting, glyph collection and activation. See
+  [LOCALIZATION.md](LOCALIZATION.md).
+
+Packaged settings defaults are unchanged apart from `Language`, which defaults
+to `auto`; the English labels remain the source text.
+
 # 0.5.1
 
 Game-tested on an RTX 4080 SUPER with ENB. The Community Shaders changes (the grey

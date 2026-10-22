@@ -1,4 +1,5 @@
 #include <PCH.h>
+#include "Localization.h"
 #include "NvidiaHost.h"
 #include "SourceDLSSGBackend.h"
 #include "DLSSBackend.h"
@@ -53,8 +54,8 @@ void NvidiaHost::ApplySourceUpscalerSettingsAfterPresent()
         if (FAILED(hr) || !range.Accepts({renderWidth_, renderHeight_}, {outputWidth_, outputHeight_})) {
             // Refuse before retiring the working method or touching its targets.
             sourceUpscalerSettings_.RejectLiveMode();
-            status_ = std::format("Fixed-size XeSS switch refused: {}x{} input; {}. Saved mode requires restart.",
-                renderWidth_, renderHeight_, FAILED(hr) ? sr.Status() : "unsupported input extent");
+            status_ = TRF("Fixed-size XeSS switch refused: {}x{} input; {}. Saved mode requires restart.",
+                renderWidth_, renderHeight_, FAILED(hr) ? sr.Status() : TR("unsupported input extent"));
             logger::warn("[SourceUpscaler] {} hr=0x{:08X}", status_, static_cast<unsigned>(hr));
             AdoptEffectiveSourceUpscalerSettings();
             return;
@@ -66,7 +67,7 @@ void NvidiaHost::ApplySourceUpscalerSettingsAfterPresent()
         const auto hr=measure("dlss-preflight-range", [&] { return dlss->QueryInputRange(outputWidth_,outputHeight_,candidate.AllocationQuality(),range); });
         if (FAILED(hr) || !range.Accepts({renderWidth_,renderHeight_},{outputWidth_,outputHeight_})) {
             sourceUpscalerSettings_.RejectLiveMode();
-            status_="Fixed-size DLSS return refused by SDK range; current XeSS retained, saved mode requires restart.";
+            status_=TR("Fixed-size DLSS return refused by SDK range; current XeSS retained, saved mode requires restart.");
             logger::warn("[SourceUpscaler] {} hr=0x{:08X}",status_,static_cast<unsigned>(hr));
             AdoptEffectiveSourceUpscalerSettings();return;
         }

@@ -1,4 +1,5 @@
 #include "TextureProviderBridge.h"
+#include "Localization.h"
 
 #include <PCH.h>
 
@@ -10,14 +11,14 @@ bool TextureProviderBridge::Resolve()
 
 	const auto module = ::GetModuleHandleW(L"TextureDownscaler.dll");
 	if (!module) {
-		status_ = "TextureDownscaler.dll not loaded";
+		status_ = TR("TextureDownscaler.dll not loaded");
 		return false;
 	}
 
 	const auto getProvider = reinterpret_cast<SolFGTextureProviderAPI::GetProviderFn>(
 		::GetProcAddress(module, "TextureDownscaler_GetSolFGProvider"));
 	if (!getProvider) {
-		status_ = "provider loaded without the TheosRenderPipeline control API";
+		status_ = TR("provider loaded without the TheosRenderPipeline control API");
 		return false;
 	}
 
@@ -26,12 +27,12 @@ bool TextureProviderBridge::Resolve()
 		candidate->apiVersion != SolFGTextureProviderAPI::kVersion1 ||
 		!candidate->getSettings || !candidate->applySettings || !candidate->saveSettings ||
 		!candidate->reloadSettings || !candidate->getTelemetry) {
-		status_ = "provider rejected API v1 or returned an incomplete table";
+		status_ = TR("provider rejected API v1 or returned an incomplete table");
 		return false;
 	}
 
 	provider_ = candidate;
-	status_ = "TextureDownscaler 2.3.3 API v1 connected";
+	status_ = TR("TextureDownscaler 2.3.3 API v1 connected");
 	logger::info("[TextureProvider] {}", status_);
 	return true;
 }
@@ -44,7 +45,7 @@ bool TextureProviderBridge::Read(Settings& a_settings, Telemetry* a_telemetry)
 
 	SolFGTextureProviderAPI::SettingsV1 rawSettings{};
 	if (!provider_->getSettings(&rawSettings)) {
-		status_ = "provider settings read failed";
+		status_ = TR("provider settings read failed");
 		return false;
 	}
 
@@ -56,7 +57,7 @@ bool TextureProviderBridge::Read(Settings& a_settings, Telemetry* a_telemetry)
 	if (a_telemetry) {
 		SolFGTextureProviderAPI::TelemetryV1 rawTelemetry{};
 		if (!provider_->getTelemetry(&rawTelemetry)) {
-			status_ = "provider telemetry read failed";
+			status_ = TR("provider telemetry read failed");
 			return false;
 		}
 		a_telemetry->hooksInstalled = rawTelemetry.hooksInstalled != 0;
@@ -82,15 +83,15 @@ bool TextureProviderBridge::Apply(const Settings& a_settings, bool a_save)
 	}
 
 	if (!provider_->applySettings(&raw)) {
-		status_ = "provider rejected staged texture settings";
+		status_ = TR("provider rejected staged texture settings");
 		return false;
 	}
 	if (a_save && !provider_->saveSettings()) {
-		status_ = "texture settings are active but TextureDownscaler.ini could not be written";
+		status_ = TR("texture settings are active but TextureDownscaler.ini could not be written");
 		return false;
 	}
 
-	status_ = a_save ? "texture settings applied and saved" : "texture settings applied for this session";
+	status_ = a_save ? TR("texture settings applied and saved") : TR("texture settings applied for this session");
 	logger::info("[TextureProvider] {}", status_);
 	return true;
 }
