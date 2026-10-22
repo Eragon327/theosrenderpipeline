@@ -36,8 +36,6 @@ set(ARP_BASELINE_SOURCES
     src/FrameGen/PresentationTargets.h
     src/FrameGen/GameFacingTargets.h
     src/FrameGen/NativeUIComposition.h
-    src/FrameGen/NativeUIBlend.h
-    src/FrameGen/NativeUIBlend.cpp
     src/FrameGen/XeFGLayerSelection.h
     src/FrameGen/XeFGTensorRuntime.cpp
     src/FrameGen/XeFGTensorRuntime.h
