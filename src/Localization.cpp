@@ -499,6 +499,15 @@ namespace TheosRenderPipeline::Localization
 		}
 	} // namespace
 
+	std::vector<char32_t> Codepoints(std::string_view a_text)
+	{
+		std::vector<char32_t> codepoints;
+		AppendCodepoints(a_text, codepoints);
+		std::sort(codepoints.begin(), codepoints.end());
+		codepoints.erase(std::unique(codepoints.begin(), codepoints.end()), codepoints.end());
+		return codepoints;
+	}
+
 	std::vector<Info> Catalog()
 	{
 		std::lock_guard lock(g_lifecycle);

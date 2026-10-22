@@ -3,8 +3,8 @@
 - The menu can be translated without rebuilding the DLL. Its text is read from a
   dictionary, `Data/SKSE/Plugins/TheosRenderPipeline/Lang/<code>.ini`; anything a
   dictionary does not translate stays English. Simplified Chinese ships as
-  `zh-CN.ini`. Choose the language with **Language** at the bottom of the menu
-  (applies at once, kept by **Save as default**) or `[Overlay] Language`: `auto`
+  `zh-CN.ini`. Choose the language with the button next to Zoom at the top of the menu, which
+  shows each language in its own name (applies at once, kept by **Save as default**) or `[Overlay] Language`: `auto`
   follows the Windows display language, `en` keeps English, and any other value
   names a dictionary. Settings files, weather overrides and the log stay English.
   The menu adds the characters a dictionary needs from the fonts it names, then

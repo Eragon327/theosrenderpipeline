@@ -54,9 +54,11 @@ preferred. A value that matches no dictionary fails: the reason goes to the
 log, no dictionary is installed, and the labels keep the language they had —
 English at startup.
 
-The overlay offers the same choice in its action bar, in the **Language**
-combo: Automatic (Windows), English, and every dictionary in the folder, listed
-as its `[Language]` `Name` and code. A pick applies at once; the labels and
+The overlay offers the same choice with the language button next to Zoom in its
+title bar: Automatic (Windows), English, and every dictionary in the folder, each
+listed under its `[Language]` `Name` whatever language the menu is in. The button
+is greyed while no dictionary is installed, and shows an ochre `!` with the reason
+when the requested dictionary could not be loaded. A pick applies at once; the labels and
 their glyphs change on the next frame. **Save as default** writes the choice to
 `Data/SKSE/Plugins/TheosRenderPipeline.User.ini`, which keeps only what differs
 from the packaged file, so updates replace the packaged defaults without losing
@@ -244,7 +246,7 @@ first rather than rely on the fallbacks.
 4. Untranslated entries can stay as `Key =`, which shows English until the
    translation is filled in, or with `""` when the label should be blank.
 5. Save the file as UTF-8. A BOM is optional; the runtime skips it.
-6. Start the game and pick the language in the overlay's **Language** combo, or
+6. Start the game and pick the language with the button next to Zoom, or
    set `[Overlay] Language` to the new code. Check every tab for text that is
    still English, clipped, or drawn as `?`, and fix the dictionary rather than
    the plugin.

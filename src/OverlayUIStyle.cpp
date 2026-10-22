@@ -60,18 +60,29 @@ namespace TheosRenderPipeline::Overlay
 
 		// The embedded font covers Latin only, so the dictionary's extra glyphs come
 		// from a system font. Merge that font instead of replacing the primary so
-		// Latin text keeps the embedded metrics and layout.
+		// Latin text keeps the embedded metrics and layout. The language button
+		// lists every installed language in its own name, so their names' glyphs
+		// are merged whichever language is active.
 		void AddLocalizedGlyphs(ImFontAtlas& a_fonts, float a_sizePixels)
 		{
-			const auto table = TheosRenderPipeline::Localization::Active();
-			if (!table || table->Codepoints().empty()) {
+			namespace Localization = TheosRenderPipeline::Localization;
+			const auto table = Localization::Active();
+			std::vector<char32_t> codepoints;
+			if (table) {
+				codepoints = table->Codepoints();
+			}
+			for (const auto& language : Localization::Catalog()) {
+				const auto name = Localization::Codepoints(language.name);
+				codepoints.insert(codepoints.end(), name.begin(), name.end());
+			}
+			if (codepoints.empty()) {
 				// English labels are already covered by the embedded font.
 				return;
 			}
 
 			ImFontGlyphRangesBuilder builder;
 			builder.AddRanges(a_fonts.GetGlyphRangesDefault());
-			for (const char32_t codepoint : table->Codepoints()) {
+			for (const char32_t codepoint : codepoints) {
 				if (codepoint > 0x20 && codepoint <= 0xFFFF) {
 					// This build's ImWchar is 16 bit, so the atlas cannot address
 					// code points above the basic multilingual plane.
@@ -104,8 +115,10 @@ namespace TheosRenderPipeline::Overlay
 					candidates.push_back(fontDirectory + "\\" + std::string(a_name));
 				}
 			};
-			for (const auto& font : table->Description().fonts) {
-				add(font);
+			if (table) {
+				for (const auto& font : table->Description().fonts) {
+					add(font);
+				}
 			}
 			// Fonts Windows ships for the UI languages this plugin runs with:
 			// Simplified Chinese, Japanese, Korean, then a pan-CJK fallback.

@@ -33,8 +33,10 @@ void OverlayUI::DrawZoomButtons()
     const auto idealMaxPos = window->DC.IdealMaxPos;
     ImGui::PushClipRect(title.Min, title.Max, false);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 0.0f));
-    ImGui::SetCursorScreenPos(ImVec2(title.Max.x - style.FramePadding.x - total,
-                                     title.Min.y + (title.GetHeight() - ImGui::GetFontSize()) * 0.5f));
+    const float zoomLeft = title.Max.x - style.FramePadding.x - total;
+    const float top = title.Min.y + (title.GetHeight() - ImGui::GetFontSize()) * 0.5f;
+    DrawLanguageControl(zoomLeft - style.ItemSpacing.x * 2.0f, top);
+    ImGui::SetCursorScreenPos(ImVec2(zoomLeft, top));
     ImGui::TextColored(kMuted, "%s", TR("Zoom"));
     const auto step = [&](const char* label, int direction, const char* action) {
         ImGui::SameLine();
@@ -62,7 +64,7 @@ void OverlayUI::DrawZoomButtons()
         if (manual)
             ImGui::SetTooltip(TR("Click to return to automatic zoom (%.0f%% for this output)."), automatic * 100.0f);
         else
-            ImGui::SetTooltip("%s", TR("Automatic zoom from the output height; 1080p is 100%%."));
+            ImGui::SetTooltip("%s", TR("Automatic zoom from the output height; 1080p is 100%."));
     }
     step("+##zoomIn", 1, TR("Zoom in"));
     ImGui::PopStyleVar();
@@ -110,11 +112,6 @@ void OverlayUI::BuildUI()
     float reservedActionHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetFrameHeight() +
                                        ImGui::GetTextLineHeightWithSpacing() +
                                        layoutStyle.CellPadding.y * 2.0f + layoutStyle.ItemSpacing.y * 2.0f + 1.0f;
-    // The action bar starts with the language row and, on failure, its warning.
-    reservedActionHeight += ImGui::GetFrameHeightWithSpacing();
-    if (!TheosRenderPipeline::Localization::LastError().empty()) {
-        reservedActionHeight += ImGui::GetTextLineHeightWithSpacing();
-    }
     if (actionMessageIsError && !actionMessage.empty()) {
         const float statusWidth = (std::max)(1.0f, ImGui::GetContentRegionAvail().x - Px(450.0f) - layoutStyle.CellPadding.x * 4.0f);
         reservedActionHeight += (std::max)(0.0f, ImGui::CalcTextSize(actionMessage.c_str(), nullptr, false, statusWidth).y - ImGui::GetFrameHeight());
@@ -179,7 +176,6 @@ void OverlayUI::DrawPipelineSummary(const FrameView& view)
 
 void OverlayUI::DrawSettingsActions()
 {
-    DrawLanguageControl();
     ImGui::Separator();
     const int stagedChanges = CountStagedChanges();
     if (ImGui::BeginTable("##actionBar", 2, ImGuiTableFlags_SizingStretchProp))
@@ -278,45 +274,42 @@ void OverlayUI::ActivateLanguageFromSettings(std::string_view a_requested)
 	}
 }
 
-void OverlayUI::DrawLanguageControl()
+// The language button, ending at a_right in the title bar: the current language
+// in its own name, so it can be found whatever language the menu is in. Like
+// Zoom it applies at once and only Save as default keeps it.
+void OverlayUI::DrawLanguageControl(float a_right, float a_top)
 {
     using namespace TheosRenderPipeline::Localization;
-    struct Choice
-    {
-        std::string label, value;
-    };
-    std::vector<Choice> choices;
-    choices.push_back({ TR("Automatic (Windows)"), "auto" });
-    choices.push_back({ TR("English"), "en" });
-    for (const auto& description : Catalog()) {
-        if (description.code.empty()) {
-            continue;
-        }
-        choices.push_back({ std::format("{} ({})", description.name, description.code), description.code });
-    }
-    int selected = -1;
-    for (int i = 0; i < static_cast<int>(choices.size()); ++i) {
-        if (choices[i].value == languageDraft) {
-            selected = i;
-            break;
-        }
-    }
-    if (selected < 0) {
-        // A value matched by primary language, or a dictionary the catalog no
-        // longer lists, still has to show up as the current selection.
-        choices.push_back({ languageDraft, languageDraft });
-        selected = static_cast<int>(choices.size()) - 1;
+    const auto catalog = Catalog();
+    const bool automatic = _stricmp(languageDraft.c_str(), "auto") == 0;
+    const std::string active(ActiveName());
+    const auto label = automatic ? std::format("{} · {}", TR("Auto"), active) : active;
+    const std::string error(LastError());
+    const auto& style = ImGui::GetStyle();
+    const float width = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetFrameHeight() + style.FramePadding.x * 2.0f;
+    const float mark = error.empty() ? 0.0f : ImGui::CalcTextSize("!").x + style.ItemInnerSpacing.x;
+    ImGui::SetCursorScreenPos(ImVec2(a_right - width - mark, a_top));
+
+    std::string tooltip = TR("Menu language. Applies at once; Save as default keeps it.");
+    if (!error.empty()) {
+        tooltip = TRF("{} could not be loaded, so {} is kept.", languageDraft, active) + "\n" + error + "\n" +
+                  TR("Details are in TheosRenderPipeline.log.");
+    } else if (const auto table = Active()) {
+        tooltip += "\n" + TRF("{} ({}) - {} labels. Labels it does not cover show in English.",
+                              table->Description().name, table->Description().code, table->Count());
+    } else if (catalog.empty()) {
+        tooltip += "\n" + std::string(TR("No other languages are installed. Language files go in "
+                                         "Data/SKSE/Plugins/TheosRenderPipeline/Lang."));
     }
 
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(TR("Language"));
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(Px(220.0f));
-    if (ImGui::BeginCombo("##language", choices[selected].label.c_str())) {
-        for (int i = 0; i < static_cast<int>(choices.size()); ++i) {
-            const bool current = i == selected;
-            if (ImGui::Selectable(choices[i].label.c_str(), current) && !current) {
-                languageDraft = choices[i].value;
+    // Greyed, not hidden, while English is all there is: it still says where languages go.
+    ImGui::BeginDisabled(catalog.empty() && error.empty());
+    ImGui::SetNextItemWidth(width);
+    if (ImGui::BeginCombo("##language", label.c_str())) {
+        const auto choice = [&](const char* a_label, const std::string& a_value) {
+            const bool current = _stricmp(languageDraft.c_str(), a_value.c_str()) == 0;
+            if (ImGui::Selectable(a_label, current) && !current) {
+                languageDraft = a_value;
                 RenderPipeline::GetSingleton()->mLanguage = languageDraft;
                 ActivateLanguageFromSettings(languageDraft);
                 // The atlas cannot be rebuilt inside a frame: the labels drawn
@@ -326,22 +319,33 @@ void OverlayUI::DrawLanguageControl()
             if (current) {
                 ImGui::SetItemDefaultFocus();
             }
+        };
+        choice(TR("Automatic (Windows)"), "auto");
+        // Each language in its own name, whatever the menu shows.
+        choice("English", "en");
+        for (const auto& language : catalog) {
+            if (!language.code.empty()) {
+                choice(language.name.empty() ? language.code.c_str() : language.name.c_str(), language.code);
+            }
         }
+        ImGui::Separator();
+        ImGui::TextDisabled("%s", TR("Applies at once. Save as default keeps it."));
         ImGui::EndCombo();
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("%s",
-            TR("Loads the overlay labels from the language dictionary folder. Automatic follows the Windows UI "
-               "language. Changes apply immediately; Save as default keeps them."));
+    ImGui::EndDisabled();
+    const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+    bool markHovered = false;
+    if (!error.empty()) {
+        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+        ImGui::TextColored(kOchre, "!");
+        markHovered = ImGui::IsItemHovered();
     }
-    ImGui::SameLine();
-    if (const auto table = Active()) {
-        ImGui::TextDisabled("%s", TRF("Active: {} ({}) - {} strings", table->Description().name,
-            table->Description().code, table->Count()).c_str());
-    } else {
-        ImGui::TextDisabled("%s", TR("Active: English (built-in)"));
-    }
-    if (const std::string error(LastError()); !error.empty()) {
-        ImGui::TextColored(kRust, "%s", error.c_str());
+    if ((hovered || markHovered) && !ImGui::IsPopupOpen("##language", ImGuiPopupFlags_AnyPopupId)) {
+        // Wrapped like the settings help.
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+        ImGui::TextUnformatted(tooltip.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
     }
 }

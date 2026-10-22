@@ -99,7 +99,7 @@ private:
     void RebuildFonts();
     void DrawMenuSizeControl();
     void DrawMenuKeyControl(const FrameView& view);
-    void DrawLanguageControl();
+    void DrawLanguageControl(float a_right, float a_top);
     void ActivateLanguageFromSettings(std::string_view a_requested);
     void DrawZoomButtons();
 	void UpdateFrameStats();

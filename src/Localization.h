@@ -96,6 +96,9 @@ namespace TheosRenderPipeline::Localization
 
 	// Every readable dictionary in Directory(), sorted by code.
 	std::vector<Info> Catalog();
+	// The code points beyond ASCII in UTF-8 text, sorted and unique: the glyphs
+	// the menu needs to show it.
+	std::vector<char32_t> Codepoints(std::string_view a_text);
 
 	// Parse dictionary text. A structurally broken file still yields a table with
 	// the lines that were valid; warnings name the offending line numbers.
