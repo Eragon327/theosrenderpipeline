@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "Localization.h"
 #include <string>
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -18,9 +19,9 @@ namespace TheosRenderPipeline::SourceDLSSG
 	constexpr const char* PresetLabel(DlssgPreset preset)
 	{
 		switch (preset) {
-		case DlssgPreset::A: return "Preset A: Standard";
-		case DlssgPreset::C: return "Preset C: Lite blending (beta)";
-		default: return "Preset B: UI recomposition";
+		case DlssgPreset::A: return TR("Preset A: Standard");
+		case DlssgPreset::C: return TR("Preset C: Lite blending (beta)");
+		default: return TR("Preset B: UI recomposition");
 		}
 	}
 

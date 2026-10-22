@@ -1,4 +1,5 @@
 #include "NativeUIComposition.h"
+#include "Localization.h"
 #include <d3dcompiler.h>
 #include <spdlog/spdlog.h>
 #include <iterator>
@@ -127,7 +128,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		spdlog::warn(
 			"[NativeUI] native UI extraction shader creation failed result=0x{:08X} details={}",
 			static_cast<std::uint32_t>(compileResult),
-			errors ? static_cast<const char*>(errors->GetBufferPointer()) : "none");
+			errors ? static_cast<const char*>(errors->GetBufferPointer()) : TR("none"));
 		ResetAfterRetirement();
 		return false;
 	}
@@ -176,7 +177,7 @@ void main(uint3 id : SV_DispatchThreadID)
 			spdlog::warn(
 				"[NativeUI] dedicated UI composition shader unavailable result=0x{:08X} details={}; using Hudless Detection",
 				static_cast<std::uint32_t>(compositionCompileResult),
-				errors ? static_cast<const char*>(errors->GetBufferPointer()) : "none");
+				errors ? static_cast<const char*>(errors->GetBufferPointer()) : TR("none"));
 			nativeUIRenderTexture_.Reset();
 			nativeUIRenderRTV_.Reset();
 			nativeUICompositionTexture_.Reset();

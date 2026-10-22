@@ -1,0 +1,62 @@
+[
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "Not used yet",
+    "chinese": "尚未使用",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": " | no changes",
+    "chinese": " | 无更改",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "Off | ",
+    "chinese": "关闭 | ",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "Use this preset",
+    "chinese": "启用此预设",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "Unticked presets keep their settings but are ignored.",
+    "chinese": "取消勾选的预设会保留设置，但会被忽略。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "Name",
+    "chinese": "名称",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "No changes yet",
+    "chinese": "尚无更改",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "One pass while weapons are drawn",
+    "chinese": "持械时单遍",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "Input colour is linear HDR",
+    "chinese": "输入颜色为线性 HDR",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPresetsPanel.cpp",
+    "english": "s",
+    "chinese": "",
+    "context": ""
+  }
+]

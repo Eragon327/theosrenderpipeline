@@ -1,4 +1,5 @@
 #include <PCH.h>
+#include "Localization.h"
 #include "OverlayUI.h"
 #include "OverlayFrameView.h"
 #include "OverlayUIStyle.h"
@@ -60,27 +61,27 @@ void OverlayUI::DescribeFrameView(FrameView& view) const
     {
         view.pipelineHealth = UIHealth::kWarning;
     }
-    view.pipelineLabel = view.pipelineHealth == UIHealth::kHealthy   ? "Healthy"
-                         : view.pipelineHealth == UIHealth::kWarning ? "Warming up"
-                         : view.pipelineHealth == UIHealth::kError   ? "Attention required"
-                                                                     : "Bypassed";
+    view.pipelineLabel = view.pipelineHealth == UIHealth::kHealthy   ? TR("Healthy")
+                         : view.pipelineHealth == UIHealth::kWarning ? TR("Warming up")
+                         : view.pipelineHealth == UIHealth::kError   ? TR("Attention required")
+                                                                     : TR("Bypassed");
 
     std::snprintf(view.renderDetail, sizeof(view.renderDetail), "%d x %d", view.renderSizeX, view.renderSizeY);
     view.upscaleTitle = ModeName(view.upscaler.mode);
     const char* presetShort = TheosRenderPipeline::DLSSPreset::ShortName(view.upscaler.preset);
     if (view.nvidiaHostActive)
     {
-        std::snprintf(view.upscaleDetail, sizeof(view.upscaleDetail), "%.0f%% | Preset %s",
+        std::snprintf(view.upscaleDetail, sizeof(view.upscaleDetail), TR("%.0f%% | Preset %s"),
                       view.proxyScale * 100.0f, presetShort);
     }
     else
     {
-        std::snprintf(view.upscaleDetail, sizeof(view.upscaleDetail), "Unavailable | Preset %s", presetShort);
+        std::snprintf(view.upscaleDetail, sizeof(view.upscaleDetail), TR("Unavailable | Preset %s"), presetShort);
     }
     if (view.upscaler.mode == XeSS) { std::snprintf(view.upscaleDetail, sizeof(view.upscaleDetail), "%.0f%%", view.proxyScale * 100.0f); }
     std::snprintf(view.nativeDetail, sizeof(view.nativeDetail), "%d x %d", view.nativeWidth, view.nativeHeight);
     if (cs) {
-        view.upscaleTitle = "CS upscaling";
+        view.upscaleTitle = TR("CS upscaling");
         std::snprintf(view.upscaleDetail, sizeof(view.upscaleDetail), "%.0f%%", view.proxyScale * 100.0f);
     }
     const auto& neural = view.neuralApplied;
@@ -88,18 +89,18 @@ void OverlayUI::DescribeFrameView(FrameView& view) const
     view.neuralBeforeUpscaling = neural.beforeUpscaling;
     if (!neural.enabled || view.sourceNeural.failed)
     {
-        std::snprintf(view.neuralDetail, sizeof(view.neuralDetail), "%s", view.sourceNeural.failed ? "Failed" : "Off");
+        std::snprintf(view.neuralDetail, sizeof(view.neuralDetail), "%s", view.sourceNeural.failed ? TR("Failed") : TR("Off"));
     }
     else if (!view.sourceNeural.active)
     {
-        std::snprintf(view.neuralDetail, sizeof(view.neuralDetail), "%s %s | waiting",
-                      neural.beforeUpscaling ? "Before" : "After", cs ? "CS" : ModeName(view.upscaler.mode));
+        std::snprintf(view.neuralDetail, sizeof(view.neuralDetail), TR("%s %s | waiting"),
+                      neural.beforeUpscaling ? TR("Before") : TR("After"), cs ? "CS" : ModeName(view.upscaler.mode));
     }
     else
     {
-        std::snprintf(view.neuralDetail, sizeof(view.neuralDetail), "%s %s | %d %s",
-                      neural.beforeUpscaling ? "Before" : "After", cs ? "CS" : ModeName(view.upscaler.mode), view.sourceNeural.effectivePasses,
-                      view.sourceNeural.effectivePasses == 1 ? "pass" : "passes");
+        std::snprintf(view.neuralDetail, sizeof(view.neuralDetail), TR("%s %s | %d %s"),
+                      neural.beforeUpscaling ? TR("Before") : TR("After"), cs ? "CS" : ModeName(view.upscaler.mode), view.sourceNeural.effectivePasses,
+                      view.sourceNeural.effectivePasses == 1 ? TR("pass") : TR("passes"));
     }
     if (view.frameGenerationRuntimeActive)
     {
@@ -108,15 +109,15 @@ void OverlayUI::DescribeFrameView(FrameView& view) const
     else
     {
         std::snprintf(view.generationTitle, sizeof(view.generationTitle), "%s",
-                      view.nvidiaHostActive ? (view.provider == TheosRenderPipeline::FrameGenerationProvider::XeFG ? "XeFG off" : "DLSS-G off") : "Generation unavailable");
+                      view.nvidiaHostActive ? (view.provider == TheosRenderPipeline::FrameGenerationProvider::XeFG ? TR("XeFG off") : TR("DLSS-G off")) : TR("Generation unavailable"));
     }
     const auto& output = view.outputRate;
-    view.outputText = output.available ? std::format("{:.1f} FPS", output.fps) : std::string("unavailable");
-    view.outputLabel = "Runtime output";
+    view.outputText = output.available ? std::format("{:.1f} FPS", output.fps) : std::string(TR("unavailable"));
+    view.outputLabel = TR("Runtime output");
     view.activeUpscaleStage = view.sourceDLSSGActive ? (view.sourceNeural.active ? "TRP DLSS NR" : "TRP DLSS")
-                                                     : "NVIDIA host unavailable";
+                                                     : TR("NVIDIA host unavailable");
     if (view.upscaler.mode == XeSS) { view.activeUpscaleStage = view.sourceNeural.active ? "TRP XeSS + NR" : "TRP XeSS"; }
     if (cs) {
-        view.activeUpscaleStage = view.sourceNeural.active ? "CS upscaling + TRP NR" : "CS upscaling";
+        view.activeUpscaleStage = view.sourceNeural.active ? "CS upscaling + TRP NR" : TR("CS upscaling");
     }
 }

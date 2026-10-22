@@ -1,0 +1,20 @@
+src/NeuralObjectHooks.cpp:122 'another plugin'
+src/NeuralObjectHooks.cpp:188 'Object capture starts when you switch a group on'
+src/OverlayAdvancedPanel.cpp:12 'Community Shaders'
+src/OverlayAdvancedPanel.cpp:42 'The provider lowers the authored top mip before Skyrim allocates eligible file-backed textures. Avoided allocation is an independent estimate; actual GPU memory usage is shown in the left column.'
+src/OverlayAdvancedPanel.cpp:128 'Click, then press the key that opens and closes this menu. Escape cancels. Apply uses it now; Save as default keeps it. Use separate keys for TRP, Community Shaders, ReShade and KreatE.'
+src/OverlayAdvancedPanel.cpp:162 'Community Shaders'
+src/OverlayAdvancedPanel.cpp:205 'Community Shaders'
+src/OverlayFrameGenerationPanel.cpp:51 'Intel XeFG x2'
+src/OverlayFrameGenerationPanel.cpp:72 'XeLL (Intel)'
+src/OverlayFrameGenerationPanel.cpp:143 'NVIDIA DLSS-G'
+src/OverlayFrameGenerationPanel.cpp:161 'Frame generation provider. NVIDIA DLSS-G requires NVIDIA hardware; XeFG uses XeLL latency reduction. On NVIDIA cards XeFG costs noticeably more GPU time than DLSS-G; it is meant for other GPUs.'
+src/OverlayFrameGenerationPanel.cpp:168 'Apply switches provider after a completed world frame, with a pause of under a second. Upscaling and NR keep their settings.'
+src/OverlayFrameGenerationPanel.cpp:177 'x3 to x6 need the Universal edition.'
+src/OverlayFrameGenerationPanel.cpp:181 "Experimental: patches Intel's runtime in memory. The first Apply recreates the Intel presenter; later changes apply live."
+src/OverlayFrameGenerationPanel.cpp:201 "x2 is Intel's official mode; x3 to x6 are experimental."
+src/OverlayFrameGenerationPanel.cpp:218 'Dynamic multiplier target. 0 follows the display refresh rate; explicit targets must exceed 60 FPS.'
+src/OverlayFrameGenerationPanel.cpp:222 'display refresh'
+src/OverlayFrameGenerationPanel.cpp:232 'Preset B: the scene and HUD are generated separately for less HUD ghosting in motion, at a small GPU and VRAM cost.'
+src/OverlayFrameGenerationPanel.cpp:235 "Preset C: NVIDIA's lighter Lite blending (DLSS-G 310.9.16 or newer), without UI recomposition."
+src/OverlayFrameGenerationPanel.cpp:244 'XeLL (Intel)'

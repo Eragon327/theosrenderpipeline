@@ -1,4 +1,5 @@
 #include "XeSSUpscaler.h"
+#include "Localization.h"
 #include "../PluginPaths.h"
 #include <array>
 #include <algorithm>
@@ -57,14 +58,14 @@ namespace TheosRenderPipeline
     HRESULT XeSSUpscaler::QueryInputRange(UINT width, UINT height, int quality, UpscalerInputResolution& range)
     {
         if (!context_ || !width || !height || quality < 0 || quality > 5) { return E_INVALIDARG; }
-        if (!xessGetOptimalInputResolution_) { status_ = "missing input resolution range query"; return E_NOINTERFACE; }
+        if (!xessGetOptimalInputResolution_) { status_ = TR("missing input resolution range query"); return E_NOINTERFACE; }
         const xess_2d_t output{width, height};
         xess_2d_t optimal{}, minimum{}, maximum{};
         const auto hr = Result(xessGetOptimalInputResolution_(context_, &output, Quality(quality),
             &optimal, &minimum, &maximum), "input resolution range");
         if (FAILED(hr)) { return hr; }
         const UpscalerInputResolution candidate{{optimal.x, optimal.y}, {minimum.x, minimum.y}, {maximum.x, maximum.y}};
-        if (!candidate.Valid()) { status_ = "invalid SDK input resolution range"; return E_UNEXPECTED; }
+        if (!candidate.Valid()) { status_ = TR("invalid SDK input resolution range"); return E_UNEXPECTED; }
         range = candidate; return S_OK;
     }
     HRESULT XeSSUpscaler::Initialize(SourceDLSSG::Interop& transport, ID3D11Device* device,
@@ -85,7 +86,7 @@ namespace TheosRenderPipeline
             hr = QueryInputRange(output.width, output.height, quality, range);
             if (FAILED(hr)) { return hr; }
             if (!range.Accepts(fixedInput, output)) {
-                status_ = "existing render extent is outside the supported XeSS range or aspect";
+                status_ = TR("existing render extent is outside the supported XeSS range or aspect");
                 return DXGI_ERROR_UNSUPPORTED;
             }
             input_ = fixedInput;

@@ -19,3 +19,6 @@ __pycache__/
 
 # Claude Code worktrees created for isolated threads
 /.claude/worktrees/
+dist/
+.tmp_*
+tools/lang/wrap-missing.json

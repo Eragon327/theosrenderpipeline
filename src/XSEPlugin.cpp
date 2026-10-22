@@ -1,4 +1,5 @@
 #include <PCH.h>
+#include "Localization.h"
 #include "PluginPaths.h"
 #include "SkyrimRuntime.h"
 #include "GameHookValidation.h"

@@ -1,4 +1,5 @@
 #include <PCH.h>
+#include "Localization.h"
 #include "SourceDLSSGNeuralRendering.h"
 #include "TRPNeuralShaders.generated.h"
 #include <chrono>
@@ -905,7 +906,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			const auto reconstruction = key.peripheral ? "peripheral 80/90" : "uniform";
 			if (key.worldOnly) {
 				successStatus_ = std::format("NR {} upscaling {}x{} -> {}x{}; {} pass(es); {}; {}; world only; UI correction unused; fusion requested={} colour={} guides={}",
-					key.beforeUpscaling ? "before" : "after", key.workWidth, key.workHeight,
+					key.beforeUpscaling ? TR("before") : TR("after"), key.workWidth, key.workHeight,
 					key.sourceWidth, key.sourceHeight, key.passes,
 					key.producerColor ? "producer RGB reconstruction" : "user reconstruction",
 					reconstruction, key.fusionRequested, key.fusedColor, key.fusionRequested && key.peripheral);

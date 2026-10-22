@@ -1,0 +1,86 @@
+[
+  {
+    "file": "src/OverlayNeuralPanel.cpp",
+    "english": "Compare",
+    "chinese": "对比",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayNeuralPanel.cpp",
+    "english": "Input",
+    "chinese": "输入",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayNeuralPanel.cpp",
+    "english": "Natural",
+    "chinese": "自然",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayNeuralPanel.cpp",
+    "english": "Cinematic",
+    "chinese": "电影",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayNeuralPanel.cpp",
+    "english": "Old",
+    "chinese": "旧版",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayNeuralPanel.cpp",
+    "english": "Small",
+    "chinese": "小型",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayNeuralPanel.cpp",
+    "english": "NR input resolution, relative to the selected stage's scene size, and the model input it gives. Apply to update.",
+    "chinese": "NR 输入分辨率，相对于所选阶段的场景尺寸，以及由此得到的模型输入。应用后生效。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayImagePanel.cpp",
+    "english": "Transfer",
+    "chinese": "传递函数",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayImagePanel.cpp",
+    "english": "SDR brightness where expansion begins. Higher values boost only the brightest areas.",
+    "chinese": "开始扩展的 SDR 亮度。数值越高，只提亮最亮的区域。",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "Outputs",
+    "chinese": "输出",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "VSync",
+    "chinese": "垂直同步",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "On",
+    "chinese": "开",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayFrameGenerationPanel.cpp",
+    "english": "game {} -> presenter {}",
+    "chinese": "游戏 {} -> 呈现器 {}",
+    "context": ""
+  },
+  {
+    "file": "src/OverlayPipeline.cpp",
+    "english": "Native UI",
+    "chinese": "原生 UI",
+    "context": ""
+  }
+]

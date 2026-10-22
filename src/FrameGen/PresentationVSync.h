@@ -1,5 +1,6 @@
 #pragma once
 #include <dxgi.h>
+#include "Localization.h"
 
 namespace TheosRenderPipeline::SourceDLSSG
 {
@@ -7,7 +8,7 @@ namespace TheosRenderPipeline::SourceDLSSG
     constexpr bool ValidVSync(int value) { return value >= 0 && value <= 2; }
     constexpr VSyncMode SanitizeVSync(VSyncMode value) { return ValidVSync(static_cast<int>(value)) ? value : VSyncMode::Auto; }
     constexpr const char* VSyncName(VSyncMode value) {
-        return value == VSyncMode::Off ? "Off" : value == VSyncMode::On ? "On" : "Auto";
+        return value == VSyncMode::Off ? TR("Off") : value == VSyncMode::On ? TR("On") : TR("Auto");
     }
     struct VSyncConfiguration {
         VSyncMode mode{VSyncMode::Auto};

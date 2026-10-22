@@ -1,4 +1,5 @@
 #include "FrameGen/NeuralRuntimeKernels.h"
+#include "Localization.h"
 #include "PluginPaths.h"
 #include "OverlayUI.h"
 #include "UserSettings.h"
@@ -65,6 +66,12 @@ void OverlayUI::Init(IDXGISwapChain* a_swapChain, ID3D11Device* a_device, ID3D11
     menuIni.SetUnicode();
     if (TheosRenderPipeline::UserSettings::Load(menuIni) >= 0)
         layout = LoadLayout(menuIni);
+    // The dictionary has to be active before the atlas is built; otherwise the
+    // first frames draw the new labels without their glyphs. RenderPipeline::
+    // LoadINI already read the key, so this only keeps both copies in step.
+    languageDraft = menuIni.GetValue("Overlay", "Language", "auto");
+    RenderPipeline::GetSingleton()->mLanguage = languageDraft;
+    ActivateLanguageFromSettings(languageDraft);
 	// The first frame refits this to the output; DX11 builds the atlas lazily.
 	ApplyRendererStyle(1.0f);
 	BuildRendererFont(1.0f);
@@ -227,12 +234,12 @@ void OverlayUI::HandleHotkey()
 		numericInput.Release(ImGui::GetIO());
 		if (capture.status == CaptureStatus::Accepted &&
 			ReservedForNRHotkeys(capture.key, RenderPipeline::GetSingleton()->mEnableNRHotkeys)) {
-			menuKeyError = "[ and ] are NR shortcuts while EnableNRHotkeys is on. Choose another key.";
+			menuKeyError = TR("[ and ] are NR shortcuts while EnableNRHotkeys is on. Choose another key.");
 		} else if (capture.status == CaptureStatus::Accepted) {
 			settingsDraft.menuHotkey = static_cast<int>(capture.key);
 			menuKeyError.clear();
 		} else if (capture.status == CaptureStatus::Rejected) {
-			menuKeyError = "That key cannot open the menu. Choose another key.";
+			menuKeyError = TR("That key cannot open the menu. Choose another key.");
 		} else {
 			menuKeyError.clear();
 		}
@@ -337,6 +344,9 @@ void OverlayUI::CaptureSettingsDraft()
     menuKeyError.clear();
     RefreshNeuralRuntimeAvailability();
     settingsDraft = TheosRenderPipeline::RendererSettingsController::Current().Capture(nrRuntimePresent);
+    // The language applies the moment it is picked; the draft only mirrors it so
+    // a reload shows the active value.
+    languageDraft = RenderPipeline::GetSingleton()->mLanguage;
 }
 
 int OverlayUI::CountStagedChanges() const
@@ -413,6 +423,18 @@ void OverlayUI::UpdateUIScale()
         embedded ? "embedded" : "fallback", created ? "ready" : "failed");
 }
 
+void OverlayUI::RebuildFonts()
+{
+    const float scale = UIScale() > 0.0f ? UIScale() : 1.0f;
+    ApplyRendererStyle(scale);
+    const bool embedded = BuildRendererFont(scale);
+    // Same sequence as a zoom change, minus the layout refit.
+    ImGui_ImplDX11_InvalidateDeviceObjects();
+    const bool created = ImGui_ImplDX11_CreateDeviceObjects();
+    logger::info("[Overlay] fonts rebuilt for '{}' font={} texture={}", TheosRenderPipeline::Localization::ActiveName(),
+        embedded ? "embedded" : "fallback", created ? "ready" : "failed");
+}
+
 void OverlayUI::OnPresent(ID3D11Texture2D* producerUI)
 {
     auto* gameUI = RE::UI::GetSingleton();
@@ -458,6 +480,12 @@ void OverlayUI::OnPresent(ID3D11Texture2D* producerUI)
 			static_cast<float>(nativeUI ? nvidiaHost->OutputHeight() : nvidiaHost->RenderHeight()));
 	}
 	UpdateUIScale();
+	// A language switch cannot rebuild the atlas inside a frame, so the rebuild
+	// waits here, before the frame that would draw the new labels.
+	if (fontRebuildPending) {
+		fontRebuildPending = false;
+		RebuildFonts();
+	}
 	ImGui::NewFrame();
 
 	menuKeyControlDrawn = false;

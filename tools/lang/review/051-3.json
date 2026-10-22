@@ -1,0 +1,368 @@
+[
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "NR network, separate from the DLSS model preset.",
+  "chinese": "NR 网络，独立于 DLSS 模型预设。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Skip during",
+  "chinese": "跳过时机",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Combat",
+  "chinese": "战斗中",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Weapons drawn",
+  "chinese": "已持械",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Resume after",
+  "chinese": "恢复时机",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Tick Combat or Weapons drawn first.",
+  "chinese": "请先勾选“战斗中”或“已持械”。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Community Shaders controls sharpening.",
+  "chinese": "锐化由 Community Shaders 控制。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Applies with or without NR.",
+  "chinese": "无论是否启用 NR 都会生效。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Sharpening strength.",
+  "chinese": "锐化强度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Reconstructs reduced input.",
+  "chinese": "重建降分辨率输入。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Adds NR's changes; clamps colour to 0..1.",
+  "chinese": "叠加 NR 的改动；将颜色限制在 0..1。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Transfers lighting and colour; use for linear HDR input.",
+  "chinese": "传递光照与颜色；适用于线性 HDR 输入。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Effect · colour",
+  "chinese": "效果 · 颜色",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Effect strength.",
+  "chinese": "效果强度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Ratio effect strength.",
+  "chinese": "比值效果强度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Colour strength.",
+  "chinese": "颜色强度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Ratio colour strength.",
+  "chinese": "比值颜色强度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Broad · detail",
+  "chinese": "宽度 · 细节",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Not on the Community Shaders route yet.",
+  "chinese": "Community Shaders 路线暂不支持。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Used by Ratio reconstruction.",
+  "chinese": "用于比值重建。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Detail: NR's local contrast and fine shading.",
+  "chinese": "细节：NR 的局部对比度与细微明暗。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "HDR input",
+  "chinese": "HDR 输入",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "linear HDR",
+  "chinese": "线性 HDR",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Divides linear HDR input by the white point before NR sees it.",
+  "chinese": "在 NR 处理前将线性 HDR 输入除以白点。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Used by Ratio reconstruction with linear HDR input.",
+  "chinese": "用于线性 HDR 输入的比值重建。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "How linear HDR input is scaled for NR's view.",
+  "chinese": "线性 HDR 输入为 NR 视图所做的缩放方式。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Brightens NR's view when positive, darkens it when negative.",
+  "chinese": "为正值时提亮 NR 视图，为负值时压暗。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "White point",
+  "chinese": "白点",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Community Shaders supplies scene colour; the input is not switched here.",
+  "chinese": "场景颜色由 Community Shaders 提供；此处不切换输入。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "white point",
+  "chinese": "白点",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Anywhere outside",
+  "chinese": "户外任意位置",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Unnamed override",
+  "chinese": "未命名覆盖",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Weather overrides",
+  "chinese": "天气覆盖",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Pause overrides",
+  "chinese": "暂停覆盖",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Your settings, used everywhere else",
+  "chinese": "你的设置，用于其他所有情况",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "New override",
+  "chinese": "新建覆盖",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "My first override",
+  "chinese": "我的第一个覆盖",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Copies the selected override's changes. Choose when the copy applies.",
+  "chinese": "复制所选覆盖的更改。选择副本生效的时机。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "When two overrides use the same weather, the higher one wins.",
+  "chinese": "两个覆盖使用同一天气时，靠上的优先。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "When each time of day starts, and how smoothly overrides change.",
+  "chinese": "各时段何时开始，以及覆盖切换的平滑程度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Softens changes between overrides. Zero follows weather and time directly.",
+  "chinese": "柔化覆盖之间的切换。为 0 时直接跟随天气和时间。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Times must increase from Night to Dusk. Overrides blend between neighbouring times.",
+  "chinese": "时刻必须从夜晚到黄昏递增。覆盖会在相邻时段之间混合。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Unticked overrides keep their settings but are ignored.",
+  "chinese": "未勾选的覆盖会保留设置但被忽略。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Any outdoor weather not covered by a more specific override.",
+  "chinese": "未被更具体的覆盖涵盖的任意户外天气。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Add current",
+  "chinese": "添加当前",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Outside, adds the weather you are in.",
+  "chinese": "在户外时，添加你当前所在的天气。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Pick exact weathers, such as fog or ash, from every weather the game has loaded.",
+  "chinese": "从游戏已加载的所有天气中挑选具体天气，例如雾或灰烬。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Weather types",
+  "chinese": "天气类型",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Places",
+  "chinese": "地点",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Time of day",
+  "chinese": "时段",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "All day",
+  "chinese": "全天",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "One look all day. Choosing this keeps the selected time's values.",
+  "chinese": "全天同一效果。选择此项会保留所选时刻的数值。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "(in this override)",
+  "chinese": "（本覆盖中）",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "A weather in several overrides uses the highest one in the list. Names come from the game or an editor-ID plugin.",
+  "chinese": "同一天气出现在多个覆盖时，使用列表中最靠上的。名称来自游戏或 editor-ID 插件。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Overrides can switch NR or sharpening off, but not on while Base has them off.",
+  "chinese": "覆盖可以关闭 NR 或锐化，但在 Base 已关闭时无法开启。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Delete override...",
+  "chinese": "删除覆盖...",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Where it applied, Base or another override is used.\nSave as default deletes its file; Discard undoes this.",
+  "chinese": "其先前生效之处将改用 Base 或其他覆盖。\n“保存为默认”会删除其文件；“放弃”会撤销此操作。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayPresetsPanel.cpp",
+  "english": "Now %.2f from the \"%s\" weather override.",
+  "chinese": "当前为 %.2f，来自“%s”天气覆盖。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlaySettingRows.h",
+  "english": "Was %s in %s. Click to reset.",
+  "chinese": "原为 %s（%s）。点击可重置。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlaySettingRows.h",
+  "english": "Object-specific NR",
+  "chinese": "对象专属 NR",
+  "context": ""
+ },
+ {
+  "file": "src/RendererSettings.h",
+  "english": "Choose Auto, Off or On for VSync.",
+  "chinese": "垂直同步可选自动、关或开。",
+  "context": ""
+ }
+]

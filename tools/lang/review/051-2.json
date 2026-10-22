@@ -1,0 +1,404 @@
+[
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Highlight strength",
+  "chinese": "高光强度",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Match Windows SDR",
+  "chinese": "匹配 Windows SDR",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Peak brightness",
+  "chinese": "峰值亮度",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "experimental | Apply",
+  "chinese": "实验性 | 应用",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Turn HDR output on to adjust it.",
+  "chinese": "开启 HDR 输出后方可调整。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Windows brightness unavailable; using the values below",
+  "chinese": "无法获取 Windows 亮度；使用下面的数值",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Paper white",
+  "chinese": "纸白",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Following Windows' SDR brightness.",
+  "chinese": "跟随 Windows 的 SDR 亮度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Display peak",
+  "chinese": "显示器峰值",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "UI brightness",
+  "chinese": "界面亮度",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Brightness of the menus and HUD.",
+  "chinese": "菜单与 HUD 的亮度。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Expansion start",
+  "chinese": "扩展起点",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Gamma 2.2",
+  "chinese": "Gamma 2.2",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Matches most SDR monitors.",
+  "chinese": "匹配多数 SDR 显示器。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Lifts shadows compared with Gamma 2.2.",
+  "chinese": "相比 Gamma 2.2 提亮暗部。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "How the SDR image is decoded before expansion.",
+  "chinese": "扩展前 SDR 图像的解码方式。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "DLSS and XeSS can switch on Apply.\nDLAA needs Save as default and a restart.",
+  "chinese": "DLSS 与 XeSS 可在“应用”时切换。\nDLAA 需要“保存为默认”并重启。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Changing the mode needs Save as default and a restart.",
+  "chinese": "更改模式需要“保存为默认”并重启。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "NVIDIA DLSS reconstruction at the render scale below.",
+  "chinese": "按下方渲染比例进行 NVIDIA DLSS 重建。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "NVIDIA DLAA at native resolution.",
+  "chinese": "原生分辨率下的 NVIDIA DLAA。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Changing the render scale needs Save as default and a restart.",
+  "chinese": "更改渲染比例需要“保存为默认”并重启。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "DLAA renders at native resolution.",
+  "chinese": "DLAA 以原生分辨率渲染。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Size of the rendered world before upscaling.",
+  "chinese": "放大前渲染世界的尺寸。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Model preset",
+  "chinese": "模型预设",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "DLSS and DLAA only.",
+  "chinese": "仅限 DLSS 与 DLAA。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Lets the upscaler estimate exposure.",
+  "chinese": "让放大器估算曝光。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Sub-pixel camera offsets the upscaler needs to reconstruct detail.",
+  "chinese": "放大器重建细节所需的亚像素相机偏移。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayImagePanel.cpp",
+  "english": "Sharpening is set in the Neural Rendering tab and applies with or without NR.",
+  "chinese": "锐化在“神经渲染”标签页设置，无论是否启用 NR 都会生效。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "First person",
+  "chinese": "第一人称",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Object rules are set in Base; weather overrides do not change them.",
+  "chinese": "对象规则在 Base 中设置；天气覆盖不会更改它们。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Neural Rendering is unavailable.",
+  "chinese": "神经渲染不可用。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Objects",
+  "chinese": "对象",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Overriding this group in this pass.",
+  "chinese": "此遍中正在覆盖该分组。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Override this group in this pass.",
+  "chinese": "在此遍中覆盖该分组。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Strength: 0 keeps this pass's input, 1 its full result.",
+  "chinese": "强度：0 保留本遍的输入，1 使用其完整结果。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Tone needs the 310.9.16 runtime; Strength still applies.",
+  "chinese": "Tone 需要 310.9.16 运行时；强度仍会生效。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Local tone for this group in this pass.",
+  "chinese": "本遍中该分组的局部色调。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Structure needs the 310.9.16 runtime; Strength still applies.",
+  "chinese": "Structure 需要 310.9.16 运行时；强度仍会生效。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Local structure for this group in this pass.",
+  "chinese": "本遍中该分组的局部结构。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Mask preview",
+  "chinese": "遮罩预览",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Classes only",
+  "chinese": "仅类别",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Shows only the chosen groups' colours on black.",
+  "chinese": "仅在黑底上显示所选分组的颜色。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Open a group's eye to start the preview.",
+  "chinese": "打开某个分组的眼睛图标即可开始预览。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "The preview covers the whole finished image, so it is the same on both pass tabs.",
+  "chinese": "预览覆盖整幅成品图像，因此两个遍的标签页显示相同。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Runs on the scene.",
+  "chinese": "在场景上运行。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Remove Pass 2. Its own settings are kept for later.",
+  "chinese": "移除第 2 遍。其自身设置会保留以便之后使用。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Add Pass 2. It starts out following Pass 1.",
+  "chinese": "添加第 2 遍。初始跟随第 1 遍。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Reset all to Pass 1",
+  "chinese": "全部重置为第 1 遍",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Pass 2 already follows Pass 1; nothing to reset.",
+  "chinese": "第 2 遍已跟随第 1 遍；无需重置。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Changing the runtime restarts NR briefly.",
+  "chinese": "更改运行时会短暂重启 NR。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "NR runs on the render-resolution scene, before DLSS or XeSS.",
+  "chinese": "NR 在渲染分辨率的场景上运行，位于 DLSS 或 XeSS 之前。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "NR runs on the output-resolution image, after upscaling.",
+  "chinese": "NR 在输出分辨率的图像上运行，位于放大之后。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Split",
+  "chinese": "分屏",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Session only, never saved. Left of the line shows the frame without NR.",
+  "chinese": "仅本次会话，不会保存。分界线左侧显示未启用 NR 的画面。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Where the line sits, from the left edge.",
+  "chinese": "分界线的位置（距左边缘）。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Freeze frame",
+  "chinese": "冻结画面",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Freeze frame needs After upscaling: before upscaling, DLSS needs a moving frame.",
+  "chinese": "冻结画面需要“放大之后”：放大之前 DLSS 需要运动画面。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Reset##passes",
+  "chinese": "重置##passes",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Style 0.",
+  "chinese": "样式 0。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Style 1.",
+  "chinese": "样式 1。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Style 2.",
+  "chinese": "样式 2。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Click to type a style number, 3 to 255.",
+  "chinese": "点击可输入样式编号，范围 3 到 255。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Style number, 3 to 255. Press Enter or click away to set it.",
+  "chinese": "样式编号，3 到 255。按回车或点击别处生效。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Auto mask",
+  "chinese": "自动遮罩",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Follows local",
+  "chinese": "跟随局部",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Structure on skin. At -1 it follows Local structure. Ctrl-click to type a value.",
+  "chinese": "皮肤上的结构。为 -1 时跟随“局部结构”。Ctrl+点击可输入数值。",
+  "context": ""
+ },
+ {
+  "file": "src/OverlayNeuralPanel.cpp",
+  "english": "Finds skin automatically for Skin structure.",
+  "chinese": "为皮肤结构自动查找皮肤。",
+  "context": ""
+ }
+]

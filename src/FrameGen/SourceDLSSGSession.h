@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "Localization.h"
 #include <sl_core_api.h>
 #include <sl_dlss_g.h>
 #include <sl_reflex.h>
@@ -29,10 +30,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 	constexpr const char* ReflexModeName(sl::ReflexMode mode)
 	{
 		switch (mode) {
-		case sl::ReflexMode::eOff: return "Off";
-		case sl::ReflexMode::eLowLatency: return "Low latency";
-		case sl::ReflexMode::eLowLatencyWithBoost: return "Low latency + GPU boost";
-		default: return "Invalid";
+		case sl::ReflexMode::eOff: return TR("Off");
+		case sl::ReflexMode::eLowLatency: return TR("Low latency");
+		case sl::ReflexMode::eLowLatencyWithBoost: return TR("Low latency + GPU boost");
+		default: return TR("Invalid");
 		}
 	}
 	// The owner supplies public Streamline entry points after initializing

@@ -1,4 +1,5 @@
 #include "OverlayPipeline.h"
+#include "Localization.h"
 #include "OverlayUIStyle.h"
 
 #include <algorithm>
@@ -17,7 +18,8 @@ SettingsPage DrawPipelineDiagram(const PipelineDiagram& diagram)
     const float stageCount = static_cast<float>(diagram.stages.size());
     const float nodeWidth = (width - gap * (stageCount - 1.0f)) / stageCount;
     const float textWidth = (std::max)(1.0f, nodeWidth - padding * 2.0f);
-    std::string uiLabel = std::string("Native UI | ") + (diagram.nativeUI ? diagram.nativeDetail : "off");
+    std::string uiLabel =
+        std::string(TR("Native UI")) + " | " + (diagram.nativeUI ? diagram.nativeDetail : TRC("off", "OverlayPipeline"));
     if (ImGui::CalcTextSize(uiLabel.c_str()).x > textWidth)
     {
         uiLabel.replace(uiLabel.find(" | "), 3, "\n");

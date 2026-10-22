@@ -28,6 +28,8 @@ set(ARP_BASELINE_SOURCES
     src/RCASParameters.h
     src/DLSSFeatureParameters.h
     src/DLSSPreset.h
+    src/Localization.cpp
+    src/Localization.h
     src/NativeInput.h
     src/NativeUIBridge.h
     src/NativeInputThunks.h

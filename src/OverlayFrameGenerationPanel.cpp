@@ -1,4 +1,5 @@
 #include "OverlayUI.h"
+#include "Localization.h"
 #include "OverlayUIStyle.h"
 #include "OverlayFrameView.h"
 #include "OverlayNumericInput.h"
@@ -14,7 +15,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
     const auto& frameGenerationRuntimeActive = view.frameGenerationRuntimeActive;
     const auto& activeDisplayMultiplier = view.activeDisplayMultiplier;
 
-    if (ImGui::BeginTabItem("Frame generation", nullptr,
+    if (ImGui::BeginTabItem(TR("Frame generation"), nullptr,
                             requestedPage == SettingsPage::FrameGeneration ? ImGuiTabItemFlags_SetSelected
                                                                            : ImGuiTabItemFlags_None))
     {
@@ -47,55 +48,55 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         }
         // ---- Status: what is running now.
         const char* intelPath = view.xefg.unlockReady && view.xefg.generatedFrames > 1
-            ? "Experimental XeFG MFG" : "Intel XeFG x2";
+            ? TR("Experimental XeFG MFG") : "Intel XeFG x2";
         const char* path = intel                       ? intelPath
-                           : unlock.UsesTuringUnlock() ? "Turing MFG (experimental)"
-                           : unlock.UsesAmpereUnlock() ? "Ampere MFG (experimental)"
+                           : unlock.UsesTuringUnlock() ? TR("Turing MFG (experimental)")
+                           : unlock.UsesAmpereUnlock() ? TR("Ampere MFG (experimental)")
                            : unlock.UsesAdaUnlock()    ? "Ada MFG"
-                                                       : "Native NVIDIA";
-        DrawStatusLabel(frameGenerationRuntimeActive ? (intel ? "XeFG active" : "DLSS-G active") : "Frame generation inactive",
+                                                       : TR("Native NVIDIA");
+        DrawStatusLabel(frameGenerationRuntimeActive ? (intel ? TR("XeFG active") : TR("DLSS-G active")) : TR("Frame generation inactive"),
                         frameGenerationRuntimeActive ? UIHealth::kHealthy : UIHealth::kIdle);
         ImGui::SameLine();
         ImGui::TextDisabled("| %s", path);
         const auto availableMaximum = intel ? view.xefg.maxGeneratedFrames : nvidiaReported ? usableMaximum : 0u;
-        DrawSettingsValue("Multiplier", (availableMaximum > 1 ? std::format("x{} of x2 to x{}", activeDisplayMultiplier, availableMaximum + 1)
+        DrawSettingsValue(TR("Multiplier"), (availableMaximum > 1 ? std::format("x{} of x2 to x{}", activeDisplayMultiplier, availableMaximum + 1)
                                          : availableMaximum == 1 ? std::format("x{} (x2 only)", activeDisplayMultiplier)
                                                                  : std::format("x{} | availability waiting", activeDisplayMultiplier)).c_str());
-        DrawSettingsValue("Display", std::format("{:.0f} Hz", view.refreshRate).c_str());
+        DrawSettingsValue(TR("Display"), std::format("{:.0f} Hz", view.refreshRate).c_str());
         if (view.vsyncObserved) {
-            DrawSettingsValue("VSync", std::format("game {} -> presenter {}", view.vsyncIncoming ? "On" : "Off",
-                                                   view.vsyncRequested ? "On" : "Off").c_str());
-            DrawSettingsHelp("What the game asked for, and what the presenter requested for presentation.");
-            if (view.vsyncFailed) ImGui::TextColored(kOchre, "Last presentation request failed.");
+            DrawSettingsValue(TR("VSync"), TRF("game {} -> presenter {}", view.vsyncIncoming ? TR("On") : TR("Off"),
+                                                   view.vsyncRequested ? TR("On") : TR("Off")).c_str());
+            DrawSettingsHelp(TR("What the game asked for, and what the presenter requested for presentation."));
+            if (view.vsyncFailed) ImGui::TextColored(kOchre, TR("Last presentation request failed."));
         }
-        DrawSettingsValue("Latency", intel ? "XeLL (Intel)"
+        DrawSettingsValue(TR("Latency"), intel ? "XeLL (Intel)"
             : std::format("Reflex | {}", TheosRenderPipeline::SourceDLSSG::ReflexModeName(sourceState.reflexSubmitted)).c_str());
-        DrawSettingsValue("Output cap", intel ? (view.xefg.frameLimitUs ?
-            std::format("{:.1f} FPS", 1000000.0 / view.xefg.frameLimitUs).c_str() : "Off") :
+        DrawSettingsValue(TR("Output cap"), intel ? (view.xefg.frameLimitUs ?
+            std::format("{:.1f} FPS", 1000000.0 / view.xefg.frameLimitUs).c_str() : TR("Off")) :
                           sourceState.frameLimitSubmittedUs
                               ? std::format("{:.1f} FPS", 1000000.0 / sourceState.frameLimitSubmittedUs).c_str()
-                              : "Off");
-        DrawSettingsValue("UI composition",
-            intel ? (!view.uiRecomposition ? "Interpolated with the scene" : view.xefg.uiTexture ? "UI layer + HUD-less" : "Extracted from frame")
-            : !sourceState.uiRecompositionRequested ? "Interpolated with the scene"
-            : !frameGenerationRuntimeActive ? "Recompose requested"
-            : sourceState.options.enableUserInterfaceRecomposition == sl::eTrue ? "Recomposed by DLSS-G"
-                                                                                  : "Waiting for HUD-less and UI layers");
+                              : TR("Off"));
+        DrawSettingsValue(TR("UI composition"),
+            intel ? (!view.uiRecomposition ? TR("Interpolated with the scene") : view.xefg.uiTexture ? TR("UI layer + HUD-less") : TR("Extracted from frame"))
+            : !sourceState.uiRecompositionRequested ? TR("Interpolated with the scene")
+            : !frameGenerationRuntimeActive ? TR("Recompose requested")
+            : sourceState.options.enableUserInterfaceRecomposition == sl::eTrue ? TR("Recomposed by DLSS-G")
+                                                                                  : TR("Waiting for HUD-less and UI layers"));
         if (intel)
         {
             const auto& state = view.xefg;
-            DrawSettingsValue("Outputs", std::format("{} | {} generated presents", state.framesPresented, state.generatedPresents).c_str());
+            DrawSettingsValue(TR("Outputs"), TRF("{} | {} generated presents", state.framesPresented, state.generatedPresents).c_str());
             if (state.frameTimeMs > 0)
-                DrawSettingsValue("Frame time sent", std::format("{:.2f} ms", state.frameTimeMs).c_str());
+                DrawSettingsValue(TR("Frame time sent"), TRF("{:.2f} ms", state.frameTimeMs).c_str());
             if (view.xefgTensorRequested)
             {
                 const auto& pacing = state.pacing;
-                DrawSettingsValue("Tensor model", view.xefgTensorStatus.c_str());
+                DrawSettingsValue(TR("Tensor model"), view.xefgTensorStatus.c_str());
                 if (pacing.flags & TheosRenderPipeline::XeFGPacing::Installed)
                 {
-                    DrawSettingsValue("Driver metering", std::format("{} | {} accepted batches",
-                        pacing.flags & TheosRenderPipeline::XeFGPacing::Unavailable ? "unavailable" :
-                        pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? "active" : "idle", pacing.meteredCalls).c_str());
+                    DrawSettingsValue(TR("Driver metering"), TRF("{} | {} accepted batches",
+                        pacing.flags & TheosRenderPipeline::XeFGPacing::Unavailable ? TR("unavailable") :
+                        pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? TR("active") : "idle", pacing.meteredCalls).c_str());
                     DrawSettingsHelp(view.xefgPacingStatus.c_str());
                 }
             }
@@ -109,10 +110,10 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         if (!intel && unlock.UsesCompatibilityUnlock() && !unlock.Ready())
             ImGui::TextWrapped("%s", unlock.status);
         if (!intel && sourceState.stateQueryResult == sl::Result::eWarnOutOfVRAM)
-            ImGui::TextColored(kOchre, "NVIDIA VRAM budget warning");
+            ImGui::TextColored(kOchre, TR("NVIDIA VRAM budget warning"));
         if (view.warmupPresentsRemaining > 0)
-            ImGui::Text("Warmup: %d frames", view.warmupPresentsRemaining);
-        if (showDeveloperControls && ImGui::CollapsingHeader("Runtime details"))
+            ImGui::Text(TR("Warmup: %d frames"), view.warmupPresentsRemaining);
+        if (showDeveloperControls && ImGui::CollapsingHeader(TR("Runtime details")))
             DrawLabGenerationDetails(view);
         DrawStageMeasurements(view, SettingsPage::FrameGeneration);
         NextSettingsColumn(tabCardHeight);
@@ -123,23 +124,23 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         auto& draft = settingsDraft.sourceDLSSG;
         auto& request = draft.generation;
         const auto& style = ImGui::GetStyle();
-        const float label = LabelWidth({"Frame generation", "Frame limit", "Scene change", "Flip metering"});
+        const float label = LabelWidth({TR("Frame generation"), TR("Frame limit"), TR("Scene change"), TR("Flip metering")});
         if (!sourceDLSSGActive)
         {
-            ImGui::TextColored(kOchre, "NVIDIA host is unavailable. Check runtime status and restart Skyrim.");
+            ImGui::TextColored(kOchre, TR("NVIDIA host is unavailable. Check runtime status and restart Skyrim."));
         }
         ImGui::BeginDisabled(!sourceDLSSGActive);
         if (BeginSettingRows("fgShared", label))
         {
-            SettingRow("Frame generation", nullptr, false, false, [&] {
+            SettingRow(TR("Frame generation"), nullptr, false, false, [&] {
                 bool requested = view.frameGenerationRequested;
                 if (ImGui::Checkbox("##on", &requested)) { RequestFrameGeneration(requested); }
-                DrawSettingsHelp("Takes effect immediately. Save as default to keep this choice for the next launch.");
+                DrawSettingsHelp(TR("Takes effect immediately. Save as default to keep this choice for the next launch."));
                 ImGui::SameLine();
                 const float mark = ImGui::CalcTextSize("!").x + style.ItemSpacing.x;
                 ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - mark);
                 int provider = std::clamp(static_cast<int>(draft.provider), 0, 1);
-                const char* providers[]{"NVIDIA DLSS-G", "Intel XeFG (experimental)"};
+                const char* providers[]{"NVIDIA DLSS-G", TR("Intel XeFG (experimental)")};
                 bool changed = false;
                 if (ImGui::BeginCombo("##provider", providers[provider]))
                 {
@@ -153,19 +154,19 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                         }
                         ImGui::EndDisabled();
                         if (i == 0 && !view.nvidiaAdapter && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                            ImGui::SetTooltip("Needs an NVIDIA GPU.");
+                            ImGui::SetTooltip(TR("Needs an NVIDIA GPU."));
                     }
                     ImGui::EndCombo();
                 }
-                DrawSettingsHelp("Frame generation provider. NVIDIA DLSS-G requires NVIDIA hardware; XeFG uses XeLL latency "
-                                 "reduction. On NVIDIA cards XeFG costs noticeably more GPU time than DLSS-G; it is meant for "
-                                 "other GPUs.");
+                DrawSettingsHelp(TR("Frame generation provider. NVIDIA DLSS-G requires NVIDIA hardware; XeFG uses "
+                                    "XeLL latency reduction. On NVIDIA cards XeFG costs noticeably more GPU time "
+                                    "than DLSS-G; it is meant for other GPUs."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextColored(kOchre, "!");
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Apply switches provider after a completed world frame, with a pause of under a second. "
-                                      "Upscaling and NR keep their settings.");
+                    ImGui::SetTooltip(TR("Apply switches provider after a completed world frame, with a pause of "
+                                        "under a second. Upscaling and NR keep their settings."));
                 }
                 return changed;
             });
@@ -173,18 +174,18 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             // Multiplier: unavailable counts are greyed with the reason.
             auto& requestedCount = editIntel ? draft.xefg.generatedFrames : request.generatedFrames;
             const unsigned listedMaximum = editIntel ? TheosRenderPipeline::XeFGMaxGeneratedFrames : 5u;
-            const auto limitReason = editIntel ? (!view.xefgUnlockAvailable ? std::string("x3 to x6 need the Universal edition.")
-                                                  : usableMaximum <= 1 ? "x2 only: " + view.xefgUnlockStatus
-                                                  : std::format("This XeFG presenter supports up to x{}.", usableMaximum + 1))
-                                   : std::format("This NVIDIA runtime supports up to x{}.", usableMaximum + 1);
-            const char* experimental = "Experimental: patches Intel's runtime in memory. The first Apply recreates the Intel "
-                                       "presenter; later changes apply live.";
+            const auto limitReason = editIntel ? (!view.xefgUnlockAvailable ? std::string(TR("x3 to x6 need the Universal edition."))
+                                                  : usableMaximum <= 1 ? std::string(TR("x2 only: ")) + view.xefgUnlockStatus
+                                                  : TRF("This XeFG presenter supports up to x{}.", usableMaximum + 1))
+                                   : TRF("This NVIDIA runtime supports up to x{}.", usableMaximum + 1);
+            const char* experimental = TR("Experimental: patches Intel's runtime in memory. The first Apply recreates the "
+                                         "Intel presenter; later changes apply live.");
             const auto option = [&](unsigned count) {
                 const bool usable = count <= usableMaximum && count <= listedMaximum;
                 return Segment{nullptr, usable, !usable ? limitReason.c_str() : editIntel && count > 1 ? experimental : nullptr};
             };
-            SettingRow("Multiplier", nullptr, false, false, [&] {
-                const char* dynamicLabel = "Dynamic";
+            SettingRow(TR("Multiplier"), nullptr, false, false, [&] {
+                const char* dynamicLabel = TR("Dynamic");
                 const float dynamicWidth = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(dynamicLabel).x;
                 ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - dynamicWidth - style.ItemSpacing.x);
                 int index = static_cast<int>(std::clamp(requestedCount, 1u, listedMaximum)) - 1;
@@ -196,29 +197,29 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                     requestedCount = static_cast<unsigned>(index + 1);
                     if (editIntel) { draft.xefg.experimentalMFG = requestedCount > 1; }
                 }
-                DrawSettingsHelp(!editIntel && !nvidiaReported ? "NVIDIA reports its supported multipliers once DLSS-G is running."
-                                 : editIntel ? "x2 is Intel's official mode; x3 to x6 are experimental."
-                                             : "Generated frames per rendered frame, plus one.");
+                DrawSettingsHelp(!editIntel && !nvidiaReported ? TR("NVIDIA reports its supported multipliers once DLSS-G is running.")
+                                 : editIntel ? TR("x2 is Intel's official mode; x3 to x6 are experimental.")
+                                             : TR("Generated frames per rendered frame, plus one."));
                 ImGui::SameLine();
                 ImGui::BeginDisabled(editIntel || !supportsDynamic);
                 changed |= ImGui::Checkbox(dynamicLabel, &request.dynamic);
                 ImGui::EndDisabled();
-                DrawSettingsHelp(editIntel ? "NVIDIA only." : !nvidiaReported ? "Available once DLSS-G is running."
-                                 : !supportsDynamic ? "Not supported by this NVIDIA runtime."
-                                                    : "NVIDIA chooses the multiplier to reach the target FPS.");
+                DrawSettingsHelp(editIntel ? TR("NVIDIA only.") : !nvidiaReported ? TR("Available once DLSS-G is running.")
+                                 : !supportsDynamic ? TR("Not supported by this NVIDIA runtime.")
+                                                    : TR("NVIDIA chooses the multiplier to reach the target FPS."));
                 return changed;
             });
-            SettingRow("Target FPS", nullptr, false, editIntel || !request.dynamic, [&] {
+            SettingRow(TR("Target FPS"), nullptr, false, editIntel || !request.dynamic, [&] {
                 int target = static_cast<int>(request.dynamicTargetFPS);
                 ImGui::SetNextItemWidth(Px(64.0f));
                 // Keep intermediate digits while typing 120; Apply validates.
                 const bool changed = ImGui::InputInt("##target", &target, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
                 if (changed) { request.dynamicTargetFPS = static_cast<unsigned>(std::clamp(target, 0, 1000)); }
-                DrawSettingsHelp("Dynamic multiplier target. 0 follows the display refresh rate; explicit targets must exceed "
-                                 "60 FPS.");
+                DrawSettingsHelp(TR("Dynamic multiplier target. 0 follows the display refresh rate; "
+                                    "explicit targets must exceed 60 FPS."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("%s", request.dynamicTargetFPS ? "FPS" : "display refresh");
+                ImGui::TextDisabled("%s", request.dynamicTargetFPS ? "FPS" : TR("display refresh"));
                 return changed;
             });
 
@@ -227,73 +228,73 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 auto& preset = draft.preset;
                 int index = preset == SD::DlssgPreset::C ? 2 : preset == SD::DlssgPreset::B ? 1 : 0;
                 const bool changed = Segmented("hud", index, {
-                    {"Interpolate", true, "Preset A: the HUD is interpolated with the scene."},
-                    {"Recompose", true, "Preset B: the scene and HUD are generated separately for less HUD ghosting in "
-                                        "motion, at a small GPU and VRAM cost."},
-                    {"Lite", !editIntel, editIntel ? "NVIDIA only; on XeFG it runs as Interpolate."
-                                                   : "Preset C: NVIDIA's lighter Lite blending (DLSS-G 310.9.16 or newer), "
-                                                     "without UI recomposition."}});
+                    {TR("Interpolate"), true, TR("Preset A: the HUD is interpolated with the scene.")},
+                    {TR("Recompose"), true, TR("Preset B: the scene and HUD are generated separately for less HUD "
+                                           "ghosting in motion, at a small GPU and VRAM cost.")},
+                    {TR("Lite"), !editIntel, editIntel ? TR("NVIDIA only; on XeFG it runs as Interpolate.")
+                                                   : TR("Preset C: NVIDIA's lighter Lite blending (DLSS-G 310.9.16 "
+                                                        "or newer), without UI recomposition.")}});
                 if (changed) { preset = index == 2 ? SD::DlssgPreset::C : index == 1 ? SD::DlssgPreset::B : SD::DlssgPreset::A; }
                 return changed;
             });
-            SettingRow("Latency", nullptr, false, editIntel, [&] {
+            SettingRow(TR("Latency"), nullptr, false, editIntel, [&] {
                 if (editIntel)
                 {
                     int none = -1;
                     Segmented("xell", none, {{"XeLL (Intel)", false,
-                        "XeFG uses XeLL latency reduction. Your Reflex choice is kept for NVIDIA."}});
+                        TR("XeFG uses XeLL latency reduction. Your Reflex choice is kept for NVIDIA.")}});
                     return false;
                 }
                 const sl::ReflexMode modes[]{sl::ReflexMode::eOff, sl::ReflexMode::eLowLatency, sl::ReflexMode::eLowLatencyWithBoost};
                 int index = 0;
                 for (int i = 0; i < 3; ++i) { if (draft.reflexMode == static_cast<int>(modes[i])) { index = i; } }
                 const bool changed = Segmented("reflex", index, {
-                    {"Off", true, "NVIDIA Reflex off."},
-                    {"Low latency", true, "NVIDIA Reflex low latency."},
-                    {"Boost", true, "NVIDIA Reflex low latency with boost: keeps GPU clocks up for lower latency."}});
+                    {TR("Off"), true, TR("NVIDIA Reflex off.")},
+                    {TR("Low latency"), true, TR("NVIDIA Reflex low latency.")},
+                    {TR("Boost"), true, TR("NVIDIA Reflex low latency with boost: keeps GPU clocks up for lower latency.")}});
                 if (changed) { draft.reflexMode = static_cast<int>(modes[index]); }
                 return changed;
             });
-            SettingRow("VSync", nullptr, false, false, [&] {
+            SettingRow(TR("VSync"), nullptr, false, false, [&] {
                 int index = std::clamp(static_cast<int>(draft.vsync), 0, 2);
                 const bool changed = Segmented("vsync", index, {
-                    {"Auto", true, "Turns VSync off for available XeFG driver metering and otherwise follows the game."},
-                    {"Off", true, "Requests immediate presentation."},
-                    {"On", true, "Requests VSync. Prevents XeFG driver metering."}});
+                    {TR("Auto"), true, TR("Turns VSync off for available XeFG driver metering and otherwise follows the game.")},
+                    {TR("Off"), true, TR("Requests immediate presentation.")},
+                    {TR("On"), true, TR("Requests VSync. Prevents XeFG driver metering.")}});
                 if (changed) { draft.vsync = static_cast<SD::VSyncMode>(index); }
-                DrawSettingsHelp("Apply changes the request live; Save as default keeps it. Other mods' frame limits still "
-                                 "apply. DLSS-G manages its final output timing.");
+                DrawSettingsHelp(TR("Apply changes the request live; Save as default keeps it. Other mods' frame "
+                                    "limits still apply. DLSS-G manages its final output timing."));
                 return changed;
             });
-            SettingRow("Frame limit", nullptr, false, false, [&] {
+            SettingRow(TR("Frame limit"), nullptr, false, false, [&] {
                 int mode = static_cast<int>(draft.frameLimit);
                 ImGui::SetNextItemWidth(Px(200.0f));
                 bool changed = Segmented("frameLimit", mode, {
-                    {"Off", true, "No cap from TRP."},
-                    {"Fixed", true, "Caps output at the FPS you set, including generated frames."},
-                    {"Steady", true, "TRP measures recent frame times and caps rendered frames just below what the "
+                    {TRC("Off", "FrameLimit"), true, TR("No cap from TRP.")},
+                    {TR("Fixed"), true, TR("Caps output at the FPS you set, including generated frames.")},
+                    {TR("Steady"), true, TR("TRP measures recent frame times and caps rendered frames just below what the "
                                      "slower frames manage, so frames arrive evenly. Average FPS drops a little; dips "
-                                     "and stutter go. Frame generation multiplies from there."}});
+                                     "and stutter go. Frame generation multiplies from there.")}});
                 if (changed) {
                     draft.frameLimit = static_cast<SD::FrameLimitMode>(mode);
                     // Fixed needs a number to start from.
                     if (draft.frameLimit == SD::FrameLimitMode::Fixed && !draft.outputFPSLimit) { draft.outputFPSLimit = 120; }
                 }
-                DrawSettingsHelp("Avoid stacking it with another limiter. Apply changes it live.");
+                DrawSettingsHelp(TR("Avoid stacking it with another limiter. Apply changes it live."));
                 ImGui::SameLine();
                 if (draft.frameLimit == SD::FrameLimitMode::Fixed) {
                     ImGui::SetNextItemWidth(Px(64.0f));
                     changed |= ImGui::InputInt("##limit", &draft.outputFPSLimit, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
                     draft.outputFPSLimit = std::clamp(draft.outputFPSLimit, 1, 1000);
-                    DrawSettingsHelp("Output FPS, including generated frames.");
+                    DrawSettingsHelp(TR("Output FPS, including generated frames."));
                     ImGui::SameLine();
                     ImGui::AlignTextToFramePadding();
-                    ImGui::TextDisabled("output FPS");
+                    ImGui::TextDisabled("%s", TR("output FPS"));
                 } else {
                     ImGui::AlignTextToFramePadding();
                     const bool steadyApplied = draft.frameLimit == SD::FrameLimitMode::Steady && view.steadyRenderedFPS > 0;
-                    ImGui::TextDisabled("%s", draft.frameLimit == SD::FrameLimitMode::Off ? "no cap" :
-                        steadyApplied ? std::format("now {:.0f} FPS rendered", view.steadyRenderedFPS).c_str() : "measuring");
+                    ImGui::TextDisabled("%s", draft.frameLimit == SD::FrameLimitMode::Off ? TR("no cap") :
+                        steadyApplied ? TRF("now {:.0f} FPS rendered", view.steadyRenderedFPS).c_str() : TR("measuring"));
                 }
                 return changed;
             });
@@ -302,52 +303,52 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
 
         // Notes about the shared rows: pending switches and runtime limits.
         if (!editIntel && intel && view.nvidiaSwitchBlocked)
-            ImGui::TextColored(kOchre, "Switching to NVIDIA needs a restart this session: NR started before NVIDIA's "
-                                       "runtime. Save as default, then restart Skyrim.");
+            ImGui::TextColored(kOchre, TR("Switching to NVIDIA needs a restart this session: NR started before "
+                                         "NVIDIA's runtime. Save as default, then restart Skyrim."));
         else if (view.requestedProvider != view.provider)
-            ImGui::TextDisabled("Provider change pending; waiting for world inputs...");
+            ImGui::TextDisabled(TR("Provider change pending; waiting for world inputs..."));
         if (view.frameGenerationRequested != view.hostFrameGenerationEnabled)
-            ImGui::TextDisabled("Waiting for the current GPU frame to retire...");
+            ImGui::TextDisabled(TR("Waiting for the current GPU frame to retire..."));
         if (!editIntel && request.dynamic && nvidiaReported && !supportsDynamic)
         {
-            ImGui::TextColored(kOchre, "A saved dynamic request is unsupported by this NVIDIA runtime.");
+            ImGui::TextColored(kOchre, TR("A saved dynamic request is unsupported by this NVIDIA runtime."));
             ImGui::SameLine();
-            if (ImGui::SmallButton("Use fixed multiplier")) { request.dynamic = false; }
+            if (ImGui::SmallButton(TR("Use fixed multiplier"))) { request.dynamic = false; }
         }
         if (!editIntel && nvidiaReported && sourceState.generationLimited)
-            ImGui::TextColored(kOchre, "The runtime uses its supported count; your requested multiplier is kept.");
+            ImGui::TextColored(kOchre, TR("The runtime uses its supported count; your requested multiplier is kept."));
         if (!editIntel)
         {
             const auto& lite = view.liteBlending;
             if (SD::UsesLiteBlending(draft.preset) &&
                 (lite.hook != SD::LiteBlending::HookState::Installed || !lite.runtimeSupports))
                 ImGui::TextColored(kOchre, lite.hook == SD::LiteBlending::HookState::NotInstalled
-                                               ? "Lite is checked when DLSS-G loads"
-                                               : "This DLSS-G build has no Lite blending; it runs as Interpolate");
+                                               ? TR("Lite is checked when DLSS-G loads")
+                                               : TR("This DLSS-G build has no Lite blending; it runs as Interpolate"));
             if (lite.driverPreset)
-                ImGui::TextColored(kOchre, "NVIDIA driver profile sets Preset %s; DLSS-G uses it instead",
+                ImGui::TextColored(kOchre, TR("NVIDIA driver profile sets Preset %s; DLSS-G uses it instead"),
                                    SD::DriverPresetName(lite.driverPreset).c_str());
         }
         else if (draft.preset == SD::DlssgPreset::C)
         {
-            ImGui::TextDisabled("Lite is NVIDIA only; XeFG runs it as Interpolate.");
+            ImGui::TextDisabled(TR("Lite is NVIDIA only; XeFG runs it as Interpolate."));
         }
 
         // XeFG's own settings, together at the bottom.
         ImGui::Spacing();
         if (BeginSettingRows("fgXeFG", label))
         {
-            const char* xefgOnly = "XeFG only. Choose Intel XeFG as the provider to use it.";
-            SettingRow("Scene change", nullptr, false, !editIntel, [&] {
+            const char* xefgOnly = TR("XeFG only. Choose Intel XeFG as the provider to use it.");
+            SettingRow(TR("Scene change"), nullptr, false, !editIntel, [&] {
                 auto& sceneChange = draft.xefgSceneChangeThreshold;
                 const bool atDefault = sceneChange == TheosRenderPipeline::XeFGDefaultSceneChangeThreshold;
                 ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - style.ItemSpacing.x);
                 bool changed = ImGui::SliderFloat("##sceneChange", &sceneChange, 0.0f, 1.0f, "%.2f");
                 sceneChange = TheosRenderPipeline::SanitizeXeFGSceneChange(sceneChange);
                 DrawSettingsHelp(!editIntel ? xefgOnly
-                    : "How readily XeFG treats a sudden change, such as a camera cut or a fast turn, as a new scene and "
-                      "shows the rendered frame instead of generating one. Higher avoids smeared transitions but generates "
-                      "less in fast motion. Apply to compare live.");
+                    : TR("How readily XeFG treats a sudden change, such as a camera cut or a fast turn, as a new "
+                         "scene and shows the rendered frame instead of generating one. Higher avoids smeared "
+                         "transitions but generates less in fast motion. Apply to compare live."));
                 ImGui::SameLine();
                 ImGui::BeginDisabled(atDefault);
                 if (UndoButton("##sceneDefault"))
@@ -357,44 +358,44 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 }
                 ImGui::EndDisabled();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    ImGui::SetTooltip(atDefault ? "At Intel's default (0.70)." : "Was 0.70 (Intel's default). Click to reset.");
+                    ImGui::SetTooltip(atDefault ? TR("At Intel's default (0.70).") : TR("Was 0.70 (Intel's default). Click to reset."));
                 return changed;
             });
-            SettingRow("Frame time", nullptr, false, !editIntel, [&] {
+            SettingRow(TR("Frame time"), nullptr, false, !editIntel, [&] {
                 const bool changed = ImGui::Checkbox("##frameTime", &draft.xefgFrameTime);
                 DrawSettingsHelp(!editIntel ? xefgOnly
-                    : "Gives Intel's frame pacing the measured frame time. On AMD and NVIDIA cards Intel uses it to "
-                      "sanity-check pacing. Apply to compare live.");
+                    : TR("Gives Intel's frame pacing the measured frame time. On AMD and NVIDIA cards Intel uses "
+                         "it to sanity-check pacing. Apply to compare live."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("send to XeFG");
+                ImGui::TextDisabled(TR("send to XeFG"));
                 return changed;
             });
-            SettingRow("Tensor model", nullptr, false, !editIntel, [&] {
+            SettingRow(TR("Tensor model"), nullptr, false, !editIntel, [&] {
                 ImGui::BeginDisabled(!view.xefgUnlockAvailable);
                 const bool changed = ImGui::Checkbox("##tensor", &draft.xefgTensorCores);
                 ImGui::EndDisabled();
                 DrawSettingsHelp(!editIntel ? xefgOnly
-                    : !view.xefgUnlockAvailable ? "Universal only."
-                    : "Uses the optional XeFG tensor helper on NVIDIA when its bundle is installed; otherwise XeFG "
-                      "uses its normal path. Apply switches it, with a short pause while XeFG restarts.");
+                    : !view.xefgUnlockAvailable ? TR("Universal only.")
+                    : TR("Uses the optional XeFG tensor helper on NVIDIA when its bundle is installed; otherwise "
+                         "XeFG uses its normal path. Apply switches it, with a short pause while XeFG restarts."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("experimental");
+                ImGui::TextDisabled(TR("experimental"));
                 return changed;
             });
             const auto& pacing = view.xefg.pacing;
             const bool meteringReady = view.xefgTensorRequested && (pacing.flags & TheosRenderPipeline::XeFGPacing::Installed);
             const bool vsyncOn = draft.vsync == SD::VSyncMode::On;
-            SettingRow("Flip metering", nullptr, false, !editIntel || !meteringReady || vsyncOn, [&] {
+            SettingRow(TR("Flip metering"), nullptr, false, !editIntel || !meteringReady || vsyncOn, [&] {
                 bool meter = view.xefgFlipMetering;
                 const bool changed = ImGui::Checkbox("##metering", &meter);
                 if (changed) { SetXeFGFlipMetering(meter); }
                 DrawSettingsHelp(!editIntel ? xefgOnly
-                    : !meteringReady ? "Needs the XeFG tensor model running."
-                    : vsyncOn ? "Unavailable while VSync is On."
-                    : "NVIDIA flip metering: compares driver timing with software timing. Changes live and is not saved. "
-                      "The driver must accept metering for it to become active.");
+                    : !meteringReady ? TR("Needs the XeFG tensor model running.")
+                    : vsyncOn ? TR("Unavailable while VSync is On.")
+                    : TR("NVIDIA flip metering: compares driver timing with software timing. Changes live and is "
+                         "not saved. The driver must accept metering for it to become active."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextDisabled("session only%s", meteringReady
