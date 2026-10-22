@@ -35,7 +35,7 @@ void OverlayUI::DrawZoomButtons()
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 0.0f));
     ImGui::SetCursorScreenPos(ImVec2(title.Max.x - style.FramePadding.x - total,
                                      title.Min.y + (title.GetHeight() - ImGui::GetFontSize()) * 0.5f));
-    ImGui::TextColored(kMuted, TR("Zoom"));
+    ImGui::TextColored(kMuted, "%s", TR("Zoom"));
     const auto step = [&](const char* label, int direction, const char* action) {
         ImGui::SameLine();
         const float next = StepUIScale(current, direction);
@@ -62,7 +62,7 @@ void OverlayUI::DrawZoomButtons()
         if (manual)
             ImGui::SetTooltip(TR("Click to return to automatic zoom (%.0f%% for this output)."), automatic * 100.0f);
         else
-            ImGui::SetTooltip(TR("Automatic zoom from the output height; 1080p is 100%%."));
+            ImGui::SetTooltip("%s", TR("Automatic zoom from the output height; 1080p is 100%%."));
     }
     step("+##zoomIn", 1, TR("Zoom in"));
     ImGui::PopStyleVar();
@@ -187,7 +187,11 @@ void OverlayUI::DrawSettingsActions()
         ImGui::TableSetupColumn("##actionStatus", ImGuiTableColumnFlags_WidthStretch, 1.0f);
         ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed, Px(450.0f));
         ImGui::TableNextColumn();
-        const auto status = TheosRenderPipeline::SettingsStatus(stagedChanges, actionMessage, actionMessageIsError);
+        auto status = TheosRenderPipeline::SettingsStatus(stagedChanges, actionMessage, actionMessageIsError);
+        // The controller's messages are English, as in the log; show them translated.
+        status.text = status.kind == TheosRenderPipeline::SettingsStatusKind::Pending
+                          ? (stagedChanges == 1 ? std::string(TR("1 pending change")) : TRF("{} pending changes", stagedChanges))
+                          : TheosRenderPipeline::Localization::TranslateText(status.text);
         using StatusKind = TheosRenderPipeline::SettingsStatusKind;
         ImGui::PushTextWrapPos(0);
         if (status.kind == StatusKind::Neutral) { ImGui::TextDisabled("%s", status.text.c_str()); }
@@ -205,8 +209,7 @@ void OverlayUI::DrawSettingsActions()
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
-            ImGui::SetTooltip(
-                TR("Discard edits you have not applied. Applied settings and saved defaults stay as they are."));
+            ImGui::SetTooltip("%s", TR("Discard edits you have not applied. Applied settings and saved defaults stay as they are."));
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
@@ -217,8 +220,8 @@ void OverlayUI::DrawSettingsActions()
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
-            ImGui::SetTooltip("Apply live settings for this session. Saved defaults stay unchanged.\nMode and render "
-                              "scale changes require Save and restart.");
+            ImGui::SetTooltip("%s", TR("Apply live settings for this session. Saved defaults stay unchanged.\nMode and render "
+                              "scale changes require Save and restart."));
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
@@ -235,8 +238,8 @@ void OverlayUI::DrawSettingsActions()
         ImGui::PopStyleColor(4);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
-            ImGui::SetTooltip("Apply live settings and save your choices, zoom, window layout and divider for future launches.\n"
-                              "Mode and render scale changes take effect after restarting.");
+            ImGui::SetTooltip("%s", TR("Apply live settings and save your choices, zoom, window layout and divider for future launches.\n"
+                              "Mode and render scale changes take effect after restarting."));
         }
         ImGui::EndTable();
     }

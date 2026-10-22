@@ -91,8 +91,8 @@ void OverlayUI::DrawMenuSizeControl()
     bool automatic = layout.uiScale <= 0;
     if (ImGui::Checkbox(TR("Automatic zoom"), &automatic))
         layout.uiScale = automatic ? 0.0f : UIScale();
-    DrawSettingsHelp("Sizes text and controls from the output height; 1080p is 100%. Changes apply immediately. "
-                     "Save as default remembers them.");
+    DrawSettingsHelp(TR("Sizes text and controls from the output height; 1080p is 100%. Changes apply immediately. "
+                     "Save as default remembers them."));
     // Rebuild the font once on release rather than for every dragged value.
     if (!menuSizeEditing)
         menuSizeEdit = std::round((automatic ? UIScale() : layout.uiScale) * 100.0f);
@@ -115,7 +115,7 @@ void OverlayUI::DrawMenuKeyControl(const FrameView& view)
     const auto key = static_cast<UINT>(settingsDraft.menuHotkey);
     ImGui::AlignTextToFramePadding();
     if (settingsDraft.menuHotkey != view.menuHotkey)
-        ImGui::TextColored(kAmber, TR("Menu key"));
+        ImGui::TextColored(kAmber, "%s", TR("Menu key"));
     else
         ImGui::TextUnformatted(TR("Menu key"));
     ImGui::SameLine();
@@ -148,13 +148,13 @@ void OverlayUI::DrawMenuKeyControl(const FrameView& view)
     if (!menuKeyError.empty())
         ImGui::TextColored(kRust, "%s", menuKeyError.c_str());
     else if (!CanToggleWhileEditing(key))
-        ImGui::TextDisabled(TR("While a text field is active, click outside it before pressing this key."));
+        ImGui::TextDisabled("%s", TR("While a text field is active, click outside it before pressing this key."));
     ImGui::PopTextWrapPos();
 }
 
 void OverlayUI::DrawAdvancedPanel(float height, const FrameView& view)
 {
-    if (!ImGui::BeginTabItem(TR("Advanced"), nullptr,
+    if (!ImGui::BeginTabItem(TRID("Advanced").c_str(), nullptr,
                              requestedPage == SettingsPage::Advanced ? ImGuiTabItemFlags_SetSelected : 0))
         return;
     if (BeginSettingsColumns("advanced", height, view))
@@ -179,9 +179,9 @@ void OverlayUI::DrawAdvancedPanel(float height, const FrameView& view)
         ImGui::Checkbox(TR("Lab mode"), &showDeveloperControls);
         DrawSettingsHelp(TR("Show runtime details and experimental controls. This changes menu visibility only."));
         DrawMeasurementControls(view);
-        if (showDeveloperControls && !cs && ImGui::CollapsingHeader(TR("UI integration (Lab)")))
+        if (showDeveloperControls && !cs && ImGui::CollapsingHeader(TRID("UI integration (Lab)").c_str()))
         {
-            ImGui::TextDisabled(TR("Save and restart"));
+            ImGui::TextDisabled("%s", TR("Save and restart"));
             ImGui::Checkbox(TR("Native-resolution Skyrim UI"), &settingsDraft.nativeUI);
             ImGui::Checkbox(TR("Startup overlays at native resolution"), &settingsDraft.lateOverlayBridge);
         }
@@ -190,8 +190,8 @@ void OverlayUI::DrawAdvancedPanel(float height, const FrameView& view)
         DrawMenuKeyControl(view);
         ImGui::TextUnformatted(TR("HDR unsupported"));
         if (cs)
-            ImGui::TextWrapped(TR("Keep CS HDR, frame generation and Reflex off."));
-        if (showDeveloperControls && !cs && ImGui::CollapsingHeader(TR("Menu diagnostics (Lab)")))
+            ImGui::TextWrapped("%s", TR("Keep CS HDR, frame generation and Reflex off."));
+        if (showDeveloperControls && !cs && ImGui::CollapsingHeader(TRID("Menu diagnostics (Lab)").c_str()))
         {
             DrawLabMenuDiagnostics();
         }
@@ -206,7 +206,7 @@ void OverlayUI::DrawUIStatusPanel(const FrameView& view)
     DrawSettingsValue(TR("UI composition"), cs              ? "Community Shaders"
                                         : view.nativeUI ? TR("Native resolution")
                                                         : TR("Render resolution"));
-    if (ImGui::CollapsingHeader(TR("UI details")))
+    if (ImGui::CollapsingHeader(TRID("UI details").c_str()))
     {
         DrawSettingsValue(TR("External overlays"), cs                           ? TR("CS UI path")
                                                : view.hostStartupConfigured ? TR("Native host")
@@ -219,7 +219,7 @@ void OverlayUI::DrawUIStatusPanel(const FrameView& view)
 void OverlayUI::DrawReportingDetails(const FrameView& view)
 {
     ImGui::Spacing();
-    if (ImGui::CollapsingHeader(TR("Reporting a problem")))
+    if (ImGui::CollapsingHeader(TRID("Reporting a problem").c_str()))
     {
         const auto& upscaler = view.upscaler;
         const auto& neural = view.neuralApplied;
@@ -240,8 +240,7 @@ void OverlayUI::DrawReportingDetails(const FrameView& view)
             ImGui::Text(TR("NR Pass %d: %s | %.1f%% | network %s"), pass, extra.linked ? TR("linked") : TR("custom"),
                         extra.inputScale * 100, extra.preset == 1 ? TR("Shipping") : TR("Default"));
         }
-        ImGui::TextWrapped(
-            TR("Include your GPU, driver, game and TRP versions, the active renderer, settings and reproduction steps."));
-        ImGui::TextWrapped(TR("Attach TheosRenderPipeline.log from Documents / My Games / Skyrim Special Edition / SKSE."));
+        ImGui::TextWrapped("%s", TR("Include your GPU, driver, game and TRP versions, the active renderer, settings and reproduction steps."));
+        ImGui::TextWrapped("%s", TR("Attach TheosRenderPipeline.log from Documents / My Games / Skyrim Special Edition / SKSE."));
     }
 }

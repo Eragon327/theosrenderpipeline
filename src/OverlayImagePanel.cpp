@@ -85,12 +85,12 @@ void OverlayUI::DrawHDROutputSettings(const FrameView& view)
     {
         SettingRow(TR("HDR output"), nullptr, false, false, [&] {
             const bool changed = ImGui::Checkbox("##hdr", &hdr.enabled);
-            DrawSettingsHelp("Expands the finished SDR image (including ENB) to HDR10 and shows the UI at its own "
+            DrawSettingsHelp(TR("Expands the finished SDR image (including ENB) to HDR10 and shows the UI at its own "
                              "brightness. Highlights the preset already clipped cannot be recovered. Requires Windows "
-                             "HDR. The first switch on in a session briefly pauses frame generation.");
+                             "HDR. The first switch on in a session briefly pauses frame generation."));
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled(TR("experimental | Apply"));
+            ImGui::TextDisabled("%s", TR("experimental | Apply"));
             return changed;
         });
         ImGui::EndTable();
@@ -102,7 +102,7 @@ void OverlayUI::DrawHDROutputSettings(const FrameView& view)
     }
     else if (!state.requested && state.native)
     {
-        ImGui::TextDisabled(TR("HDR output off; 10-bit output stays allocated until restart"));
+        ImGui::TextDisabled("%s", TR("HDR output off; 10-bit output stays allocated until restart"));
     }
     else if (state.requested)
     {
@@ -131,7 +131,7 @@ void OverlayUI::DrawHDROutputSettings(const FrameView& view)
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
             if (hdr.matchWindowsSDR && windowsKnown) { ImGui::TextDisabled(TR("%.0f nits from Windows"), state.windowsSDRWhiteNits); }
-            else if (hdr.matchWindowsSDR && state.requested) { ImGui::TextColored(kAmber, TR("Windows brightness unavailable; using the values below")); }
+            else if (hdr.matchWindowsSDR && state.requested) { ImGui::TextColored(kAmber, "%s", TR("Windows brightness unavailable; using the values below")); }
             return changed;
         });
         SettingRow(TR("Paper white"), nullptr, false, !hdr.enabled || followsWindows, [&] {
@@ -195,7 +195,7 @@ void OverlayUI::DrawHDROutputSettings(const FrameView& view)
 
 void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
 {
-    if (!ImGui::BeginTabItem(TR("Image"), nullptr,
+    if (!ImGui::BeginTabItem(TRID("Image").c_str(), nullptr,
                              requestedPage == SettingsPage::Image ? ImGuiTabItemFlags_SetSelected : 0))
     {
         return;
@@ -210,13 +210,13 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
     if (view.communityShaders)
     {
         DrawSettingsHeading(TR("Controlled by Community Shaders"), "");
-        ImGui::TextWrapped("Community Shaders controls upscaling, render scale, model preset, sharpening and camera "
-                           "jitter. Change those settings in its menu.");
+        ImGui::TextWrapped("%s", TR("Community Shaders controls upscaling, render scale, model preset, sharpening and camera "
+                           "jitter. Change those settings in its menu."));
         DrawSettingsHelp(
             TR("TRP's Neural Rendering, frame generation and Reflex controls remain available in their own tabs."));
         ImGui::Separator();
         DrawSettingsHeading("HDR", "");
-        ImGui::TextWrapped(TR("Use Community Shaders' HDR Display for HDR with Community Shaders."));
+        ImGui::TextWrapped("%s", TR("Use Community Shaders' HDR Display for HDR with Community Shaders."));
     }
     else
     {
@@ -236,7 +236,7 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
                     const bool changed = Segmented("mode", mode, {
                         {"DLSS", true, TR("NVIDIA DLSS reconstruction at the render scale below.")},
                         {"DLAA", true, TR("NVIDIA DLAA at native resolution.")},
-                        {"XeSS", true, "Intel XeSS (experimental). After restart it uses Intel's quality resolutions."}});
+                        {TR("XeSS"), true, TR("Intel XeSS (experimental). After restart it uses Intel's quality resolutions.")}});
                     if (changed) { settingsDraft.upscaleType = mode == 2 ? XeSS : mode == 1 ? DLAA : DLSS; }
                     return changed;
                 });
@@ -321,24 +321,24 @@ void OverlayUI::DrawImagePanel(float tabCardHeight, const FrameView& view)
         if (view.sourceDLSSGActive)
         {
             if (view.upscalerLiveModeRejected) {
-                ImGui::TextColored(kAmber, TR("Live switch unavailable; selected mode requires restart"));
+                ImGui::TextColored(kAmber, "%s", TR("Live switch unavailable; selected mode requires restart"));
             }
             if (view.upscalerNeedsRestart)
             {
-                ImGui::TextColored(kAmber, TR("Mode/render scale awaiting restart"));
+                ImGui::TextColored(kAmber, "%s", TR("Mode/render scale awaiting restart"));
             }
             if (view.upscalerFailed)
             {
-                ImGui::TextColored(kRust, TR("Feature update failed; restart required"));
+                ImGui::TextColored(kRust, "%s", TR("Feature update failed; restart required"));
             }
             else if (view.upscalerChangeQueued)
             {
-                ImGui::TextDisabled(TR("Feature update queued"));
+                ImGui::TextDisabled("%s", TR("Feature update queued"));
             }
         }
         else
         {
-            ImGui::TextColored(kRust, TR("NVIDIA host is unavailable."));
+            ImGui::TextColored(kRust, "%s", TR("NVIDIA host is unavailable."));
         }
         DrawPresetSharpeningStatus(view);
         ImGui::Spacing();
@@ -362,10 +362,10 @@ void OverlayUI::DrawTextureMemoryPanel(const FrameView& view)
     ImGui::Spacing();
     ImGui::SeparatorText(TR("Texture memory"));
 
-    ImGui::TextDisabled(TR("Applies to future texture loads"));
+    ImGui::TextDisabled("%s", TR("Applies to future texture loads"));
     ImGui::BeginDisabled(!view.textureProviderAvailable);
     ImGui::Checkbox(TR("Enable runtime mip caps"), &settingsDraft.textureProviderSettings.enabled);
-    ImGui::TextDisabled(TR("Preset"));
+    ImGui::TextDisabled("%s", TR("Preset"));
     const char* texturePresetNames[]{TR("Quality | 2048"), TR("Balanced | 1024"), TR("Performance | 1024 / 512"), TR("Custom")};
     int texturePreset = TexturePresetIndex(settingsDraft.textureProviderSettings);
     ImGui::SetNextItemWidth(-1.0f);
@@ -396,13 +396,13 @@ void OverlayUI::DrawTextureMemoryPanel(const FrameView& view)
     if (view.textureProviderAvailable && settingsDraft.textureProviderSettings.enabled &&
         !view.textureTelemetry.hooksInstalled)
     {
-        ImGui::TextColored(kOchre, "The provider started without hooks. Save the startup default and relaunch "
-                                   "to enable texture interception.");
+        ImGui::TextColored(kOchre, "%s", TR("The provider started without hooks. Save the startup default and relaunch "
+                                   "to enable texture interception."));
     }
     else
     {
-        ImGui::TextDisabled(TR("Folder rules: TextureDownscaler menu"));
-        DrawSettingsHelp("Existing textures stay unchanged until reloaded. Folder rules and exclusions are in "
-                         "TextureDownscaler's Menu Framework page.");
+        ImGui::TextDisabled("%s", TR("Folder rules: TextureDownscaler menu"));
+        DrawSettingsHelp(TR("Existing textures stay unchanged until reloaded. Folder rules and exclusions are in "
+                         "TextureDownscaler's Menu Framework page."));
     }
 }

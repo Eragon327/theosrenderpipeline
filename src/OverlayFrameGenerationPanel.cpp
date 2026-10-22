@@ -15,7 +15,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
     const auto& frameGenerationRuntimeActive = view.frameGenerationRuntimeActive;
     const auto& activeDisplayMultiplier = view.activeDisplayMultiplier;
 
-    if (ImGui::BeginTabItem(TR("Frame generation"), nullptr,
+    if (ImGui::BeginTabItem(TRID("Frame generation").c_str(), nullptr,
                             requestedPage == SettingsPage::FrameGeneration ? ImGuiTabItemFlags_SetSelected
                                                                            : ImGuiTabItemFlags_None))
     {
@@ -67,7 +67,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             DrawSettingsValue(TR("VSync"), TRF("game {} -> presenter {}", view.vsyncIncoming ? TR("On") : TR("Off"),
                                                    view.vsyncRequested ? TR("On") : TR("Off")).c_str());
             DrawSettingsHelp(TR("What the game asked for, and what the presenter requested for presentation."));
-            if (view.vsyncFailed) ImGui::TextColored(kOchre, TR("Last presentation request failed."));
+            if (view.vsyncFailed) ImGui::TextColored(kOchre, "%s", TR("Last presentation request failed."));
         }
         DrawSettingsValue(TR("Latency"), intel ? "XeLL (Intel)"
             : std::format("Reflex | {}", TheosRenderPipeline::SourceDLSSG::ReflexModeName(sourceState.reflexSubmitted)).c_str());
@@ -110,10 +110,10 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         if (!intel && unlock.UsesCompatibilityUnlock() && !unlock.Ready())
             ImGui::TextWrapped("%s", unlock.status);
         if (!intel && sourceState.stateQueryResult == sl::Result::eWarnOutOfVRAM)
-            ImGui::TextColored(kOchre, TR("NVIDIA VRAM budget warning"));
+            ImGui::TextColored(kOchre, "%s", TR("NVIDIA VRAM budget warning"));
         if (view.warmupPresentsRemaining > 0)
             ImGui::Text(TR("Warmup: %d frames"), view.warmupPresentsRemaining);
-        if (showDeveloperControls && ImGui::CollapsingHeader(TR("Runtime details")))
+        if (showDeveloperControls && ImGui::CollapsingHeader(TRID("Runtime details").c_str()))
             DrawLabGenerationDetails(view);
         DrawStageMeasurements(view, SettingsPage::FrameGeneration);
         NextSettingsColumn(tabCardHeight);
@@ -127,7 +127,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         const float label = LabelWidth({TR("Frame generation"), TR("Frame limit"), TR("Scene change"), TR("Flip metering")});
         if (!sourceDLSSGActive)
         {
-            ImGui::TextColored(kOchre, TR("NVIDIA host is unavailable. Check runtime status and restart Skyrim."));
+            ImGui::TextColored(kOchre, "%s", TR("NVIDIA host is unavailable. Check runtime status and restart Skyrim."));
         }
         ImGui::BeginDisabled(!sourceDLSSGActive);
         if (BeginSettingRows("fgShared", label))
@@ -154,7 +154,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                         }
                         ImGui::EndDisabled();
                         if (i == 0 && !view.nvidiaAdapter && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                            ImGui::SetTooltip(TR("Needs an NVIDIA GPU."));
+                            ImGui::SetTooltip("%s", TR("Needs an NVIDIA GPU."));
                     }
                     ImGui::EndCombo();
                 }
@@ -165,7 +165,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextColored(kOchre, "!");
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(TR("Apply switches provider after a completed world frame, with a pause of "
+                    ImGui::SetTooltip("%s", TR("Apply switches provider after a completed world frame, with a pause of "
                                         "under a second. Upscaling and NR keep their settings."));
                 }
                 return changed;
@@ -224,7 +224,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
             });
 
             // HUD handling: XeFG uses A or B; Lite (C) is NVIDIA's.
-            SettingRow("HUD", nullptr, false, false, [&] {
+            SettingRow(TR("HUD"), nullptr, false, false, [&] {
                 auto& preset = draft.preset;
                 int index = preset == SD::DlssgPreset::C ? 2 : preset == SD::DlssgPreset::B ? 1 : 0;
                 const bool changed = Segmented("hud", index, {
@@ -303,20 +303,20 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
 
         // Notes about the shared rows: pending switches and runtime limits.
         if (!editIntel && intel && view.nvidiaSwitchBlocked)
-            ImGui::TextColored(kOchre, TR("Switching to NVIDIA needs a restart this session: NR started before "
+            ImGui::TextColored(kOchre, "%s", TR("Switching to NVIDIA needs a restart this session: NR started before "
                                          "NVIDIA's runtime. Save as default, then restart Skyrim."));
         else if (view.requestedProvider != view.provider)
-            ImGui::TextDisabled(TR("Provider change pending; waiting for world inputs..."));
+            ImGui::TextDisabled("%s", TR("Provider change pending; waiting for world inputs..."));
         if (view.frameGenerationRequested != view.hostFrameGenerationEnabled)
-            ImGui::TextDisabled(TR("Waiting for the current GPU frame to retire..."));
+            ImGui::TextDisabled("%s", TR("Waiting for the current GPU frame to retire..."));
         if (!editIntel && request.dynamic && nvidiaReported && !supportsDynamic)
         {
-            ImGui::TextColored(kOchre, TR("A saved dynamic request is unsupported by this NVIDIA runtime."));
+            ImGui::TextColored(kOchre, "%s", TR("A saved dynamic request is unsupported by this NVIDIA runtime."));
             ImGui::SameLine();
             if (ImGui::SmallButton(TR("Use fixed multiplier"))) { request.dynamic = false; }
         }
         if (!editIntel && nvidiaReported && sourceState.generationLimited)
-            ImGui::TextColored(kOchre, TR("The runtime uses its supported count; your requested multiplier is kept."));
+            ImGui::TextColored(kOchre, "%s", TR("The runtime uses its supported count; your requested multiplier is kept."));
         if (!editIntel)
         {
             const auto& lite = view.liteBlending;
@@ -331,7 +331,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
         }
         else if (draft.preset == SD::DlssgPreset::C)
         {
-            ImGui::TextDisabled(TR("Lite is NVIDIA only; XeFG runs it as Interpolate."));
+            ImGui::TextDisabled("%s", TR("Lite is NVIDIA only; XeFG runs it as Interpolate."));
         }
 
         // XeFG's own settings, together at the bottom.
@@ -368,7 +368,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                          "it to sanity-check pacing. Apply to compare live."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled(TR("send to XeFG"));
+                ImGui::TextDisabled("%s", TR("send to XeFG"));
                 return changed;
             });
             SettingRow(TR("Tensor model"), nullptr, false, !editIntel, [&] {
@@ -381,7 +381,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                          "XeFG uses its normal path. Apply switches it, with a short pause while XeFG restarts."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled(TR("experimental"));
+                ImGui::TextDisabled("%s", TR("experimental"));
                 return changed;
             });
             const auto& pacing = view.xefg.pacing;
@@ -398,7 +398,7 @@ void OverlayUI::DrawFrameGenerationPanel(float tabCardHeight, const FrameView& v
                          "not saved. The driver must accept metering for it to become active."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("session only%s", meteringReady
+                ImGui::TextDisabled(TR("session only%s"), meteringReady
                     ? (pacing.flags & TheosRenderPipeline::XeFGPacing::Unavailable ? " | driver unavailable"
                        : pacing.flags & TheosRenderPipeline::XeFGPacing::Metered ? " | driver active" : " | driver idle") : "");
                 // Live and session-only: not part of the settings draft.

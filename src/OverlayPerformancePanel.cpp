@@ -43,7 +43,7 @@ void OverlayUI::DrawFrameMeasurements(const FrameView& view, float columnHeight)
     if (ImGui::BeginTable("##rates", 2, ImGuiTableFlags_SizingStretchSame))
     {
         ImGui::TableNextColumn();
-        ImGui::TextDisabled(TR("Raster FPS"));
+        ImGui::TextDisabled("%s", TR("Raster FPS"));
         ImGui::Text("%.1f", renderedFps);
         ImGui::TableNextColumn();
         ImGui::TextDisabled("%s", view.outputLabel);
@@ -70,7 +70,8 @@ namespace
 std::string MenuMilliseconds(float value, bool available)
 {
     auto text = TheosRenderPipeline::Telemetry::Milliseconds(value, available);
-    return text == TR("unavailable") ? text : text + " ms";
+    // The shared formatter is English (logs use it too); translate for display.
+    return text == "unavailable" ? std::string(TR("unavailable")) : text + " ms";
 }
 }
 
@@ -106,7 +107,7 @@ void OverlayUI::DrawStageMeasurements(const FrameView& view, SettingsPage page)
     }
     if (view.timingEnabled && view.timingQuarantined)
     {
-        ImGui::TextDisabled(TR("GPU timings unavailable (query failure)"));
+        ImGui::TextDisabled("%s", TR("GPU timings unavailable (query failure)"));
         DrawSettingsHelp(TR("GPU timing queries failed. Restarting the game retries timings; rendering continues."));
         return;
     }
@@ -143,7 +144,7 @@ void OverlayUI::DrawStageMeasurements(const FrameView& view, SettingsPage page)
         const auto& g = timings.d3d11Frame;
         if (c.samples == 0)
         {
-            ImGui::TextDisabled(TR("Collecting percentile window"));
+            ImGui::TextDisabled("%s", TR("Collecting percentile window"));
             return;
         }
         ImGui::TextWrapped(TR("Raster ms: p50 %.2f | p95 %.2f | p99 %.2f"), c.p50Ms, c.p95Ms, c.p99Ms);

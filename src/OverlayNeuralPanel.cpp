@@ -163,7 +163,7 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(TR("Objects"));
     ImGui::SameLine();
-    ImGui::TextDisabled(TR("experimental"));
+    ImGui::TextDisabled("%s", TR("experimental"));
     DrawSettingsHelp(locked ? lockedReason
         : "Tick a group to override it in this pass. Strength blends this pass's result with its input: 0 keeps "
           "the input, 1 the full result, so Pass 2 at 0 keeps Pass 1's work. Tone and structure replace this "
@@ -243,7 +243,7 @@ void DrawPassObjects(const OverlayUI::FrameView& view, TheosRenderPipeline::Neur
     ImGui::TableNextColumn();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Px(14.0f));
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled(TR("Mask preview"));
+    ImGui::TextDisabled("%s", TR("Mask preview"));
     ImGui::TableNextColumn();
     ImGui::BeginDisabled(!masks.previewGroups);
     ImGui::Checkbox(TR("Classes only"), &masks.previewClassesOnly);
@@ -616,7 +616,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextColored(kOchre, "!");
-                if (ImGui::IsItemHovered()) { ImGui::SetTooltip(TR("Changing the runtime restarts NR briefly.")); }
+                if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("Changing the runtime restarts NR briefly.")); }
             }
             return changed;
         });
@@ -631,27 +631,27 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         });
         {
             // Live, unlike the other ! rows: the mark carries the image caveat.
-            const RestartHelpScope caveat("The model runs on alternate frames. NR's change is carried to the frames "
+            const RestartHelpScope caveat(TR("The model runs on alternate frames. NR's change is carried to the frames "
                                           "between using motion vectors and depth, which roughly halves NR's GPU cost. "
                                           "Expect some ghosting in fast motion and on newly revealed areas. Best "
-                                          "with 2x frame generation.");
-            SettingRow("Model rate", "ModelRate", true, unavailable, [&] {
+                                          "with 2x frame generation."));
+            SettingRow(TR("Model rate"), "ModelRate", true, unavailable, [&] {
                 using NR::ModelRate;
                 int rate = reconstruction.modelRate == ModelRate::EveryOtherFrame ? 1 : 0;
                 const bool changed = Segmented("modelRate", rate, {
-                    {"Every frame", true, "NR's model runs on every frame."},
-                    {"Every other frame", true, "The model runs on alternate frames; the frames between reuse its change, "
+                    {TR("Every frame"), true, TR("NR's model runs on every frame.")},
+                    {TR("Every other frame"), true, TR("The model runs on alternate frames; the frames between reuse its change, "
                                                 "moved with the scene. Applies to every pass. Freeze frame runs it on "
-                                                "every frame."}});
+                                                "every frame.")}});
                 if (changed) { reconstruction.modelRate = rate == 1 ? ModelRate::EveryOtherFrame : ModelRate::EveryFrame; }
-                DrawSettingsHelp("How often NR's model runs, for every pass. Apply switches it live.");
+                DrawSettingsHelp(TR("How often NR's model runs, for every pass. Apply switches it live."));
                 // Alternating cost makes frame times uneven; Steady evens them.
                 if (reconstruction.modelRate == ModelRate::EveryOtherFrame &&
                     draft.frameLimit != TheosRenderPipeline::SourceDLSSG::FrameLimitMode::Steady)
                 {
-                    ImGui::TextDisabled("Steady frame limit recommended (Frame generation tab)");
-                    DrawSettingsHelp("Frames with and without the model take different times. Frame generation > "
-                                     "Frame limit > Steady evens them out.");
+                    ImGui::TextDisabled("%s", TR("Steady frame limit recommended (Frame generation tab)"));
+                    DrawSettingsHelp(TR("Frames with and without the model take different times. Frame generation > "
+                                     "Frame limit > Steady evens them out."));
                 }
                 // Each real frame starts its generated frames when it finishes, so the
                 // alternation shows between them, more as they get closer together.
@@ -659,9 +659,9 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                                                ? draft.xefg.generatedFrames : draft.generation.generatedFrames;
                 if (reconstruction.modelRate == ModelRate::EveryOtherFrame && view.frameGenerationRequested && generated > 1)
                 {
-                    ImGui::TextDisabled("Best with 2x frame generation");
-                    DrawSettingsHelp("At 3x and above, the generated frames between real ones can look unevenly paced: "
-                                     "frames with and without the model finish at different times.");
+                    ImGui::TextDisabled("%s", TR("Best with 2x frame generation"));
+                    DrawSettingsHelp(TR("At 3x and above, the generated frames between real ones can look unevenly paced: "
+                                     "frames with and without the model finish at different times."));
                 }
                 return changed;
             });
@@ -904,23 +904,23 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                 {TR("Small"), !legacy, legacy ? "310.9.16 only. 310.8 always runs the old model."
                                           : "310.9.16's small FP8 model: faster and softer. NVIDIA's "
                                             "CC_SMALL_FP8; Preset B in OptiScaler forks."},
-                {TR("Old"), true, "The model 310.8 runs, also included in 310.9.16. NVIDIA's CC_SILVER_AARDWOLD; "
-                              "Preset A in OptiScaler forks."}});
+                {TR("Old"), true, TR("The model 310.8 runs, also included in 310.9.16. NVIDIA's CC_SILVER_AARDWOLD; "
+                              "Preset A in OptiScaler forks.")}});
             if (changed) { network = index; }
             DrawSettingsHelp(TR("NR network, separate from the DLSS model preset."));
             return changed;
         });
         SettingRowFor(TR("Peripheral compression"), {"PeripheralCompression", "CombinedPreparation"}, true, unavailable, [&] {
             bool changed = ImGui::Checkbox("##peripheral", &reconstruction.peripheralCompression);
-            DrawSettingsHelp("Peripheral compression preserves sampling density across the central 80% of each axis and "
+            DrawSettingsHelp(TR("Peripheral compression preserves sampling density across the central 80% of each axis and "
                              "compresses the edges. Uses about 19% fewer model pixels at the same input resolution. Pass 1 "
                              "compresses the image once and the later passes work on it, so it applies to every pass. "
-                             "Inspect edge quality when moving.");
+                             "Inspect edge quality when moving."));
             ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
             changed |= ImGui::Checkbox(TR("Combined preparation"), &reconstruction.fusedPreparation);
-            DrawSettingsHelp("Combines colour encoding with downsampling where needed, and depth/motion packing with "
+            DrawSettingsHelp(TR("Combines colour encoding with downsampling where needed, and depth/motion packing with "
                              "peripheral compression. Some configurations have no passes to combine. Applies to every "
-                             "pass.");
+                             "pass."));
             return changed;
         });
         // UI correction applies only after upscaling without Community Shaders.
@@ -1044,24 +1044,24 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
         {
             SettingRow(TR("HDR input"), "InputHDR", true, ratioOff, [&] {
                 const bool changed = ImGui::Checkbox("##hdr", &reconstruction.colorIsHDR);
-                DrawSettingsHelp("Input colour is linear HDR. Used by Ratio reconstruction; it does not change "
-                                 "the display HDR mode.");
+                DrawSettingsHelp(TR("Input colour is linear HDR. Used by Ratio reconstruction; it does not change "
+                                 "the display HDR mode."));
                 ImGui::SameLine();
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled(TR("linear HDR"));
+                ImGui::TextDisabled("%s", TR("linear HDR"));
                 return changed;
             });
             // How linear HDR is scaled for NR's view. Ratio's result is applied to
             // the untouched frame, so neither choice changes its brightness.
             const bool exposureOff = ratioOff || !reconstruction.colorIsHDR;
-            SettingRow("Exposure", "AdaptiveExposure", false, exposureOff, [&] {
+            SettingRow(TR("Exposure"), "AdaptiveExposure", false, exposureOff, [&] {
                 int mode = reconstruction.adaptiveExposure ? 1 : 0;
                 bool changed = Segmented("exposure", mode, {
-                    {"Fixed", true, TR("Divides linear HDR input by the white point before NR sees it.")},
-                    {"Adaptive", true, "TRP measures the frame's average brightness and adapts over about a second, so "
+                    {TR("Fixed"), true, TR("Divides linear HDR input by the white point before NR sees it.")},
+                    {TR("Adaptive"), true, TR("TRP measures the frame's average brightness and adapts over about a second, so "
                                        "NR sees interiors and exteriors at a similar brightness. Only NR's view "
                                        "changes; its effect is carried back onto the untouched frame. NR may relight "
-                                       "objects as the view's brightness changes; Fixed keeps its view steady."}});
+                                       "objects as the view's brightness changes; Fixed keeps its view steady.")}});
                 if (changed) { reconstruction.adaptiveExposure = mode == 1; }
                 DrawSettingsHelp(exposureOff ? TR("Used by Ratio reconstruction with linear HDR input.")
                                              : TR("How linear HDR input is scaled for NR's view."));
@@ -1070,7 +1070,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             // The value row follows the choice: a fixed white point or an EV bias.
             if (reconstruction.adaptiveExposure)
             {
-                SettingRow("Bias", "ExposureBias", false, exposureOff, [&] {
+                SettingRow(TR("Bias"), "ExposureBias", false, exposureOff, [&] {
                     const bool changed = ImGui::SliderFloat("##bias", &reconstruction.exposureBias, -2, 2, "%+.1f EV");
                     DrawSettingsHelp(exposureOff ? TR("Used by Ratio reconstruction with linear HDR input.")
                                                  : TR("Brightens NR's view when positive, darkens it when negative."));
@@ -1096,7 +1096,7 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                                              "the display HDR mode.");
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled(TR("white point"));
+            ImGui::TextDisabled("%s", TR("white point"));
             ImGui::SameLine();
             ImGui::SetNextItemWidth(-FLT_MIN);
             changed |= ImGui::InputFloat("##white", &reconstruction.whitePoint, 0, 0, "%.4f");
@@ -1195,7 +1195,7 @@ void DrawSourceNeuralControls(const OverlayUI::FrameView& view, TheosRenderPipel
 
 void OverlayUI::DrawNeuralRenderingPanel(float height, const FrameView& view)
 {
-    if (!ImGui::BeginTabItem(TR("Neural Rendering"), nullptr,
+    if (!ImGui::BeginTabItem(TRID("Neural Rendering").c_str(), nullptr,
                              requestedPage == SettingsPage::NeuralRendering ? ImGuiTabItemFlags_SetSelected : 0))
         return;
     if (BeginSettingsColumns("neural", height, view))

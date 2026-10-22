@@ -61,8 +61,8 @@ void OverlayUI::DrawLabImageDetails(const FrameView& view)
                                : route.activeLastFrame ? TR("Active")
                                : route.requested       ? TR("Armed")
                                                        : TR("Off"),
-                               !route.activeLastFrame && route.reason == TR("active") ? TR("not used this frame")
-                                                                                : route.reason.c_str());
+                               !route.activeLastFrame && route.reason == "active" ? TR("not used this frame")
+                                                                                : TR(route.reason.c_str()));
             ImGui::TextWrapped(TR("Frames %llu | fallbacks %llu"), static_cast<unsigned long long>(route.activeFrames),
                                static_cast<unsigned long long>(route.fallbackCount));
         }
@@ -78,14 +78,14 @@ void OverlayUI::DrawLabXeFGControls()
     changed |= ImGui::Checkbox(TR("Tag generated frames (Lab)"), &tagGenerated);
     if (changed)
         sourceBackend.ConfigureXeFGDebugView(onlyGenerated, tagGenerated);
-    DrawSettingsHelp("Intel debug views, not saved. Only generated frames hides every real frame; "
-                     "tagging marks generated frames with corner boxes.");
+    DrawSettingsHelp(TR("Intel debug views, not saved. Only generated frames hides every real frame; "
+                     "tagging marks generated frames with corner boxes."));
     bool gpuInputWait = sourceBackend.XeFGGpuInputWait();
     if (ImGui::Checkbox(TR("Input reuse: GPU fence wait (Lab)"), &gpuInputWait))
         sourceBackend.ConfigureXeFGGpuInputWait(gpuInputWait);
-    DrawSettingsHelp("A/B for the post-Present wait, not saved. Off drains every host lane on the CPU; "
+    DrawSettingsHelp(TR("A/B for the post-Present wait, not saved. Off drains every host lane on the CPU; "
                      "on queues a GPU wait for Intel's input copies. The log reports both waits every 600 frames. "
-                     "With heavy NR, on can make rendered frames alternate long and short.");
+                     "With heavy NR, on can make rendered frames alternate long and short."));
 }
 
 void OverlayUI::DrawLabGenerationControls(const FrameView& view)
@@ -97,29 +97,29 @@ void OverlayUI::DrawLabGenerationControls(const FrameView& view)
         bool onlyGenerated = sourceBackend.XeFGOnlyGenerated();
         if (ImGui::Checkbox(TR("Show only generated frames (Lab)"), &onlyGenerated))
             sourceBackend.ConfigureXeFGDebugView(onlyGenerated, sourceBackend.XeFGTagGenerated());
-        DrawSettingsHelp("NVIDIA debug view, not saved. Hides every rendered frame, so an artifact still visible here "
-                         "comes from frame generation; one that disappears comes from rendering, the upscaler or NR.");
+        DrawSettingsHelp(TR("NVIDIA debug view, not saved. Hides every rendered frame, so an artifact still visible here "
+                         "comes from frame generation; one that disappears comes from rendering, the upscaler or NR."));
         bool overlap = sourceBackend.NvidiaOverlapNextFrame();
         if (ImGui::Checkbox(TR("Overlap the next frame with generation (Lab)"), &overlap))
             sourceBackend.ConfigureNvidiaOverlapNextFrame(overlap);
-        DrawSettingsHelp("A/B, not saved. Off: the game's next frame waits on the GPU until frame generation has read this "
+        DrawSettingsHelp(TR("A/B, not saved. Off: the game's next frame waits on the GPU until frame generation has read this "
                          "frame's inputs. On: it waits only where TRP first writes them, so the world can render meanwhile. "
-                         "Compare FPS and the frame generation time.");
+                         "Compare FPS and the frame generation time."));
     }
     auto& repair = TheosRenderPipeline::FGMotionRepair::Get();
     bool repairMotion = repair.Enabled();
     if (ImGui::Checkbox(TR("Repair missing motion (Lab)"), &repairMotion))
         repair.Enable(repairMotion);
-    DrawSettingsHelp("On by default; turning it off lasts until the game restarts. Underwater, Skyrim writes no real motion, "
+    DrawSettingsHelp(TR("On by default; turning it off lasts until the game restarts. Underwater, Skyrim writes no real motion, "
                      "and generated frames show an offset copy. When nearly the whole frame disagrees with the camera, "
-                     "NR and generation get the camera's motion instead.");
+                     "NR and generation get the camera's motion instead."));
     auto& inputs = TheosRenderPipeline::FGInputDebugView::Get();
     bool showInputs = inputs.Enabled();
     if (ImGui::Checkbox(TR("Show frame generation inputs (Lab)"), &showInputs))
         inputs.Enable(showInputs);
-    DrawSettingsHelp("Not saved. Shows what generation receives, after any repair. Left: motion vectors (grey = none). Middle: depth (dark = near). "
+    DrawSettingsHelp(TR("Not saved. Shows what generation receives, after any repair. Left: motion vectors (grey = none). Middle: depth (dark = near). "
                      "Right: where the motion vectors disagree with the camera's own motion at that depth "
-                     "(black = agree, red = 8+ pixels off). Static scenery should stay black while the camera moves.");
+                     "(black = agree, red = 8+ pixels off). Static scenery should stay black while the camera moves."));
     if (showInputs)
     {
         if (auto* strip = inputs.Strip())
@@ -160,7 +160,7 @@ void OverlayUI::DrawLabGenerationDetails(const FrameView& view)
     }
     else if (!intel)
     {
-        ImGui::TextDisabled(TR("DLSS-G state: waiting"));
+        ImGui::TextDisabled("%s", TR("DLSS-G state: waiting"));
     }
     if (intel)
     {
@@ -184,7 +184,7 @@ void OverlayUI::DrawLabMenuDiagnostics()
 {
     auto* upscaler = RenderPipeline::GetSingleton();
     ImGui::Spacing();
-    ImGui::TextColored(kRust, TR("These controls deliberately break or instrument the normal render path."));
+    ImGui::TextColored(kRust, "%s", TR("These controls deliberately break or instrument the normal render path."));
     if (ImGui::Checkbox(TR("Log menu/Console metrics (debug)"), &upscaler->mLogMenuMetrics))
     {
         upscaler->mConsoleDiagnosticsActive.store(upscaler->mLogMenuMetrics &&

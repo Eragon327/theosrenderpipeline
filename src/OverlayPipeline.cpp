@@ -66,8 +66,8 @@ SettingsPage DrawPipelineDiagram(const PipelineDiagram& diagram)
     ImGui::Dummy(ImVec2(uiWidth, headerHeight));
     if (ImGui::IsItemHovered())
     {
-        ImGui::SetTooltip("Native-resolution menus and HUD join the processed scene before frame generation.\nThe "
-                          "diagram shows applied settings; controls below may contain unapplied edits.");
+        ImGui::SetTooltip("%s", TR("Native-resolution menus and HUD join the processed scene before frame generation.\nThe "
+                          "diagram shows applied settings; controls below may contain unapplied edits."));
     }
 
     const float branchX =

@@ -175,3 +175,7 @@ namespace TheosRenderPipeline::Localization
 #define TRC(text, context) ::TheosRenderPipeline::Localization::Translate(text, context)
 #define TRF(format, ...) ::TheosRenderPipeline::Localization::Format(format, __VA_ARGS__)
 #define TRFC(context, format, ...) ::TheosRenderPipeline::Localization::FormatContext(context, format, __VA_ARGS__)
+// A translated label whose ImGui ID stays the English text ("<translation>###<English>"),
+// for widgets that keep state by ID (tabs, collapsing headers), so switching
+// language keeps the selected tab and the open sections. Use .c_str() in the call.
+#define TRID(text) (std::string(::TheosRenderPipeline::Localization::Translate(text)) + "###" text)

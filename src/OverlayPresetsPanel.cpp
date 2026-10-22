@@ -291,7 +291,7 @@ void OverlayUI::DrawPresetList(const FrameView& view)
     if (ImGui::BeginPopup("presetTiming")) {
         ImGui::PushItemWidth(Px(220.0f));
         ImGui::SliderFloat(TR("Transition smoothing (seconds)"), &settings.smoothingSeconds, 0, 10, "%.1f");
-        ImGui::TextDisabled(TR("Softens changes between overrides. Zero follows weather and time directly."));
+        ImGui::TextDisabled("%s", TR("Softens changes between overrides. Zero follows weather and time directly."));
         ImGui::Spacing();
         ImGui::TextUnformatted(TR("Time of day starts (game hours)"));
         for (std::size_t i = 0; i < Appearance::Times.size(); ++i) { ImGui::InputFloat(Appearance::Times[i], &settings.hours[i], .25f, 1, "%.2f"); }
@@ -309,7 +309,7 @@ void OverlayUI::DrawPresetList(const FrameView& view)
         }
         Tooltip("Uses ENB's Night, Sunrise, Day and Sunset markers, plus Sunrise minus DawnDuration and Sunset plus DuskDuration. "
             "It does not reproduce ENB's internal phase weights or change ENB settings.");
-        ImGui::TextDisabled(TR("Times must increase from Night to Dusk. Overrides blend between neighbouring times."));
+        ImGui::TextDisabled("%s", TR("Times must increase from Night to Dusk. Overrides blend between neighbouring times."));
         ImGui::EndPopup();
     }
     settings.enabled = Appearance::UsesPresets(settings);
@@ -341,7 +341,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
         const auto changes = profile.changes.size();
         flow.Text(changes ? TRF("{} change{}", changes, changes == 1 ? "" : "s").c_str() : TR("No changes yet"));
         Tooltip(TR("Changed settings are amber. Everything else follows Base, including later Base edits."));
-        flow.Checkbox("Use", &profile.enabled);
+        flow.Checkbox(TR("Use"), &profile.enabled);
         Tooltip(TR("Unticked overrides keep their settings but are ignored."));
         ImGui::BeginDisabled(profile.changes.empty());
         if (flow.Button(TR("Reset all to Base"))) { profile.changes.clear(); }
@@ -417,7 +417,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
             } else {
                 Tooltip(TR("Outside, adds the weather you are in."));
             }
-            if (flow.Button("Add...")) { openPicker = true; }
+            if (flow.Button(TR("Add..."))) { openPicker = true; }
             Tooltip(TR("Pick exact weathers, such as fog or ash, from every weather the game has loaded."));
         }
 
@@ -503,7 +503,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
                 if (ImGui::Checkbox(entry.label.c_str(), &checked)) {
                     if (checked) { presetPickerSelection.push_back(entry.weather.record); } else { presetPickerSelection.erase(selected); }
                 }
-                if (Appearance::HasWeather(preset, entry.weather.record)) { ImGui::SameLine(); ImGui::TextDisabled(TR("(in this override)")); }
+                if (Appearance::HasWeather(preset, entry.weather.record)) { ImGui::SameLine(); ImGui::TextDisabled("%s", TR("(in this override)")); }
                 else if (const auto* owner = Appearance::WeatherOwner(claims, entry.weather.record)) {
                     ImGui::SameLine();
                     ImGui::TextDisabled(TR("-> %s"), ShownName(*owner));
@@ -527,7 +527,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
         }
         ImGui::EndDisabled();
         ImGui::SameLine(); if (ImGui::Button(TR("Close"))) { ImGui::CloseCurrentPopup(); }
-        ImGui::TextDisabled(TR("A weather in several overrides uses the highest one in the list. Names come from the game or an editor-ID plugin."));
+        ImGui::TextDisabled("%s", TR("A weather in several overrides uses the highest one in the list. Names come from the game or an editor-ID plugin."));
         ImGui::EndPopup();
     }
 
@@ -593,7 +593,7 @@ void OverlayUI::DrawPresetEditor(const FrameView& view,
     if (ImGui::Button(TR("Delete override..."))) { ImGui::OpenPopup("deletePreset"); }
     if (ImGui::BeginPopup("deletePreset")) {
         ImGui::Text(TR("Delete \"%s\"?"), ShownName(preset));
-        ImGui::TextDisabled("Where it applied, Base or another override is used.\nSave as default deletes its file; Discard undoes this.");
+        ImGui::TextDisabled("%s", TR("Where it applied, Base or another override is used.\nSave as default deletes its file; Discard undoes this."));
         if (ImGui::Button(TR("Delete"))) { remove = true; ImGui::CloseCurrentPopup(); }
         ImGui::SameLine();
         if (ImGui::Button(TR("Cancel"))) { ImGui::CloseCurrentPopup(); }
@@ -659,6 +659,6 @@ void OverlayUI::DrawBaseSettings(const FrameView& view, const std::function<void
 void OverlayUI::DrawPresetSharpeningStatus(const FrameView& view)
 {
     const auto& state = view.appearance;
-    if (!state.result.active || state.result.sharpnessSource == TR("Base")) { return; }
+    if (!state.result.active || state.result.sharpnessSource == "Base") { return; }
     ImGui::TextDisabled(TR("Now %.2f from the \"%s\" weather override."), state.result.setup.sharpness, state.result.sharpnessSource.c_str());
 }

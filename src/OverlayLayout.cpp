@@ -26,7 +26,7 @@ ColumnSizes DrawColumnSplitter(float width, float height, float& leftFraction, f
     }
     if (ImGui::IsItemHovered())
     {
-        ImGui::SetTooltip(TR("Drag to resize columns. Save as default remembers the layout."));
+        ImGui::SetTooltip("%s", TR("Drag to resize columns. Save as default remembers the layout."));
     }
     return columns;
 }
