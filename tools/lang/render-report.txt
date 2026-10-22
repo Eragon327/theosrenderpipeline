@@ -1,2 +1,0 @@
-HEAD-only strings with no dictionary entry: 0
-reworded translations (cleared by review): 22

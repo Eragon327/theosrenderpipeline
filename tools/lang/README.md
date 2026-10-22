@@ -36,6 +36,9 @@ and calls whose name says the string is not shown to the player - `logger::`,
 key are written to `wrap-missing.json` for a translator. Running it twice is
 safe: the second run reports every hit as already wrapped.
 
+**Wrap only the menu sources (`src/Overlay*`).** Backend status text, settings keys and log
+lines stay English; the menu translates backend text where it shows it.
+
 **Never wrap a string that is read back.** INI section names and keys
 (`ini.GetValue("Settings", ...)`, `GetSection("Preset")`, `SetLongValue(...)`),
 weather profile names, file names, enum spellings and anything compared against
