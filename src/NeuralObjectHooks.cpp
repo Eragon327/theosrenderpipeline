@@ -1,5 +1,4 @@
 #include <PCH.h>
-#include "Localization.h"
 #include "NeuralObjectHooks.h"
 #include "HookDetour.h"
 #include "FrameGen/NvidiaHost.h"
@@ -20,7 +19,7 @@ namespace TheosRenderPipeline::NeuralObjects
         thread_local Group currentGroup{};
         NeuralRendering::ObjectCapture capture;
         std::array<bool,4> loggedGroups{};
-        std::atomic<const char*> status{TR("Object capture is unavailable on this Skyrim version")};
+        std::atomic<const char*> status{"Object capture is unavailable on this Skyrim version"};
         // Set when installing was refused, so the rows grey out instead of retrying.
         std::atomic<bool> declined{};
         bool SupportedVersion() { return REL::Module::get().version() == REL::Version{1,6,1170,0}; }
@@ -106,7 +105,7 @@ namespace TheosRenderPipeline::NeuralObjects
         MODULEINFO image{};
         if (!K32GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(nullptr), &image, sizeof(image)) ||
             !HookSafety::Entry(site, prefix, REL::Module::get().base(), image.SizeOfImage)) {
-            status.store(TR("Object capture hook conflicts with another patch; normal NR retained"));
+            status.store("Object capture hook conflicts with another patch; normal NR retained");
             declined.store(true);
             logger::warn("[NR Objects] draw-helper entry is neither the original code nor another plugin's jump; capture unavailable");
             return;
@@ -122,7 +121,7 @@ namespace TheosRenderPipeline::NeuralObjects
                 path[0] ? std::filesystem::path(path.data()).filename().string() : "another plugin");
         }
         original = reinterpret_cast<DrawPass>(HookSafety::InstallEntryDetour(site, reinterpret_cast<std::uintptr_t>(&Pass)));
-        status.store(original ? TR("Experimental opaque-object capture ready") : TR("Object capture hook unavailable; normal NR retained"));
+        status.store(original ? "Experimental opaque-object capture ready" : "Object capture hook unavailable; normal NR retained");
         declined.store(!original);
     }
     void Configure(bool value)
@@ -174,7 +173,7 @@ namespace TheosRenderPipeline::NeuralObjects
             logger::info("[NR Objects] captured opaque draw group={} frame={}", NeuralRendering::kObjectGroups[group], host->PresentCount());
         }
         if (FAILED(hr)) {
-            enabled.store(false); status.store(TR("Object capture failed; normal NR retained until Apply"));
+            enabled.store(false); status.store("Object capture failed; normal NR retained until Apply");
             logger::warn("[NR Objects] capture failed hr=0x{:08X}; normal NR retained", static_cast<unsigned>(hr));
         }
     }
@@ -185,7 +184,7 @@ namespace TheosRenderPipeline::NeuralObjects
     const char* Status()
     {
         // The hook installs only when a group is first switched on.
-        if (!original && !declined.load() && SupportedVersion()) { return TR("Object capture starts when you switch a group on"); }
+        if (!original && !declined.load() && SupportedVersion()) { return "Object capture starts when you switch a group on"; }
         return status.load();
     }
     bool Available() { return original != nullptr || (SupportedVersion() && !declined.load()); }

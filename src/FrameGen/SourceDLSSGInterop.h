@@ -1,7 +1,6 @@
 #pragma once
 
 #include <d3d11_4.h>
-#include "Localization.h"
 #include <d3d12.h>
 #include <wrl/client.h>
 #include "D3D11FrameCopy.h"
@@ -24,7 +23,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		case Work::Upscaling: return "upscaling";
 		case Work::FrameGeneration: return "frame-generation";
 		case Work::SwapChain: return "swapchain";
-		default: return TR("unavailable");
+		default: return "unavailable";
 		}
 	}
 	struct AllocatorWaitTiming
@@ -73,7 +72,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	// is the retirement wait's own record, not a second measurement of it.
 	struct InteropFailureDiagnostics
 	{
-		const char* stage{ TR("unavailable") };
+		const char* stage{ "unavailable" };
 		Work work{ Work::Count };
 		std::size_t slot{};
 		std::uint64_t fenceValue{};

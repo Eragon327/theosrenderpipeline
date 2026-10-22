@@ -1,5 +1,4 @@
 #include "NeuralRenderingRuntimeIdentity.h"
-#include "Localization.h"
 #include "NeuralRenderingRuntimeContract.h"
 
 #include <PCH.h>
@@ -21,17 +20,17 @@ namespace TheosRenderPipeline::NeuralRenderingRuntimeIdentity
 			DWORD ignored = 0;
 			const auto size = ::GetFileVersionInfoSizeW(a_path.c_str(), &ignored);
 			if (size == 0) {
-				return TR("unavailable");
+				return "unavailable";
 			}
 			std::vector<std::byte> data(size);
 			if (!::GetFileVersionInfoW(a_path.c_str(), 0, size, data.data())) {
-				return TR("unavailable");
+				return "unavailable";
 			}
 			VS_FIXEDFILEINFO* info = nullptr;
 			UINT infoSize = 0;
 			if (!::VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&info), &infoSize) ||
 				!info || infoSize < sizeof(VS_FIXEDFILEINFO)) {
-				return TR("unavailable");
+				return "unavailable";
 			}
 			return std::format(
 				"{}.{}.{}.{}",

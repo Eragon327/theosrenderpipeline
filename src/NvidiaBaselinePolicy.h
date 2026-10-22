@@ -1,7 +1,6 @@
 #pragma once
 
 #include "UpscaleType.h"
-#include "Localization.h"
 #include <filesystem>
 #include <string_view>
 
@@ -19,7 +18,7 @@ namespace TheosRenderPipeline
     template <class Ini> const char* ValidateNvidiaBaseline(const Ini& ini)
     {
         const auto mode = ini.GetLongValue("Settings", "UpscaleType", DLSS);
-        if (!ini.GetBoolValue(TR("Settings"), "EnableUpscaler", true) || (mode != DLSS && mode != DLAA && mode != XeSS)) {
+        if (!ini.GetBoolValue("Settings", "EnableUpscaler", true) || (mode != DLSS && mode != DLAA && mode != XeSS)) {
             return "This renderer requires DLSS, DLAA or XeSS. Use the Frame generation checkbox to turn interpolation off.";
         }
         if (ini.GetBoolValue("Experimental", "PureDarkFullDelegation", false) ||

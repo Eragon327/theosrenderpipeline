@@ -1,6 +1,5 @@
 #pragma once
 #include "../../extern/dlssg-turing/src/SourceDLSSGMFGContract.h"
-#include "Localization.h"
 #include "../../extern/dlssg-turing/extern/RTX40MFG/midpoint_fix.h"
 #include <Windows.h>
 #include <filesystem>
@@ -19,7 +18,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		midpoint_fix::AdapterKind adapter{ midpoint_fix::AdapterKind::Unavailable };
 		bool failed{}, unsafeMemory{};
 		std::uint32_t attempts{}, temporalFailure{};
-		const char* status{ TR("waiting for MFG startup selection") };
+		const char* status{ "waiting for MFG startup selection" };
 		bool SelectRoute(midpoint_fix::AdapterKind observed)
 		{
 			adapter = observed;

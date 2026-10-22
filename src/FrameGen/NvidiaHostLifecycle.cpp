@@ -1,5 +1,4 @@
 #include "../NeuralObjectHooks.h"
-#include "Localization.h"
 #include "DLSSBackend.h"
 #include "RenderPipeline.h"
 #include "NativeInput.h"
@@ -59,7 +58,7 @@ HRESULT NvidiaHost::FailLifecycle(HRESULT result, const char* operation)
     sourceUpscalerInitializationPending_ = false;
     SetRuntimeEnabled(false);
     TheosRenderPipeline::NativeInput::Publish(0, 0);
-    status_ = TRF("{} failed (0x{:08X}); rendering stopped, restart required. {}",
+    status_ = std::format("{} failed (0x{:08X}); rendering stopped, restart required. {}",
         operation, static_cast<std::uint32_t>(failure), detail);
     logger::critical("[NvidiaHost] {}", status_);
     // Keep ownership until the normal teardown proves retirement. In particular,
@@ -225,7 +224,7 @@ void NvidiaHost::OnPresentCompleted(HRESULT a_result)
         logger::info("[NvidiaHost] 600-Present host warm-up complete "
                      "result=0x{:08X}; waiting for next valid frame inputs",
                      static_cast<std::uint32_t>(a_result));
-        status_ = TR("NVIDIA host warm-up complete; waiting for valid frame inputs");
+        status_ = "NVIDIA host warm-up complete; waiting for valid frame inputs";
     }
     else if (warmupPresentsRemaining_ == 599 || warmupPresentsRemaining_ % 120 == 0)
     {
@@ -239,7 +238,7 @@ void NvidiaHost::ArmFrameGenerationWarmup()
     static constexpr std::int32_t kHostWarmupPresents = 600;
     warmupPresentsRemaining_ = kHostWarmupPresents;
     SetRuntimeEnabled(false);
-    status_ = TRF("NVIDIA source ready; host warm-up {} Presents remaining", warmupPresentsRemaining_);
+    status_ = std::format("NVIDIA source ready; host warm-up {} Presents remaining", warmupPresentsRemaining_);
     logger::info("[NvidiaHost] armed host warm-up presents={}", warmupPresentsRemaining_);
 }
 

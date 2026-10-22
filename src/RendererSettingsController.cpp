@@ -1,5 +1,4 @@
 #include <PCH.h>
-#include "Localization.h"
 #include "FrameGen/NeuralRuntimeKernels.h"
 #include "RendererSettingsController.h"
 #include "RenderPipeline.h"
@@ -84,7 +83,7 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
 {
     if (!settingsDraft.valid)
     {
-        return RejectSettingsAction(a_saveAsDefault, TR("Settings draft is unavailable; reopen the menu."),
+        return RejectSettingsAction(a_saveAsDefault, "Settings draft is unavailable; reopen the menu.",
             [](const std::string& message) { logger::error("{}", message); });
     }
     std::string actionMessage;
@@ -187,13 +186,13 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
     {
         const bool saved = upscaler_.SaveINI(layout);
         actionMessage =
-            saved ? TR("Saved to TheosRenderPipeline.User.ini; updates keep these settings.") :
-                    TR("Could not write TheosRenderPipeline.User.ini; settings remain active for this session.");
+            saved ? "Saved to TheosRenderPipeline.User.ini; updates keep these settings." :
+                    "Could not write TheosRenderPipeline.User.ini; settings remain active for this session.";
         actionMessageIsError = !saved;
     }
     else
     {
-        actionMessage = TR("Session settings applied.");
+        actionMessage = "Session settings applied.";
         actionMessageIsError = false;
     }
     logger::info("[Overlay] source settings applied save={} mode={} quality={} preset={} requestedMode={} requestedQuality={} requestedPreset={}", a_saveAsDefault,
@@ -205,24 +204,24 @@ RendererSettingsResult RendererSettingsController::Apply(const RendererSettingsD
         const auto& configuration = host_.SourceUpscalerSettings();
         if (configuration.Failed())
         {
-            actionMessage = TR("Source DLSS configuration failed; restart required.");
+            actionMessage = "Source DLSS configuration failed; restart required.";
             actionMessageIsError = true;
         }
         else if (configuration.NeedsRestart())
         {
             actionMessage =
                 a_saveAsDefault
-                    ? TR("Mode/quality saved for restart; live feature changes apply after this frame.")
-                    : TR("Mode/quality staged for restart; Save as default to keep them. Live feature changes are queued.");
+                    ? "Mode/quality saved for restart; live feature changes apply after this frame."
+                    : "Mode/quality staged for restart; Save as default to keep them. Live feature changes are queued.";
         }
         else if (configuration.NeedsLiveChange())
         {
-            actionMessage = a_saveAsDefault ? TR("Settings saved; feature update queued after this frame.")
-                                            : TR("Feature update queued after this frame; defaults unchanged.");
+            actionMessage = a_saveAsDefault ? "Settings saved; feature update queued after this frame."
+                                            : "Feature update queued after this frame; defaults unchanged.";
         }
         else
         {
-            actionMessage = a_saveAsDefault ? TR("Settings saved.") : TR("Session settings applied.");
+            actionMessage = a_saveAsDefault ? "Settings saved." : "Session settings applied.";
         }
     }
     if (!actionMessageIsError && settingsDraft.sourceDLSSG.neuralEnabled &&
@@ -236,7 +235,7 @@ RendererSettingsResult RendererSettingsController::SetNeuralRenderingEnabled(boo
 {
 #if defined(TRP_NO_NEURAL_RENDERING)
     (void)enabled;
-    return {TR("Neural Rendering is not included in this build."), true};
+    return {"Neural Rendering is not included in this build.", true};
 #else
     std::string actionMessage;
     bool actionMessageIsError = false;
@@ -251,25 +250,25 @@ RendererSettingsResult RendererSettingsController::SetNeuralRenderingEnabled(boo
         options.enabled = enabled;
         if (enabled && !TheosRenderPipeline::SourceDLSSG::NeuralRuntimePresent(options.runtimePath))
         {
-            return {TR("No NR runtime is available for this selection and GPU. Install the matching runtime package or select another runtime."),
+            return {"No NR runtime is available for this selection and GPU. Install the matching runtime package or select another runtime.",
                     true};
         }
         if (options.enabled && (!backend.Ready() ||
             !SupportsNeuralRenderingMode(upscaler_.mUpscaleType, CommunityShaders::Active()) ||
             (!CommunityShaders::Active() && !host_.DedicatedUITextureMode())))
         {
-            actionMessage = TR("Source NR requires DLSS or DLAA, dedicated UI Texture mode, and a configured NR runtime.");
+            actionMessage = "Source NR requires DLSS or DLAA, dedicated UI Texture mode, and a configured NR runtime.";
             actionMessageIsError = true;
             return {actionMessage, actionMessageIsError};
         }
         frameGen_.settings.sourceDLSSG.neuralEnabled = options.enabled;
         backend.ConfigureNeuralRendering(std::move(options));
         actionMessage =
-            !enabled ? TR("Neural Rendering disabled.") : TR("Source NR requested for the next eligible world frame.");
+            !enabled ? "Neural Rendering disabled." : "Source NR requested for the next eligible world frame.";
         actionMessageIsError = false;
         return {actionMessage, actionMessageIsError, true};
     }
-    actionMessage = TR("Source NVIDIA host is unavailable.");
+    actionMessage = "Source NVIDIA host is unavailable.";
     actionMessageIsError = true;
     return {actionMessage, actionMessageIsError};
 #endif

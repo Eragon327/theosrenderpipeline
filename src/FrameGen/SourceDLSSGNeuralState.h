@@ -1,7 +1,6 @@
 #pragma once
 
 #include "NeuralRenderingReconstruction.h"
-#include "Localization.h"
 #include "NeuralRenderingPassSettings.h"
 #include "NeuralCombatPolicy.h"
 #include "NeuralObjectMask.h"
@@ -83,7 +82,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		NeuralRendering::PassOverride passOverride{NeuralRendering::PassOverride::None};
 		std::uint64_t evaluations{}, resets{};
 		NeuralTelemetrySnapshot telemetry{};
-		std::string status{ TR("standard DLSS; source NR is off") };
+		std::string status{ "standard DLSS; source NR is off" };
 		// Set when a runtime known not to work on this GPU was replaced; kept for the session.
 		std::string fallback;
 		// Set while a later pass could not start and fewer passes run than requested.

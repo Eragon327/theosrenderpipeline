@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include "Localization.h"
 #include <string_view>
 
 #include "NeuralRenderingPassSettings.h"

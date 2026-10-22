@@ -1,5 +1,4 @@
 #include "SourceDLSSGSession.h"
-#include "Localization.h"
 
 #include <array>
 #include <algorithm>
@@ -131,7 +130,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		sl::DLSSGState state{};
 		const auto result = api_.getState(viewport_, state, nullptr);
 		const bool warning = result == sl::Result::eWarnOutOfVRAM;
-		if (!warning && !Check(result, TR("DLSS-G state"))) { return false; }
+		if (!warning && !Check(result, "DLSS-G state")) { return false; }
 		++snapshot_.stateQueries;
 		snapshot_.stateQueryResult = result;
 		// This budget warning is returned after NVIDIA populates the state,
@@ -172,7 +171,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		if (!token_ || static_cast<std::uint32_t>(*token_) != snapshot_.frameIndex) {
 			return Fail(SessionFailure::InvalidInputs, "frame token identity");
 		}
-		if (!Check(api_.reflexSleep(*token_), TR("Reflex sleep")) ||
+		if (!Check(api_.reflexSleep(*token_), "Reflex sleep") ||
 			!Mark(sl::PCLMarker::eSimulationStart, "SimulationStart")) { return false; }
 		prepared_ = false;
 		writesComplete_ = false;
@@ -288,7 +287,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		reflex.mode = enable && snapshot_.reflexRequested == sl::ReflexMode::eOff ?
 			sl::ReflexMode::eLowLatency : snapshot_.reflexRequested;
 		reflex.frameLimitUs = snapshot_.frameLimitRequestedUs;
-		if (!Check(api_.setReflexOptions(reflex), TR("Reflex options"))) { return false; }
+		if (!Check(api_.setReflexOptions(reflex), "Reflex options")) { return false; }
 		snapshot_.reflexSubmitted = reflex.mode;
 		snapshot_.frameLimitSubmittedUs = reflex.frameLimitUs;
 		const auto selection = SelectGeneration(snapshot_.generationRequested,
@@ -315,7 +314,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			snapshot_.options.flags = sl::DLSSGFlags{};
 			++snapshot_.featureReleases;
 		}
-		if (!SubmitOptions(TR("DLSS-G options")) ||
+		if (!SubmitOptions("DLSS-G options") ||
 			!Mark(sl::PCLMarker::ePresentStart, "PresentStart")) { return false; }
 		snapshot_.stage = SessionStage::PresentPending;
 		snapshot_.operation = enable ? "present with runtime frame generation" : "present without generation";

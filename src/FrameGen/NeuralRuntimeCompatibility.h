@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Windows.h>
-#include "Localization.h"
 #include <cstring>
 #include <string_view>
 

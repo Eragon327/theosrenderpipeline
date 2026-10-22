@@ -52,6 +52,4 @@ namespace util
 
 #define DLLEXPORT __declspec(dllexport)
 
-#include "Localization.h"
-
 #include "Plugin.h"

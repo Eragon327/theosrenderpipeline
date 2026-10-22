@@ -1,6 +1,5 @@
 #pragma once
 #include <d3d12.h>
-#include "Localization.h"
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 #include <sl_consts.h>
@@ -139,8 +138,8 @@ namespace TheosRenderPipeline
         xell_context_handle_t ll_{};
         xefg_swapchain_frame_constant_data_t constants_{};
         XeFGSnapshot snapshot_;
-        std::string status_{TR("not initialized")};
-        std::string unlockStatus_{TR("Experimental MFG off; official x2")};
+        std::string status_{"not initialized"};
+        std::string unlockStatus_{"Experimental MFG off; official x2"};
         int lastWarning_{};
         std::string lastWarningOperation_;
         bool initialized_{}, frameBegun_{}, presentPending_{}, needsReset_{true};

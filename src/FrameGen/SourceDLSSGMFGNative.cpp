@@ -1,5 +1,4 @@
 #include "SourceDLSSGMFG.h"
-#include "Localization.h"
 #include <spdlog/spdlog.h>
 
 namespace TheosRenderPipeline::SourceDLSSG
@@ -24,7 +23,7 @@ namespace TheosRenderPipeline::SourceDLSSG
         if (started_) { return; }
         started_ = true;
         state_.route = MFGRoute::Native;
-        state_.status = TR("Standard renderer; native NVIDIA capabilities; Ada/Ampere compatibility not included");
+        state_.status = "Standard renderer; native NVIDIA capabilities; Ada/Ampere compatibility not included";
         spdlog::info("[SourceDLSSG MFG] startup path: {}; runtime capabilities remain authoritative", state_.status);
     }
 

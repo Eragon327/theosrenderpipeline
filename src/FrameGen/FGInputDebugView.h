@@ -1,6 +1,5 @@
 #pragma once
 #include <d3d11_1.h>
-#include "Localization.h"
 #include <wrl/client.h>
 #include <atomic>
 #include <cstdint>
@@ -35,7 +34,7 @@ namespace TheosRenderPipeline
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& view);
         std::atomic_bool enabled_{ false };
         bool failed_{ false };
-        const char* status_{ TR("waiting for a world frame") };
+        const char* status_{ "waiting for a world frame" };
         Microsoft::WRL::ComPtr<ID3D11Device> device_;
         Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_;
         Microsoft::WRL::ComPtr<ID3DDeviceContextState> state_;

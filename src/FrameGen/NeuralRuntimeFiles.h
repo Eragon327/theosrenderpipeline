@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../NvidiaBaselinePolicy.h"
-#include "Localization.h"
 
 #include <algorithm>
 #include <cctype>
@@ -91,7 +90,7 @@ namespace TheosRenderPipeline::SourceDLSSG
     // Unknown filenames stay visible; selection and saved paths are unchanged.
     inline std::string NeuralRuntimeLabel(std::string_view value)
     {
-        if (IsAutomaticNeuralRuntime(value)) { return TR("Automatic"); }
+        if (IsAutomaticNeuralRuntime(value)) { return "Automatic"; }
         auto filename = [](std::string_view path) {
             const auto utf8 = std::filesystem::u8path(path).filename().u8string();
             return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());

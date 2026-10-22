@@ -6,7 +6,6 @@
 // epochs, bounded diagnostics and native forwarding established before writes.
 // No implementation copied from PureDark's proprietary backend.
 #include "XeFGUnlock.h"
-#include "Localization.h"
 #include "XeFGOptions.h"
 #include <bcrypt.h>
 #include <intrin.h>
@@ -46,7 +45,7 @@ namespace TheosRenderPipeline::XeFGUnlock
             const auto& p = patches[i];
             if (p.original.empty() || p.original.size() > 16 || p.original.size() != p.replacement.size() ||
                 p.rva > size || p.original.size() > size - p.rva) {
-                reason = TR("invalid patch range");
+                reason = "invalid patch range";
                 return PatchResult::Refused;
             }
             for (std::size_t j = 0; j < i; ++j)

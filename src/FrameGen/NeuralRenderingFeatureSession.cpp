@@ -1,5 +1,4 @@
 #include "NeuralRenderingFeatureSession.h"
-#include "Localization.h"
 
 #include "NeuralRenderingCreationContext.h"
 #include "NeuralRenderingModulePathHook.h"
@@ -120,7 +119,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		bool attempted{ false };
 		bool initialized{ false };
 		bool runtimeRefused{ false };
-		std::string status{ TR("not initialized") };
+		std::string status{ "not initialized" };
 
 		~State()
 		{
@@ -168,7 +167,7 @@ namespace TheosRenderPipeline::NeuralRendering
 				((a_info.runtimePath.is_absolute() && state.boundRuntimeRequest == a_info.runtimePath) ||
 					EqualPath(state.runtimePath, a_info.runtimePath));
 			if (!compatible) {
-				state.status = TR("source session device, dimensions, preset, or runtime contract changed");
+				state.status = "source session device, dimensions, preset, or runtime contract changed";
 			}
 			return compatible;
 		}
@@ -183,27 +182,27 @@ namespace TheosRenderPipeline::NeuralRendering
 		};
 		if (!a_info.device || a_info.runtimePath.empty() || a_info.displayWidth == 0 ||
 			a_info.displayHeight == 0 || a_info.renderWidth == 0 || a_info.renderHeight == 0) {
-			state.status = TR("source session inputs are incomplete");
+			state.status = "source session inputs are incomplete";
 			return false;
 		}
 
 		const auto identity = VerifySource(a_info.runtimePath, a_info.allowReconstructionRuntime);
 		const double verified = elapsed();
 		if (!identity.matched) {
-			state.status = TR("NR runtime is not a supported build (file version 310 or later, or a known runtime)");
+			state.status = "NR runtime is not a supported build (file version 310 or later, or a known runtime)";
 			return false;
 		}
 		state.contract = MakeFeatureContract(MatchRuntime(identity.size, identity.sha256, identity.version, a_info.allowReconstructionRuntime),
 			a_info.displayWidth, a_info.displayHeight, a_info.renderWidth, a_info.renderHeight, a_info.networkPreset);
 		if (!state.contract.Valid()) {
-			state.status = TR("source session feature contract is invalid");
+			state.status = "source session feature contract is invalid";
 			return false;
 		}
 		logger::info("[DLSSNR Source] runtime build={} version={} size={} sha256={} path={}",
 			RuntimeName(state.contract.build), identity.version, identity.size, identity.sha256, identity.path.string());
 		if (const auto existing = ::GetModuleHandleW(L"nvngx_dlssnr.dll")) {
 			if (!EqualPath(ModulePath(existing), identity.path)) {
-				state.status = TR("a different nvngx_dlssnr.dll is already resident");
+				state.status = "a different nvngx_dlssnr.dll is already resident";
 				return false;
 			}
 		}
@@ -217,11 +216,11 @@ namespace TheosRenderPipeline::NeuralRendering
 			LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 		state.ownsModule = state.module != nullptr;
 		if (!state.module) {
-			state.status = TRF("runtime LoadLibrary failed ({})", ::GetLastError());
+			state.status = std::format("runtime LoadLibrary failed ({})", ::GetLastError());
 			return false;
 		}
 		if (!EqualPath(ModulePath(state.module), identity.path)) {
-			state.status = TR("loaded NR module does not match the requested runtime path");
+			state.status = "loaded NR module does not match the requested runtime path";
 			return false;
 		}
 		if (identity.sha256 == kKernelRuntimeSha256 &&
@@ -256,7 +255,7 @@ namespace TheosRenderPipeline::NeuralRendering
 			NVSDK_NGX_Version_API);
 		if (!IsUsableInitResult(publicInitResult)) {
 			state.lastInitResult = static_cast<std::uint32_t>(publicInitResult);
-			state.status = TRF(
+			state.status = std::format(
 				"public NGX initialization failed (0x{:08X})", state.lastInitResult);
 			return false;
 		}
@@ -267,7 +266,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		const auto normalLoader = FindNormalLoader();
 		const auto normalLoaderPath = ModulePath(normalLoader);
 		if (!normalLoader || normalLoaderPath.empty()) {
-			state.status = TR("normal NGX loader is not resident after public initialization");
+			state.status = "normal NGX loader is not resident after public initialization";
 			return false;
 		}
 		logger::info("[DLSSNR Source] public NGX initialized result=0x{:08X} loader={}",
@@ -292,13 +291,13 @@ namespace TheosRenderPipeline::NeuralRendering
 			::GetProcAddress(state.module, "NVSDK_NGX_D3D12_ReleaseFeature"));
 		if ((!init && !initExt) || !state.createFeature || !state.evaluateFeature ||
 			!state.releaseFeature) {
-			state.status = TR("runtime feature export set is incomplete");
+			state.status = "runtime feature export set is incomplete";
 			return false;
 		}
 
 		state.modulePathHook = std::make_unique<ModulePathHook>();
 		if (!state.modulePathHook->Install(state.module, normalLoaderPath)) {
-			state.status = TR("module-path import hook could not be installed");
+			state.status = "module-path import hook could not be installed";
 			return false;
 		}
 		auto initResult = NVSDK_NGX_Result_FAIL_NotInitialized;
@@ -316,7 +315,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		}
 		state.lastInitResult = static_cast<std::uint32_t>(initResult);
 		if (!IsUsableInitResult(initResult)) {
-			state.status = TRF(
+			state.status = std::format(
 				"runtime initialization failed (0x{:08X})", state.lastInitResult);
 			return false;
 		}
@@ -329,7 +328,7 @@ namespace TheosRenderPipeline::NeuralRendering
 			state.destroyParameters = &NVSDK_NGX_D3D12_DestroyParameters;
 		}
 		if (NVSDK_NGX_FAILED(capabilityResult) || !state.parameters) {
-			state.status = TRF(
+			state.status = std::format(
 				"runtime capability parameters were not created (0x{:08X})",
 				static_cast<std::uint32_t>(capabilityResult));
 			return false;
@@ -340,7 +339,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		state.creationContext = std::make_unique<CreationContext>();
 		auto& creationContext = *state.creationContext;
 		if (!creationContext.Initialize(a_info.device)) {
-			state.status = TR("feature creation context could not be created");
+			state.status = "feature creation context could not be created";
 			return false;
 		}
 		const auto createResult = state.createFeature(
@@ -350,13 +349,13 @@ namespace TheosRenderPipeline::NeuralRendering
 			&state.feature);
 		state.lastCreateResult = static_cast<std::uint32_t>(createResult);
 		if (NVSDK_NGX_FAILED(createResult) || !state.feature) {
-			state.status = TRF(
+			state.status = std::format(
 				"feature creation failed (0x{:08X})", state.lastCreateResult);
 			return false;
 		}
 		if (!creationContext.SubmitAndWait(
 				a_info.handoffFence, a_info.handoffFenceValue)) {
-			state.status = TR("feature creation GPU work did not complete");
+			state.status = "feature creation GPU work did not complete";
 			return false;
 		}
 		state.creationContext.reset(); // Its fence proved completion before release.
@@ -369,7 +368,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		state.renderWidth = a_info.renderWidth;
 		state.renderHeight = a_info.renderHeight;
 		state.initialized = true;
-		state.status = TR("source-owned Neural Rendering feature initialized");
+		state.status = "source-owned Neural Rendering feature initialized";
 		logger::info("[DLSSNR Source] feature setup {:.0f} ms (runtime verified in {:.0f} ms)", elapsed(), verified);
 		logger::warn(
 			"[DLSSNR Source] feature initialized output={}x{} render={}x{} ratio={:.4f} preset={} build={} handle={}",
@@ -389,7 +388,7 @@ namespace TheosRenderPipeline::NeuralRendering
 		if (!state.initialized || !a_input.commandList || !a_input.color ||
 			!a_input.motionVectors || !a_input.depth || !a_input.output ||
 			!a_input.backbuffer) {
-			state.status = TR("source evaluation inputs are incomplete");
+			state.status = "source evaluation inputs are incomplete";
 			return false;
 		}
 
@@ -438,12 +437,12 @@ namespace TheosRenderPipeline::NeuralRendering
 			a_input.commandList, state.feature, parameters, nullptr);
 		state.lastEvaluateResult = static_cast<std::uint32_t>(evaluateResult);
 		if (NVSDK_NGX_FAILED(evaluateResult)) {
-			state.status = TRF(
+			state.status = std::format(
 				"feature evaluation failed (0x{:08X})", state.lastEvaluateResult);
 			return false;
 		}
 		++state.evaluationsRecorded;
-		state.status = TR("source-owned Neural Rendering evaluation recorded");
+		state.status = "source-owned Neural Rendering evaluation recorded";
 		if (state.evaluationsRecorded == 1 || state.evaluationsRecorded % 600 == 0) {
 			const auto tuning = UsesReconstructionContract(state.contract.build) ?
 				SanitizeBuild14Tuning(a_input.tuning) : SanitizeTuning(a_input.tuning);

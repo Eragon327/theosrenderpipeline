@@ -1,5 +1,4 @@
 #include "PerformanceTuning.h"
-#include "Localization.h"
 #include "UserSettings.h"
 
 #include "FrameTrace.h"
@@ -64,10 +63,10 @@ void PerformanceTuning::LoadStartupINI()
 		return;
 	}
 	Settings startup{};
-	startup.enableGPUTimings = ini.GetBoolValue(TR("Performance"), "EnableGPUTimings", true);
-	startup.enableFrameTrace = ini.GetBoolValue(TR("Performance"), "EnableFrameTrace", false);
-	startup.directRCASOutput = ini.GetBoolValue(TR("Performance"), "DirectRCASOutput", true);
-	startup.directDLSSOutput = ini.GetBoolValue(TR("Performance"), "DirectDLSSOutput", true);
+	startup.enableGPUTimings = ini.GetBoolValue("Performance", "EnableGPUTimings", true);
+	startup.enableFrameTrace = ini.GetBoolValue("Performance", "EnableFrameTrace", false);
+	startup.directRCASOutput = ini.GetBoolValue("Performance", "DirectRCASOutput", true);
+	startup.directDLSSOutput = ini.GetBoolValue("Performance", "DirectDLSSOutput", true);
 	ApplySettings(startup);
 }
 
@@ -176,7 +175,7 @@ void PerformanceTuning::MarkRouteActive(Optimization a_optimization)
 	status.eligible = true;
 	status.activeLastFrame = true;
 	++status.activeFrames;
-	status.reason = TR("active");
+	status.reason = "active";
 }
 
 void PerformanceTuning::MarkRouteFallback(Optimization a_optimization, const char* a_reason, bool a_rejectForSession)
@@ -665,7 +664,7 @@ void PerformanceTuning::MaybeLogTimingSummary()
 	lastLoggedTimingSample_ = timingSnapshot_.d3d11Samples;
 	const auto& d11 = timingSnapshot_.d3d11Ms;
 	const auto d11ms = [&](D3D11Stage a_stage) {
-		if (timingSnapshot_.d3d11ScopeInvalid[ToIndex(a_stage)]) { return std::string{TR("invalid scope")}; }
+		if (timingSnapshot_.d3d11ScopeInvalid[ToIndex(a_stage)]) { return std::string{"invalid scope"}; }
 		return TheosRenderPipeline::Telemetry::Milliseconds(d11[ToIndex(a_stage)], timingSnapshot_.d3d11Available[ToIndex(a_stage)]);
 	};
 	logger::info(

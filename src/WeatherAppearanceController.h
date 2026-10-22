@@ -1,7 +1,6 @@
 #pragma once
 
 #include "WeatherAppearance.h"
-#include "Localization.h"
 #include "FrameGen/SourceDLSSGNeuralState.h"
 
 namespace TheosRenderPipeline::Appearance
@@ -116,7 +115,7 @@ public:
             configurationChanged_ = false;
             drawn_ = {};
             result.setup = base;
-            result.incoming = result.outgoing = result.sharpnessSource = TR("Base");
+            result.incoming = result.outgoing = result.sharpnessSource = "Base";
             selectionDirty_ = true;
         }
         result.setup = smoother_.Update(result.setup, settings_.smoothingSeconds, elapsed, result.active);

@@ -1,5 +1,4 @@
 #include "NvidiaHost.h"
-#include "Localization.h"
 #include <PCH.h>
 #include "NeuralFrameEligibility.h"
 #include "../DLSSBackend.h"
@@ -266,12 +265,12 @@ bool NvidiaHost::EvaluateSourceNvidiaFrame(bool nativeUIHandoff, bool resetHisto
         SetRuntimeEnabled(false);
         const auto& backend = TheosRenderPipeline::SourceDLSSG::Backend::Get();
         if (FAILED(loadingScreenResult_)) {
-            status_ = TRF("Loading-screen scaling failed (0x{:08X}); generation held off",
+            status_ = std::format("Loading-screen scaling failed (0x{:08X}); generation held off",
                 static_cast<std::uint32_t>(loadingScreenResult_));
         } else {
             status_ = !backend.Ready() ? backend.Status() :
-                xeSSActive_ ? TRF("XeSS evaluation failed: {}; generation held off", backend.XeSS().Status()) :
-                TRF("TheosRenderPipeline direct DLSS evaluation failed (0x{:08X}); generation held off",
+                xeSSActive_ ? std::format("XeSS evaluation failed: {}; generation held off", backend.XeSS().Status()) :
+                std::format("TheosRenderPipeline direct DLSS evaluation failed (0x{:08X}); generation held off",
                     DLSSBackend::GetSingleton()->LastEvalResult());
         }
         if (!splitSourceRuntimeFailureLogged_) {

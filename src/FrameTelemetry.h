@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cmath>
-#include "Localization.h"
 #include <cstdint>
 #include <format>
 #include <string>
@@ -78,6 +77,6 @@ namespace TheosRenderPipeline::Telemetry
 	inline std::string Milliseconds(float a_value, bool a_available)
 	{
 		return a_available && std::isfinite(a_value) && a_value >= 0.0f ?
-			std::format("{:.3f}", a_value) : TR("unavailable");
+			std::format("{:.3f}", a_value) : "unavailable";
 	}
 }

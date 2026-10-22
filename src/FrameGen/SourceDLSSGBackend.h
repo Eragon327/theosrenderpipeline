@@ -2,7 +2,6 @@
 #include "SteadyPacing.h"
 #include <chrono>
 #include "SourceRetirementPolicy.h"
-#include "Localization.h"
 #include "PresentationVSync.h"
 
 #include "SourceDLSSGInterop.h"
@@ -283,7 +282,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 		VSyncObservation vsyncState_;
 		Microsoft::WRL::ComPtr<IDXGIFactory> nativeFactory_, streamlineFactory_;
 		DXGI_SWAP_CHAIN_DESC presenterDesc_{};
-		std::string providerStatus_{TR("NVIDIA presenter")};
+		std::string providerStatus_{"NVIDIA presenter"};
 		bool providerSwitchPending_{}, cameraAvailable_{}, recreateXeFG_{}, nvidiaNeedsPresent_{};
 		sl::Result reportedStateQueryResult_{ sl::Result::eOk };
 		sl::Result reportedOptionsResult_{ sl::Result::eOk };

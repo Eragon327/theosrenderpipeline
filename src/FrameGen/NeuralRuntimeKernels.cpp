@@ -1,5 +1,4 @@
 #include "NeuralRuntimeKernels.h"
-#include "Localization.h"
 #include "NeuralRuntimeKernelsInternal.h"
 
 #include <bcrypt.h>
@@ -33,7 +32,7 @@ namespace TheosRenderPipeline::NeuralRendering
         struct WinMemory final : Memory
         {
             std::uint8_t* base;
-            const char* failedOperation{TR("none")};
+            const char* failedOperation{"none"};
             std::uint32_t failedRva{};
             DWORD error{}, observed{}, expected{};
             explicit WinMemory(HMODULE module) : base(reinterpret_cast<std::uint8_t*>(module)) {}
@@ -223,29 +222,29 @@ namespace TheosRenderPipeline::NeuralRendering
                 if (!Matches(memory, installed.plan, true) || !VirtualQuery(installed.storage, &info, sizeof(info)) ||
                     info.State != MEM_COMMIT || info.Protect != PAGE_READONLY || info.RegionSize < PackSize ||
                     !HashIs({static_cast<const std::uint8_t*>(installed.storage), PackSize}, kKernelPackSha256)) {
-                    installed.result = {false, true, TR("installed NR runtime or storage changed; relaunch required")};
+                    installed.result = {false, true, "installed NR runtime or storage changed; relaunch required"};
                 }
             }
             return installed.result;
         }
-        if (!module || !newlyLoaded) { return {false, false, TR("NR installation needs exclusive ownership of a fresh runtime; restart required")}; }
+        if (!module || !newlyLoaded) { return {false, false, "NR installation needs exclusive ownership of a fresh runtime; restart required"}; }
         std::wstring filename(32768, L'\0');
         const auto length = GetModuleFileNameW(module, filename.data(), static_cast<DWORD>(filename.size()));
-        if (!length || length >= filename.size()) { return {false, false, TR("cannot identify the loaded NR module")}; }
+        if (!length || length >= filename.size()) { return {false, false, "cannot identify the loaded NR module"}; }
         filename.resize(length);
         File runtime(filename, 266424944);
         File pack(packPath, PackSize);
-        if (!runtime.data || !HashIs(runtime.Bytes(), kKernelRuntimeSha256)) { return {false, false, TR("loaded NR file is not the pinned NVIDIA 310.9.16 runtime")}; }
-        if (!pack.data || !HashIs(pack.Bytes(), kKernelPackSha256)) { return {false, false, TR("NR compatibility kernel pack is missing or its SHA-256 differs")}; }
-        if (!OriginalImage(memory, runtime.Bytes())) { return {false, false, TR("loaded NR image headers or original kernels differ")}; }
+        if (!runtime.data || !HashIs(runtime.Bytes(), kKernelRuntimeSha256)) { return {false, false, "loaded NR file is not the pinned NVIDIA 310.9.16 runtime"}; }
+        if (!pack.data || !HashIs(pack.Bytes(), kKernelPackSha256)) { return {false, false, "NR compatibility kernel pack is missing or its SHA-256 differs"}; }
+        if (!OriginalImage(memory, runtime.Bytes())) { return {false, false, "loaded NR image headers or original kernels differ"}; }
         auto storage = NearbyStorage(reinterpret_cast<std::uintptr_t>(module));
-        if (!storage) { return {false, false, TR("no memory available within NR bundle instruction reach")}; }
+        if (!storage) { return {false, false, "no memory available within NR bundle instruction reach"}; }
         std::memcpy(storage.get(), pack.data, PackSize);
         DWORD old{};
-        if (!VirtualProtect(storage.get(), PackSize, PAGE_READONLY, &old)) { return {false, false, TR("NR compatibility kernel storage could not be made read-only")}; }
+        if (!VirtualProtect(storage.get(), PackSize, PAGE_READONLY, &old)) { return {false, false, "NR compatibility kernel storage could not be made read-only"}; }
         Installation pending;
         if (!MakePlan(pack.Bytes(), reinterpret_cast<std::uintptr_t>(module), reinterpret_cast<std::uintptr_t>(storage.get()), pending.plan, pending.result.status)) { return pending.result; }
-        if (!Matches(memory, pending.plan, false)) { return {false, false, TR("original NR patch bytes differ")}; }
+        if (!Matches(memory, pending.plan, false)) { return {false, false, "original NR patch bytes differ"}; }
         // Allocate registry/status before publication. Pin before the first write
         // so both successful and uncertain transactions can retain all targets.
         pending.result.status.reserve(128);
@@ -254,7 +253,7 @@ namespace TheosRenderPipeline::NeuralRendering
         if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
                 reinterpret_cast<LPCWSTR>(module), &pinned) || pinned != module) {
             installations.erase(entry);
-            return {false, false, TR("NR runtime could not be retained for the process lifetime")};
+            return {false, false, "NR runtime could not be retained for the process lifetime"};
         }
         auto& installed = entry->second;
         const auto result = Publish(memory, installed.plan, installed.result.status);

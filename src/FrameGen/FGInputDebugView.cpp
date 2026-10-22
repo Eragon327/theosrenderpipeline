@@ -1,5 +1,4 @@
 #include "FGInputDebugView.h"
-#include "Localization.h"
 #include <d3dcompiler.h>
 #include <algorithm>
 #include <cstring>
@@ -103,7 +102,7 @@ RWTexture2D<unorm float4> Strip : register(u0);
         const float (&clipToPrevClip)[16], bool depthInverted, std::uint32_t renderWidth, std::uint32_t renderHeight)
     {
         if (!Enabled() || failed_ || !context || !motion || !depth || !renderWidth || !renderHeight) { return; }
-        if (!shader_ && !Initialize(context)) { failed_ = true; status_ = TR("debug view unavailable"); return; }
+        if (!shader_ && !Initialize(context)) { failed_ = true; status_ = "debug view unavailable"; return; }
         if (!strip_) {
             // Created once and never replaced, so the overlay can hold the view safely.
             panelWidth_ = 480; panelHeight_ = (std::max)(1u, static_cast<std::uint32_t>(480ull * renderHeight / renderWidth));
@@ -111,11 +110,11 @@ RWTexture2D<unorm float4> Strip : register(u0);
                 D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS, 0, 0 };
             if (FAILED(device_->CreateTexture2D(&desc, nullptr, &strip_)) ||
                 FAILED(device_->CreateUnorderedAccessView(strip_.Get(), nullptr, &stripUAV_)) ||
-                FAILED(device_->CreateShaderResourceView(strip_.Get(), nullptr, &stripSRV_))) { failed_ = true; status_ = TR("debug view allocation failed"); return; }
+                FAILED(device_->CreateShaderResourceView(strip_.Get(), nullptr, &stripSRV_))) { failed_ = true; status_ = "debug view allocation failed"; return; }
         }
         auto* motionView = View(motion, motion_, motionSRV_);
         auto* depthView = View(depth, depth_, depthSRV_);
-        if (!motionView || !depthView) { status_ = TR("debug view cannot read the inputs"); return; }
+        if (!motionView || !depthView) { status_ = "debug view cannot read the inputs"; return; }
         D3D11_MAPPED_SUBRESOURCE mapped{};
         if (FAILED(context->Map(constants_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) { return; }
         Constants c{};
@@ -138,6 +137,6 @@ RWTexture2D<unorm float4> Strip : register(u0);
         context->CSSetShaderResources(0, 2, noInputs);
         context->CSSetUnorderedAccessViews(0, 1, &noUAV, nullptr);
         context1_->SwapDeviceContextState(previous.Get(), nullptr);
-        status_ = TR("live");
+        status_ = "live";
     }
 }

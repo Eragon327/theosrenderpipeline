@@ -1,5 +1,4 @@
 #include <PCH.h>
-#include "Localization.h"
 #include "SourceDLSSGMFG.h"
 #include "../PluginPaths.h"
 #include "CommunityShaderIntegration.h"
@@ -55,7 +54,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	{
 		if (!state_.UsesAdaUnlock() || state_.unsafeMemory) { Fail(reason); }
 		state_.failed = true;
-		standDownStatus_ = TRF("MFG unavailable this session: {}. x2 frame generation continues.{}", reason,
+		standDownStatus_ = std::format("MFG unavailable this session: {}. x2 frame generation continues.{}", reason,
 			nvidiaOverride_ ? " NVIDIA app is overriding DLSS Frame Generation for Skyrim; set its Frame Generation overrides to "
 				"Use the 3D application setting to restore MFG." : "");
 		state_.status = standDownStatus_.c_str();
@@ -86,7 +85,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 	void MFGUnlock::SelectAdapter(ID3D12Device* device)
 	{
 		if (state_.route != MFGRoute::Unselected) { Fail("MFG startup adapter selection was repeated"); }
-		state_.status = TR("selecting NVIDIA MFG path");
+		state_.status = "selecting NVIDIA MFG path";
 		spdlog::info("[SourceDLSSG MFG] stage=adapter-selection compatibilityRequested={}", state_.requested);
 		midpoint_fix::SetLogCallback([](const wchar_t* text) {
 			// Upstream callback is noexcept; diagnostics must not terminate the game.
@@ -140,17 +139,17 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (!wrapper_ || !provider_) { Fail("prepared Ampere modules changed during Streamline initialization"); }
 			const auto snapshot = trp::ampere::Snapshot();
 			state_.wrapperPatched = state_.providerPatched = state_.temporalReady = snapshot.prepared && snapshot.bridgeInstalled;
-			state_.status = state_.UsesTuringUnlock() ? TR("experimental Turing MFG; SM75 provider and temporal program prepared") : TR("experimental Ampere MFG; provider and temporal program prepared");
+			state_.status = state_.UsesTuringUnlock() ? "experimental Turing MFG; SM75 provider and temporal program prepared" : "experimental Ampere MFG; provider and temporal program prepared";
 			Tick();
 			return;
 		}
 		if (!state_.UsesAdaUnlock()) {
-			state_.status = state_.requested ? TR("native NVIDIA runtime; compatibility not applicable") : TR("native NVIDIA runtime; compatibility disabled by configuration");
+			state_.status = state_.requested ? "native NVIDIA runtime; compatibility not applicable" : "native NVIDIA runtime; compatibility disabled by configuration";
 			spdlog::info("[SourceDLSSG MFG] startup path: {}; runtime capabilities remain authoritative", state_.status);
 			return;
 		}
 		spdlog::info("[SourceDLSSG MFG] startup path: Ada unlock; locating capability and temporal patches");
-		state_.status = TR("locating Ada patch targets");
+		state_.status = "locating Ada patch targets";
 		wrapper_ = RetainConfiguredModule(directory, L"sl.dlss_g.dll");
 		provider_ = RetainConfiguredModule(directory, L"nvngx_dlssg.dll");
 		providerPath_ = directory / L"nvngx_dlssg.dll";
@@ -222,10 +221,10 @@ namespace TheosRenderPipeline::SourceDLSSG
 		state_.unsafeMemory |= MFGContract::PublicationUncertain(state_.temporalFailure);
 		if (state_.unsafeMemory) { Fail("temporal publication is unsafe; restart required"); }
 		if (state_.temporalReady) {
-			state_.status = TR("temporal patch ready; x2 through x6 and runtime-reported dynamic mode gated by wrapper binding");
+			state_.status = "temporal patch ready; x2 through x6 and runtime-reported dynamic mode gated by wrapper binding";
 			spdlog::info("[SourceDLSSG MFG] temporalReady=true wrapperBound={} attempts={}", state_.wrapperBound, state_.attempts);
 		} else if (state_.temporalFailure != 12 || state_.attempts >= 8) {
-			StandDown(TR("the Ada temporal program is unsupported or could not be prepared (see temporal error code)"));
-		} else { state_.status = TR("waiting for temporal descriptor; x2 fixed only"); }
+			StandDown("the Ada temporal program is unsupported or could not be prepared (see temporal error code)");
+		} else { state_.status = "waiting for temporal descriptor; x2 fixed only"; }
 	}
 }

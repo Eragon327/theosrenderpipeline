@@ -1,7 +1,6 @@
 #pragma once
 
 #include <SolFGTextureProviderAPI.h>
-#include "Localization.h"
 
 #include <array>
 #include <cstdint>
@@ -43,5 +42,5 @@ private:
 	bool Resolve();
 
 	const SolFGTextureProviderAPI::ProviderV1* provider_{ nullptr };
-	std::string status_{ TR("TextureDownscaler.dll not loaded") };
+	std::string status_{ "TextureDownscaler.dll not loaded" };
 };
