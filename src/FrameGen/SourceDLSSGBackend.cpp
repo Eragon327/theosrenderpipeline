@@ -376,7 +376,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			!Check(xess_.Open(device12_.Get(), PluginPaths::IntelDirectory()), "XeSS context", "XeSS")) { return fault_; }
 		if (intelStartup) {
 			if (!CheckXeFG(xefg_.Probe(device12_.Get(), PluginPaths::IntelDirectory(), xefgTensorRequested_)) ||
-				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, true, &native, 0,
+				!CheckXeFG(xefg_.Create(device12_.Get(), queue_.Get(), nativeFactory_.Get(), desc, XeFGStartupInvertedDepth(communityShaders), &native, 0,
 					XeFGConfiguration(), IntelPipelines(XeFGPipelineCache(), xefg_.PipelineCacheName(), xefg_.RuntimeModule())))) { return fault_; }
 			providerStatus_ = "Intel XeFG presenter; latency owner=XeLL";
 		} else if (!Check(streamlineFactory_->CreateSwapChain(queue_.Get(), &desc, &native), "Streamline swapchain")) { return fault_; }
