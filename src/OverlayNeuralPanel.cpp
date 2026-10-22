@@ -631,7 +631,8 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
             // Live, unlike the other ! rows: the mark carries the image caveat.
             const RestartHelpScope caveat("The model runs on alternate frames. NR's change is carried to the frames "
                                           "between using motion vectors and depth, which roughly halves NR's GPU cost. "
-                                          "Expect some ghosting in fast motion and on newly revealed areas.");
+                                          "Expect some ghosting in fast motion and on newly revealed areas. Best "
+                                          "with 2x frame generation.");
             SettingRow("Model rate", "ModelRate", true, unavailable, [&] {
                 using NR::ModelRate;
                 int rate = reconstruction.modelRate == ModelRate::EveryOtherFrame ? 1 : 0;
@@ -649,6 +650,16 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                     ImGui::TextDisabled("Steady frame limit recommended (Frame generation tab)");
                     DrawSettingsHelp("Frames with and without the model take different times. Frame generation > "
                                      "Frame limit > Steady evens them out.");
+                }
+                // Each real frame starts its generated frames when it finishes, so the
+                // alternation shows between them, more as they get closer together.
+                const unsigned generated = draft.provider == TheosRenderPipeline::FrameGenerationProvider::XeFG
+                                               ? draft.xefg.generatedFrames : draft.generation.generatedFrames;
+                if (reconstruction.modelRate == ModelRate::EveryOtherFrame && view.frameGenerationRequested && generated > 1)
+                {
+                    ImGui::TextDisabled("Best with 2x frame generation");
+                    DrawSettingsHelp("At 3x and above, the generated frames between real ones can look unevenly paced: "
+                                     "frames with and without the model finish at different times.");
                 }
                 return changed;
             });

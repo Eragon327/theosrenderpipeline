@@ -1,4 +1,7 @@
-# Unreleased
+# 0.5.2
+
+Game-tested on an RTX 4080 SUPER with XeFG frame generation. NVIDIA DLSS-G with
+NR Model rate has not been tested in game.
 
 - NR runs up to five passes. **+** on the pass strip adds the next one; each extra
   pass processes the previous pass's result with its own history, input
@@ -11,15 +14,33 @@
 - The pass strip's **Reset all to Pass 1** is now **Reset to Pass 1**: it relinks
   only the selected pass and keeps its own settings for later.
 - Frame generation > Frame limit replaces Output FPS limit: Off, Fixed (the output
-  cap, as before) or Steady, which measures recent frame times and caps rendered
-  frames just below what the slower frames manage, so frames arrive evenly.
+  cap, as before) or Steady, which measures recent rendered frame times, holds
+  every frame to a cap the frames can sustain on average, so frames arrive evenly,
+  and every few seconds tries a slightly faster one. The menu shows the cap in use.
+  A saved `OutputFPSLimit` loads as Fixed (INI `FrameLimit`).
 - Add NR Model rate. Every other frame runs NR's model on alternate frames and
   carries its change to the frames between with motion vectors and depth, roughly
   halving NR's GPU cost, with some ghosting in fast motion and on newly revealed
   areas. It applies to every pass, switches live and is a weather override setting
   (`ModelRate`; INI `NRModelRate`). The NR tab recommends the Steady frame limit
-  with it. Thanks to cavy8, whose Alternate Frames for Community Shaders NR showed
-  the approach.
+  with it. It works best with 2x frame generation: at 3x and above the generated
+  frames between real ones can look unevenly paced. Thanks to cavy8, whose
+  Alternate Frames for Community Shaders NR showed the approach.
+- Native-resolution drawing for ImGui mods now also finds builds it has no exact
+  profile for (newer Photo Mode 3.x, dMenu, Detection Meter and SpellHotbar
+  variants) by their code, and installs only when exactly one match is found.
+  Unprofiled Vanity builds get native drawing without their build-specific mouse
+  and text fixes. `DiscoverUnknownBuilds=0` under `[Adapters]` in
+  `TheosRenderPipelineImGui.ini` turns this off.
+- Fix NR after upscaling and frame generation's UI handling stopping while the game
+  hides its interface (tm, the console, Photo Mode's hide and screenshots, or any
+  mod that hides menus).
+- Fix the vanilla main menu disappearing after its first frame, leaving only the
+  3D background, with `NativeUICompositionMode=0`.
+- Fix a possible presentation freeze when the first gameplay camera arrived with
+  XeFG on native Skyrim (the end of the New Game intro or the first loaded
+  frame). XeFG now starts with Skyrim's forward depth, so it no longer needs
+  rebuilding at that point, even with generation off.
 
 # 0.5.1
 
