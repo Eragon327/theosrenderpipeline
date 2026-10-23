@@ -245,13 +245,9 @@ namespace
 {
 	// Dictionary diagnostics go to the plugin log; without a sink Localization
 	// drops them, which keeps the unit tests quiet.
-	void LogLocalizationMessage(bool a_error, std::string_view a_message)
+	void LogLocalizationMessage(std::string_view a_message)
 	{
-		if (a_error) {
-			logger::error("[Localization] {}", a_message);
-		} else {
-			logger::warn("[Localization] {}", a_message);
-		}
+		logger::warn("[Localization] {}", a_message);
 	}
 }
 
@@ -262,10 +258,8 @@ void OverlayUI::ActivateLanguageFromSettings(std::string_view a_requested)
 {
 	using namespace TheosRenderPipeline::Localization;
 	SetLogSink(&LogLocalizationMessage);
-	if (!Activate(a_requested)) {
-		logger::warn("[Localization] '{}' is unavailable ({}); keeping the current language", a_requested,
-			LastError());
-	}
+	// A failure is logged through the sink and keeps the current language.
+	Activate(a_requested);
 	if (const auto table = Active()) {
 		logger::info("[Localization] {} ({}): {} strings, {} glyphs", table->Description().name,
 			table->Description().code, table->Count(), table->Codepoints().size());

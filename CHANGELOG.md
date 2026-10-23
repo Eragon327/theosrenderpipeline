@@ -1,18 +1,16 @@
 # Unreleased
 
 - The menu can be translated without rebuilding the DLL. Its text is read from a
-  dictionary, `Data/SKSE/Plugins/TheosRenderPipeline/Lang/<code>.ini`; anything a
-  dictionary does not translate stays English. Simplified Chinese ships as
-  `zh-CN.ini`. Choose the language with the button next to Zoom at the top of the menu, which
-  shows each language in its own name (applies at once, kept by **Save as default**) or `[Overlay] Language`: `auto`
-  follows the Windows display language, `en` keeps English, and any other value
-  names a dictionary. Settings files, weather overrides and the log stay English.
-  The menu adds the characters a dictionary needs from the fonts it names, then
-  from Windows' Chinese, Japanese and Korean fonts. A translation whose `%`
-  placeholders differ from the English keeps the English, so a typo cannot crash
-  the game. `LOCALIZATION.md` describes the file format and `tools/lang` the
-  scripts for keeping a dictionary up to date. Thanks to lin-414, who built it
-  (#116).
+  language file, `SKSE/Plugins/TheosRenderPipeline/Lang/<code>.ini`; anything a
+  file does not translate stays English. Simplified Chinese ships as `zh-CN.ini`.
+  Choose the language with the button next to Zoom at the top of the menu, which
+  lists each language under its own name; it applies at once and **Save as
+  default** keeps it (`[Overlay] Language`: `auto` follows the Windows display
+  language, `en` keeps English). Settings files, weather overrides and the log
+  stay English. A translation whose `%` placeholders differ from the English
+  keeps the English, so a typo cannot crash the game. `LOCALIZATION.md` describes
+  the file format and `tools/lang/audit.py` lists what a file still lacks. Thanks
+  to lin-414, who built it (#116).
 
 # 0.5.2
 

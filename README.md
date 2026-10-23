@@ -72,14 +72,12 @@ Masks default off. The initial capture supports opaque lighting draws on Skyrim 
 
 ## Localization
 
-Every overlay label is English in the source and looked up in an external
-dictionary, so a language is added or corrected without a rebuild. Pick one with
-the language button next to Zoom at the top of the menu, or set `[Overlay] Language` in
-`TheosRenderPipeline.ini` to `auto` for the Windows UI language, `en` for
-English, or a dictionary code such as `zh-CN`; files live in
-`Data/SKSE/Plugins/TheosRenderPipeline/Lang`, and the package includes
-Simplified Chinese. A missing dictionary or entry keeps the English text. See
-[localization](LOCALIZATION.md) for the format, fonts and workflow.
+The menu's text comes from a language file, so a language is added or corrected
+without a rebuild; anything a file does not translate stays English. Pick one with
+the language button next to Zoom at the top of the menu, or set `[Overlay] Language`
+to `auto` (the Windows display language), `en` or a file's code such as `zh-CN`.
+Files go in `SKSE/Plugins/TheosRenderPipeline/Lang`; the package includes
+Simplified Chinese. See [LOCALIZATION.md](LOCALIZATION.md) for the file format.
 
 ## XeSS and XeFG (experimental)
 
