@@ -52,7 +52,11 @@ namespace TheosRenderPipeline::Localization
 		std::vector<char32_t> codepoints;
 	};
 
+	// Data\SKSE\Plugins\TheosRenderPipeline\Lang, or the folder SetDirectory chose.
 	std::filesystem::path Directory();
+	// Read language files from another folder. The menu preview uses it to read the
+	// repository's package/ copy, so an edited file shows on the next language pick.
+	void SetDirectory(std::filesystem::path a_directory);
 	// Every dictionary in Directory() with at least one translation, by code.
 	std::vector<Info> Catalog();
 	// a_origin names the file in warnings; each skipped line is reported there.

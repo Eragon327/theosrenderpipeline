@@ -50,6 +50,9 @@ struct Options
     std::optional<Size> menu;  // Menu window in 100% units.
     std::filesystem::path ini;
     std::string language{"auto"}; // As [Overlay] Language: auto, en or a dictionary code.
+    // The shipped language files in this checkout, read in place: an edit shows on
+    // the next language pick, without a rebuild.
+    std::filesystem::path languages{TRP_PREVIEW_LANG_DIR};
     bool full{}, warp{}, list{}, live{};
     std::vector<LivePreviewOptions::Step> script;
     std::filesystem::path save;
@@ -93,6 +96,8 @@ void PrintUsage()
         "  --ini PATH          Read the [Overlay] layout from a TheosRenderPipeline.ini\n"
         "  --language CODE     Overlay language: auto (default, follows Windows), en or a\n"
         "                      dictionary code from TheosRenderPipeline\\Lang\n"
+        "  --lang-dir DIR      Read language files from DIR (default: this checkout's\n"
+        "                      package/SKSE/Plugins/TheosRenderPipeline/Lang)\n"
         "  --full              Keep the whole output instead of cropping to the menu\n"
         "  --warp              Draw with the WARP software rasterizer\n"
         "  --list              List scenarios and exit\n"
@@ -158,6 +163,8 @@ std::optional<Options> ParseOptions(int argc, char** argv)
             options.ini = *text;
         else if (arg == "--language")
             options.language = *text;
+        else if (arg == "--lang-dir")
+            options.languages = *text;
         else if (arg == "--zoom")
         {
             float percent{};
@@ -330,6 +337,7 @@ int main(int argc, char** argv)
         PrintUsage();
         return 2;
     }
+    TheosRenderPipeline::Localization::SetDirectory(options->languages);
     auto scenarios = PreviewScenarios();
     if (options->list)
     {

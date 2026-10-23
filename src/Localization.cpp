@@ -22,6 +22,7 @@ namespace TheosRenderPipeline::Localization
 		std::vector<std::shared_ptr<const Table>> g_tables;  // every table installed, kept alive
 		std::shared_ptr<const Table> g_installed;
 		std::string g_error;
+		std::filesystem::path g_directory;                   // SetDirectory's folder, else empty
 		std::vector<Info> g_catalog;
 		bool g_catalogLoaded{};
 
@@ -129,6 +130,10 @@ namespace TheosRenderPipeline::Localization
 
 	std::filesystem::path Directory()
 	{
+		{
+			std::lock_guard lock(g_mutex);
+			if (!g_directory.empty()) { return g_directory; }
+		}
 		// The game's virtual Data tree, wherever Mod Organizer starts the game from.
 		const auto plugins = PluginPaths::Directory();
 		return (plugins.empty() ? std::filesystem::path(L"Data/SKSE/Plugins") : plugins) / L"TheosRenderPipeline" / L"Lang";
@@ -210,6 +215,13 @@ namespace TheosRenderPipeline::Localization
 		return table;
 	}
 
+	void SetDirectory(std::filesystem::path a_directory)
+	{
+		std::lock_guard lock(g_mutex);
+		g_directory = std::move(a_directory);
+		g_catalogLoaded = false;
+	}
+
 	std::vector<Info> Catalog()
 	{
 		{
@@ -249,8 +261,9 @@ namespace TheosRenderPipeline::Localization
 			Install(nullptr);
 			return true;
 		}
+		const auto directory = Directory().string();  // takes the lock itself
 		std::lock_guard lock(g_mutex);
-		g_error = std::format("no dictionary for '{}' in {}", request, Directory().string());
+		g_error = std::format("no dictionary for '{}' in {}", request, directory);
 		if (g_sink) { g_sink(g_error); }
 		return false;
 	}

@@ -28,6 +28,7 @@ cropped to the menu window. Options:
 | `--menu WxH` | Menu window size at 100% zoom, for narrow or tall layouts |
 | `--ini PATH` | Read the `[Overlay]` layout from a TheosRenderPipeline.ini |
 | `--language CODE` | Overlay language: `auto` (default), `en`, or a dictionary code |
+| `--lang-dir DIR` | Read language files from `DIR`. The default is this checkout's `package/SKSE/Plugins/TheosRenderPipeline/Lang`, read in place, so an edited file shows the next time its language is picked in `--live` |
 | `--full` | Keep the whole output rather than cropping to the menu |
 | `--warp` | Use the WARP software rasterizer |
 | `--out DIR` | Output folder |

@@ -340,6 +340,9 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     if(NOT TRP_ENABLE_NEURAL_RENDERING)
         target_compile_definitions(TRPOverlayPreview PRIVATE TRP_NO_NEURAL_RENDERING)
     endif()
+    # The preview reads the shipped language files in place (--lang-dir overrides).
+    target_compile_definitions(TRPOverlayPreview PRIVATE
+        TRP_PREVIEW_LANG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/package/SKSE/Plugins/TheosRenderPipeline/Lang")
     # CommonLib and Detours only satisfy the shared PCH; nothing calls the game.
     target_link_libraries(TRPOverlayPreview PRIVATE CommonLibSSE::CommonLibSSE ARPDetours imgui::imgui d3d11 dxgi
         windowscodecs ole32)
