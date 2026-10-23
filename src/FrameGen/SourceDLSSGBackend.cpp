@@ -1,4 +1,5 @@
 #include "ReShadeIntegration.h"
+#include "../EngineScreenshot.h"
 #include "SourceDLSSGBackend.h"
 #include "XeFGLayerSelection.h"
 #include <PCH.h>
@@ -583,20 +584,30 @@ namespace TheosRenderPipeline::SourceDLSSG
 		ScreenshotBoundary([&] {
 			if (screenshotCapture_.Busy() || screenshotWriter_.Busy()) { return S_OK; }
 			ReShadeIntegration::ScreenshotRequest request;
-			if (!ReShadeIntegration::Get().TakeScreenshotRequest(request)) { return S_OK; }
+			const char* owner = "ReShade's";
+			if (!ReShadeIntegration::Get().TakeScreenshotRequest(request)) {
+				// Skyrim's own screenshot (PrintScreen, Photo Mode), saved at the render
+				// size during this frame: replace it with this Present's finished frame.
+				EngineScreenshot::Request engine;
+				if (!EngineScreenshot::Take(engine)) { return S_OK; }
+				request.path = std::move(engine.path);
+				request.jpegQuality = engine.jpegQuality;
+				request.replaceAllowed = true;
+				owner = "Skyrim's";
+			}
 			if (!request.replaceAllowed) {
 				logger::warn("[Screenshot] ReShade overlay open or UI frame unavailable; keeping ReShade's file {}. Close the ReShade overlay before taking a corrected screenshot.", request.path);
 				return S_OK;
 			}
 			if (!FinalFrameCapture::Supports(a_output->GetDesc().Format, a_colorSpace)) {
-				logger::warn("[Screenshot] Output format={} colour space={} is not converted; keeping ReShade's file {}",
-					static_cast<unsigned>(a_output->GetDesc().Format), static_cast<unsigned>(a_colorSpace), request.path);
+				logger::warn("[Screenshot] Output format={} colour space={} is not converted; keeping {} file {}",
+					static_cast<unsigned>(a_output->GetDesc().Format), static_cast<unsigned>(a_colorSpace), owner, request.path);
 				return S_OK;
 			}
 			const auto result = screenshotCapture_.Record(device12_.Get(), a_list, a_output, a_colorSpace);
 			if (FAILED(result)) {
-				logger::warn("[Screenshot] final frame capture unavailable (0x{:08X}); keeping ReShade's file {}",
-					static_cast<std::uint32_t>(result), request.path);
+				logger::warn("[Screenshot] final frame capture unavailable (0x{:08X}); keeping {} file {}",
+					static_cast<std::uint32_t>(result), owner, request.path);
 				return S_OK;
 			}
 			screenshotPath_ = std::move(request.path);
@@ -621,7 +632,7 @@ namespace TheosRenderPipeline::SourceDLSSG
 			if (FAILED(result)) {
 				if (!screenshotFaultLogged_) {
 					screenshotFaultLogged_ = true;
-					logger::warn("[Screenshot] final frame readback failed (0x{:08X}); keeping ReShade's file {}",
+					logger::warn("[Screenshot] final frame readback failed (0x{:08X}); keeping the original file {}",
 						static_cast<std::uint32_t>(result), screenshotPath_);
 				}
 				return S_OK; // Retain the readback after a device fault.

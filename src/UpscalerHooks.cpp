@@ -15,6 +15,7 @@
 #include "RenderPipeline.h"
 #include "FrameGen/SourceFrameGeneration.h"
 #include "FrameGen/LoadingArtwork.h"
+#include "EngineScreenshot.h"
 #include "FrameGen/NativeUICopyRoute.h"
 #include "FrameGen/NvidiaHost.h"
 #include "FrameGen/SourceHostBoundary.h"
@@ -1080,6 +1081,7 @@ struct UpscalerHooks
 			stl::write_thunk_call<BSGraphics_Renderer_Init_InitD3D>(REL::RelocationID(75595, 77226).address() + offsets.initD3D);
 			TheosRenderPipeline::InstallUpscalerDeviceHooks(reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr)));
 			TheosRenderPipeline::LoadingArtwork::Install();
+			TheosRenderPipeline::EngineScreenshot::Install();
 
 			return;
 		}
@@ -1150,6 +1152,7 @@ struct UpscalerHooks
 		stl::detour_thunk<MenuManagerDrawInterfaceStart>(REL::RelocationID(79947, 82084));
 		stl::detour_thunk<Inventory3DManagerRender>(REL::RelocationID(50882, 51755));
 		TheosRenderPipeline::LoadingArtwork::Install();
+		TheosRenderPipeline::EngineScreenshot::Install();
 
 
 			logger::info("[NvidiaHost] source NVIDIA runtime selected");

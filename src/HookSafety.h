@@ -9,6 +9,52 @@
 
 namespace TheosRenderPipeline::HookSafety
 {
+    // How many bytes at a function entry are whole instructions that are safe
+    // to move into a detour trampoline, stopping once a 5-byte jump fits; 0 when
+    // an instruction before that is not on the list. Detours copies the
+    // displaced instructions without relocating them, so RIP-relative operands,
+    // branches and anything unrecognised are refused. Covers the common MSVC
+    // prologue: push, mov/lea/sub/add/xor/test on registers or [rsp+disp], and
+    // mov rax/r11, rsp. A jump left by another plugin is not handled here.
+    inline std::size_t SafePrologueLength(const std::uint8_t* code, std::size_t size)
+    {
+        // Length of a ModRM operand (ModRM byte, SIB and displacement), or 0 if RIP-relative.
+        const auto modrm = [&](std::size_t at) -> std::size_t {
+            if (at >= size) { return 0; }
+            const std::uint8_t mod = code[at] >> 6, rm = code[at] & 7;
+            if (mod == 0 && rm == 5) { return 0; }
+            std::size_t length = 1;
+            if (mod != 3 && rm == 4) {
+                if (at + 1 >= size) { return 0; }
+                if (mod == 0 && (code[at + 1] & 7) == 5) { return 0; }  // SIB with absolute disp32
+                ++length;
+            }
+            return length + (mod == 1 ? 1 : mod == 2 ? 4 : 0);
+        };
+        std::size_t at = 0;
+        while (at < 5) {
+            if (at >= size) { return 0; }
+            std::size_t i = at;
+            if ((code[i] & 0xF0) == 0x40) { ++i; }  // REX
+            if (i >= size) { return 0; }
+            const std::uint8_t op = code[i];
+            std::size_t length = 0;
+            if (op >= 0x50 && op <= 0x57) { length = 1; }  // push r
+            else if (op == 0x89 || op == 0x8B || op == 0x8D || op == 0x31 || op == 0x33 || op == 0x85 ||
+                     op == 0x01 || op == 0x03 || op == 0x29 || op == 0x2B) {
+                const auto operand = modrm(i + 1);
+                if (!operand) { return 0; }
+                length = 1 + operand;
+            } else if (op == 0x83 || op == 0x81) {  // add/sub/and r/m, imm
+                const auto operand = modrm(i + 1);
+                if (!operand) { return 0; }
+                length = 1 + operand + (op == 0x83 ? 1 : 4);
+            } else { return 0; }
+            at = i + length;
+        }
+        return at <= size ? at : 0;
+    }
+
     inline bool Read(std::uintptr_t address, void* data, std::size_t bytes)
     {
         SIZE_T read{};
