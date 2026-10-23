@@ -3,7 +3,7 @@
 Rendering integration for Skyrim: NVIDIA DLSS/DLAA and frame generation,
 experimental Intel XeSS upscaling and XeFG frame generation, optional Neural
 Rendering (NR), and native-resolution menus and HUD. Current version:
-**0.5.2**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
+**0.5.3**. See [CHANGELOG.md](CHANGELOG.md) for release changes.
 
 ## Features
 
@@ -49,9 +49,7 @@ NR's **Model rate** can run the model on **Every other frame**. The frames betwe
 reuse its last change, moved with the game's motion vectors and checked against
 depth (and object groups while object rules capture them), which roughly halves
 NR's GPU cost. Expect some ghosting in fast motion and on newly revealed areas.
-Resets, setting changes and Freeze frame run the model on that frame. Frame times
-alternate, so **Frame generation > Frame limit > Steady** is recommended with it.
-It works best with 2x frame generation: at 3x and above the generated frames
+Resets, setting changes and Freeze frame run the model on that frame. It works best with 2x frame generation: at 3x and above the generated frames
 between real ones can look unevenly paced. The rate applies to every pass, switches live, is a weather override setting
 (`ModelRate`) and defaults to every frame (INI `NRModelRate`).
 

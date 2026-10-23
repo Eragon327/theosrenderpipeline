@@ -645,14 +645,6 @@ void DrawNeuralSettings(const OverlayUI::FrameView& view, TheosRenderPipeline::S
                                                 "every frame.")}});
                 if (changed) { reconstruction.modelRate = rate == 1 ? ModelRate::EveryOtherFrame : ModelRate::EveryFrame; }
                 DrawSettingsHelp(TR("How often NR's model runs, for every pass. Apply switches it live."));
-                // Alternating cost makes frame times uneven; Steady evens them.
-                if (reconstruction.modelRate == ModelRate::EveryOtherFrame &&
-                    draft.frameLimit != TheosRenderPipeline::SourceDLSSG::FrameLimitMode::Steady)
-                {
-                    ImGui::TextDisabled("%s", TR("Steady frame limit recommended (Frame generation tab)"));
-                    DrawSettingsHelp(TR("Frames with and without the model take different times. Frame generation > "
-                                     "Frame limit > Steady evens them out."));
-                }
                 // Each real frame starts its generated frames when it finishes, so the
                 // alternation shows between them, more as they get closer together.
                 const unsigned generated = draft.provider == TheosRenderPipeline::FrameGenerationProvider::XeFG
