@@ -28,7 +28,7 @@ set(SKSE_SUPPORT_XBYAK ON CACHE BOOL "" FORCE)
 
 function(arp_configure_plugin_target target)
     if(CMAKE_GENERATOR MATCHES "Visual Studio")
-        target_compile_options(${target} PRIVATE /MP /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(${target} PRIVATE /MP /W4 /permissive- /Zc:__cplusplus /utf-8)
         target_link_options(${target} PRIVATE
             "$<$<CONFIG:DEBUG>:/INCREMENTAL;/OPT:NOREF;/OPT:NOICF>"
             "$<$<CONFIG:RELEASE>:/LTCG;/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>")
@@ -301,13 +301,13 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     add_test(NAME PerformanceScopesWARP COMMAND TRPPerformanceTuningTests --warp)
     add_test(NAME PerformancePublicationWARP COMMAND TRPPerformanceTuningTests --publication)
     set_tests_properties(PerformanceScopesCPU PerformanceScopesWARP PerformancePublicationWARP PROPERTIES TIMEOUT 30)
-    add_executable(TRPOverlayHotkeysTests tests/OverlayHotkeysTests.cpp src/OverlayHotkeys.cpp)
+    add_executable(TRPOverlayHotkeysTests tests/OverlayHotkeysTests.cpp src/OverlayHotkeys.cpp src/Localization.cpp)
     target_compile_features(TRPOverlayHotkeysTests PRIVATE cxx_std_20)
     target_include_directories(TRPOverlayHotkeysTests PRIVATE src)
     target_link_libraries(TRPOverlayHotkeysTests PRIVATE user32)
     add_test(NAME OverlayHotkeys COMMAND TRPOverlayHotkeysTests)
     set_tests_properties(OverlayHotkeys PROPERTIES TIMEOUT 15)
-    add_executable(TRPOverlayLayoutTests tests/OverlayLayoutTests.cpp src/OverlayLayout.cpp)
+    add_executable(TRPOverlayLayoutTests tests/OverlayLayoutTests.cpp src/OverlayLayout.cpp src/Localization.cpp)
     target_compile_features(TRPOverlayLayoutTests PRIVATE cxx_std_20)
     target_compile_definitions(TRPOverlayLayoutTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_include_directories(TRPOverlayLayoutTests PRIVATE src "${TRP_SIMPLEINI_INCLUDE_DIR}")
@@ -332,7 +332,7 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/cmake/Resources.rc TARGET_DIRECTORY TRPOverlayPreview
         PROPERTIES OBJECT_DEPENDS "${TRP_OVERLAY_FONT}")
     target_compile_features(TRPOverlayPreview PRIVATE cxx_std_23)
-    target_compile_options(TRPOverlayPreview PRIVATE /MP /W4 /permissive- /Zc:__cplusplus)
+    target_compile_options(TRPOverlayPreview PRIVATE /MP /W4 /permissive- /Zc:__cplusplus /utf-8)
     target_precompile_headers(TRPOverlayPreview PRIVATE include/PCH.h)
     target_include_directories(TRPOverlayPreview PRIVATE include src tools/OverlayPreview
         "${CMAKE_CURRENT_BINARY_DIR}/cmake" "${TRP_STREAMLINE_INCLUDE_DIR}" "${TRP_NGX_SDK_DIR}/include"
@@ -340,6 +340,9 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     if(NOT TRP_ENABLE_NEURAL_RENDERING)
         target_compile_definitions(TRPOverlayPreview PRIVATE TRP_NO_NEURAL_RENDERING)
     endif()
+    # The preview reads the shipped language files in place (--lang-dir overrides).
+    target_compile_definitions(TRPOverlayPreview PRIVATE
+        TRP_PREVIEW_LANG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/package/SKSE/Plugins/TheosRenderPipeline/Lang")
     # CommonLib and Detours only satisfy the shared PCH; nothing calls the game.
     target_link_libraries(TRPOverlayPreview PRIVATE CommonLibSSE::CommonLibSSE ARPDetours imgui::imgui d3d11 dxgi
         windowscodecs ole32)
@@ -460,6 +463,13 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     target_compile_definitions(TRPUserSettingsTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_include_directories(TRPUserSettingsTests PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/cmake" "${TRP_SIMPLEINI_INCLUDE_DIR}")
     add_test(NAME UserSettings COMMAND TRPUserSettingsTests "${TRP_PACKAGED_DEFAULTS_FILE}")
+    add_executable(TRPLocalizationTests tests/LocalizationTests.cpp src/Localization.cpp)
+    target_compile_features(TRPLocalizationTests PRIVATE cxx_std_23)
+    target_compile_definitions(TRPLocalizationTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_options(TRPLocalizationTests PRIVATE /utf-8)
+    target_include_directories(TRPLocalizationTests PRIVATE src)
+    add_test(NAME Localization COMMAND TRPLocalizationTests
+        "${CMAKE_CURRENT_SOURCE_DIR}/package/SKSE/Plugins/TheosRenderPipeline/Lang/zh-CN.ini")
     add_executable(TRPPipelineCacheTests tests/PipelineCacheTests.cpp src/FrameGen/PipelineCache.cpp)
     target_compile_features(TRPPipelineCacheTests PRIVATE cxx_std_23)
     target_compile_definitions(TRPPipelineCacheTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
@@ -658,4 +668,5 @@ if(TRP_BUILD_COMPATIBILITY_TESTS)
     foreach(runtime IN ITEMS 1.5.97 1.6.640 1.6.1170 1.7.104)
         add_test(NAME RuntimeLayout-${runtime} COMMAND TRPRuntimeLayoutTests ${runtime})
     endforeach()
+
 endif()

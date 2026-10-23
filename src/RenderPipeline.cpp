@@ -60,6 +60,10 @@ void RenderPipeline::LoadINI()
 	mToggleOverlayHotkey = TheosRenderPipeline::Overlay::LoadMenuHotkey(ini);
 	mEnableNRHotkeys = TheosRenderPipeline::Overlay::LoadNRHotkeysEnabled(ini);
 	logger::info("[Overlay Input] NR shortcuts enabled={}", mEnableNRHotkeys);
+	// [Overlay] Language picks the dictionary the menu's labels are read from. The
+	// overlay activates it before the first font atlas exists; "auto" follows the
+	// Windows UI language and a missing dictionary keeps the English labels.
+	mLanguage = ini.GetValue("Overlay", "Language", "auto");
 	mLogMenuMetrics = ini.GetBoolValue("Debug", "LogMenuMetrics", false);
 	mScreenshotDiagnostics = ini.GetBoolValue("Debug", "ScreenshotDiagnostics", false);
 	mQualityLevel = std::clamp(mQualityLevel, 0, 4);
@@ -141,6 +145,7 @@ bool RenderPipeline::SaveINI(const TheosRenderPipeline::Overlay::Layout* layout)
     const bool presetsSaved = presets.Ok();
 	ini.SetBoolValue("Debug", "LogMenuMetrics", mLogMenuMetrics);
 	TheosRenderPipeline::Overlay::StoreMenuHotkey(ini, mToggleOverlayHotkey);
+	ini.SetValue("Overlay", "Language", mLanguage.c_str());
     if (layout) { TheosRenderPipeline::Overlay::StoreLayout(ini, *layout); }
 	std::vector<std::string> changed;
 	if (!TheosRenderPipeline::UserSettings::Save(ini, TheosRenderPipeline::UserSettings::GamePaths(),

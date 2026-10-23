@@ -102,6 +102,10 @@ public:
 	bool mWheelerLateOverlayBridge{ true };  // enables the startup-overlay target handoff
 	int  mToggleOverlayHotkey{ 0x23 };  // VK_END
 	bool mEnableNRHotkeys{ false };
+	// [Overlay] Language: "auto" follows the Windows UI language, "en" keeps the
+	// built-in labels, and any other value names a dictionary under
+	// TheosRenderPipeline\Lang. The overlay activates it before building glyphs.
+	std::string mLanguage{ "auto" };
 	std::atomic_bool mConsoleOpen{ false };
 	// Single relaxed hot-path gate derived from LogMenuMetrics && ConsoleOpen.
 	// OM/viewport/scissor hooks do not need two conditionals or acquire loads.

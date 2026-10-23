@@ -73,6 +73,8 @@ struct LivePreviewOptions
     std::vector<Step> script;
     std::filesystem::path save;
     bool full{};
+    // As [Overlay] Language: auto, en or a dictionary code.
+    std::string language{"auto"};
     // The tab the menu opens on, from --tab.
     TheosRenderPipeline::Overlay::SettingsPage page{TheosRenderPipeline::Overlay::SettingsPage::None};
 };

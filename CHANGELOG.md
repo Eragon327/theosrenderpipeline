@@ -1,3 +1,17 @@
+# Unreleased
+
+- The menu can be translated without rebuilding the DLL. Its text is read from a
+  language file, `SKSE/Plugins/TheosRenderPipeline/Lang/<code>.ini`; anything a
+  file does not translate stays English. Simplified Chinese ships as `zh-CN.ini`.
+  Choose the language with the button next to Zoom at the top of the menu, which
+  lists each language under its own name; it applies at once and **Save as
+  default** keeps it (`[Overlay] Language`: `auto` follows the Windows display
+  language, `en` keeps English). Settings files, weather overrides and the log
+  stay English. A translation whose `%` placeholders differ from the English
+  keeps the English, so a typo cannot crash the game. `LOCALIZATION.md` describes
+  the file format and `tools/lang/audit.py` lists what a file still lacks. Thanks
+  to lin-414, who built it (#116).
+
 # 0.5.2
 
 Game-tested on an RTX 4080 SUPER with XeFG and DLSS-G frame generation, including

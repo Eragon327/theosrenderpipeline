@@ -22,6 +22,8 @@ Rendering (NR), and native-resolution menus and HUD. Current version:
 - ReShade source-frame effects, explicit depth and placement controls.
 - Native UI composition, inventory/spell previews, loading artwork and external
   ImGui integration, with live GPU measurements beside the settings.
+- Overlay text from external dictionaries, so a language is added or corrected
+  without a rebuild. See [localization](#localization).
 
 **End** opens settings; change the key under **Advanced > Menu key**. **Apply**
 changes the session; **Save as default** persists settings and window layout;
@@ -67,6 +69,15 @@ There is no whole-chain object strength: zero on both passes already keeps the o
 The session-only mask preview, drawn over the finished NR result, tints the groups you choose to show, or with Classes only shows just those groups' colours on black: green for first-person objects, blue for the player, orange for other humanoids and purple for creatures. Any combination of groups can be shown; showing none turns the preview off. Preview is never saved to the INI and does not reset inference history. UI is composed after the preview, and the same completed scene feeds real frames and frame generation.
 
 Masks default off. The initial capture supports opaque lighting draws on Skyrim 1.6.1170, accepts the original hook entry or another plugin's entry jump (such as SSE Engine Fixes') and chains behind it, and checks capture-frame identity and final depth. Missing, conflicting, transparent, alpha-tested or unclassified capture keeps normal NR behavior. The feature adds geometry replay, classification storage and a composition pass; its game quality, mod compatibility, VRAM use and overhead still need acceptance.
+
+## Localization
+
+The menu's text comes from a language file, so a language is added or corrected
+without a rebuild; anything a file does not translate stays English. Pick one with
+the language button next to Zoom at the top of the menu, or set `[Overlay] Language`
+to `auto` (the Windows display language), `en` or a file's code such as `zh-CN`.
+Files go in `SKSE/Plugins/TheosRenderPipeline/Lang`; the package includes
+Simplified Chinese. See [LOCALIZATION.md](LOCALIZATION.md) for the file format.
 
 ## XeSS and XeFG (experimental)
 
