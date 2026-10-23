@@ -28,6 +28,9 @@ set(ARP_BASELINE_SOURCES
     src/RCASParameters.h
     src/DLSSFeatureParameters.h
     src/DLSSPreset.h
+    src/Localization.h
+    src/EngineScreenshot.cpp
+    src/EngineScreenshot.h
     src/NativeInput.h
     src/NativeUIBridge.h
     src/NativeInputThunks.h
@@ -224,6 +227,8 @@ set(ARP_OVERLAY_MENU_SOURCES
     src/OverlayLayout.cpp
     src/OverlayUIStyle.cpp
     src/OverlayHotkeys.cpp
+    # Menu languages; only the menu translates.
+    src/Localization.cpp
 )
 list(APPEND ARP_BASELINE_SOURCES ${ARP_OVERLAY_MENU_SOURCES})
 

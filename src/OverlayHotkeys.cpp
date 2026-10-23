@@ -1,4 +1,5 @@
 #include "OverlayHotkeys.h"
+#include "Localization.h"
 
 #include <cstdio>
 
@@ -9,11 +10,11 @@ namespace TheosRenderPipeline::Overlay
         if (key >= VK_F1 && key <= VK_F24) { return "F" + std::to_string(key - VK_F1 + 1); }
         if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) { return "Num " + std::to_string(key - VK_NUMPAD0); }
         switch (key) {
-        case VK_LBUTTON: return "Mouse 1";
-        case VK_RBUTTON: return "Mouse 2";
-        case VK_MBUTTON: return "Mouse 3";
-        case VK_XBUTTON1: return "Mouse 4";
-        case VK_XBUTTON2: return "Mouse 5";
+        case VK_LBUTTON: return TR("Mouse 1");
+        case VK_RBUTTON: return TR("Mouse 2");
+        case VK_MBUTTON: return TR("Mouse 3");
+        case VK_XBUTTON1: return TR("Mouse 4");
+        case VK_XBUTTON2: return TR("Mouse 5");
         default: break;
         }
         const auto scan = MapVirtualKeyW(key, MAPVK_VK_TO_VSC_EX);

@@ -4,6 +4,7 @@
 #include <dxgi.h>
 #include <wrl/client.h>
 #include <functional>
+#include <string_view>
 
 #include "TextureProviderBridge.h"
 #include "FrameGen/SourceDLSSGSettings.h"
@@ -94,8 +95,12 @@ private:
     void DrawSettingsActions();
 	void BuildUI();
     void UpdateUIScale();
+    // Rebuild the atlas and its texture after the active dictionary changed.
+    void RebuildFonts();
     void DrawMenuSizeControl();
     void DrawMenuKeyControl(const FrameView& view);
+    void DrawLanguageControl(float a_right, float a_top);
+    void ActivateLanguageFromSettings(std::string_view a_requested);
     void DrawZoomButtons();
 	void UpdateFrameStats();
 	void HandleHotkey();
@@ -126,6 +131,12 @@ private:
     float layoutDisplayWidth{}, layoutDisplayHeight{};
     float menuSizeEdit{100.0f};
     bool menuSizeEditing{false};
+    // [Overlay] Language as shown by the picker: "auto", "en" or a dictionary
+    // code. The selection applies immediately; Save as default keeps it.
+    std::string languageDraft{"auto"};
+    // A language switch cannot rebuild the atlas inside a frame, so the rebuild
+    // waits for the next Present, before NewFrame.
+    bool fontRebuildPending{false};
 	std::string actionMessage;
 	bool actionMessageIsError{ false };
     std::string menuKeyError;

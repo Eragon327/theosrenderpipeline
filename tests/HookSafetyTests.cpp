@@ -124,6 +124,21 @@ int main()
         Require(ours.Install(import, reinterpret_cast<std::uintptr_t>(&OurRect), originalRect), "IAT hook repeat is safe");
         rect = {};
         Require(CallRect(&rect) && rect.right == 73, "repeat import hook still forwards once");
+        // Entry prologues a detour may move: common MSVC forms pass, RIP-relative and branches do not.
+        const auto prologue = [](std::initializer_list<std::uint8_t> bytes) {
+            const std::vector<std::uint8_t> code(bytes);
+            return SafePrologueLength(code.data(), code.size());
+        };
+        Require(prologue({0x48, 0x89, 0x5C, 0x24, 0x08, 0x57}) == 5, "mov [rsp+8], rbx");
+        Require(prologue({0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x90}) == 6, "push rbx; sub rsp, 20h");
+        Require(prologue({0x48, 0x8B, 0xC4, 0x57, 0x41, 0x54, 0x90}) == 6, "mov rax, rsp; push rdi; push r12");
+        Require(prologue({0x40, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x40}) == 6, "the loading artwork sender's prologue");
+        Require(prologue({0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00}) == 7, "sub rsp, imm32");
+        Require(prologue({0x48, 0x8B, 0x05, 0x10, 0x20, 0x30, 0x40}) == 0, "mov rax, [rip+x] is refused");
+        Require(prologue({0x48, 0x8D, 0x0D, 0x10, 0x20, 0x30, 0x40}) == 0, "lea rcx, [rip+x] is refused");
+        Require(prologue({0x40, 0x53, 0xE9, 0x00, 0x00, 0x00, 0x00}) == 0, "a branch before five bytes is refused");
+        Require(prologue({0xE9, 0x00, 0x00, 0x00, 0x00}) == 0, "another plugin's jump is left to the chaining code");
+        Require(prologue({0x48, 0x89, 0x5C}) == 0, "a truncated read is refused");
         std::cout << "PASS: patch validation, import chaining, repeated/concurrent slots and device ownership\n";
         return 0;
     } catch (const std::exception& error) {

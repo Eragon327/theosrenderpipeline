@@ -19,7 +19,11 @@ namespace TheosRenderPipeline
     // runs every other frame, uneven scenes) becomes an even cadence instead of
     // stutter. It starts just above the 90th percentile of recent intervals,
     // backs off 3% when the average interval runs more than 1.5% over the cap,
-    // and after about five steady seconds tries a 1% faster cap. The average,
+    // and after about five steady seconds tries a 1% faster cap. A faster cap
+    // that does not hold returns to the cap before it, and the next try waits
+    // twice as long (up to about a minute): the 2026-10-22 game test showed a
+    // probe, a 3% back-off below the cap that held, and another probe every
+    // few seconds, a sawtooth felt as periodic stutter. The average,
     // not single late frames, decides: while the limiter holds frames to the
     // cap their intervals wobble around it but average to it, and counting each
     // late one as a miss walked the cap down without end. Each decision looks
@@ -31,6 +35,8 @@ namespace TheosRenderPipeline
         static constexpr std::size_t kEvaluateEvery = 60;
         static constexpr double kHeadroom = 1.03, kSlowTolerance = 1.015, kBackOff = 1.03, kProbe = 0.99;
         static constexpr double kMinimumUs = 1000.0, kMaximumUs = 250000.0;
+        // Steady frames before a faster cap is tried; doubled after each failed try.
+        static constexpr std::size_t kProbeAfter = 300, kProbeAfterMaximum = 3840;
 
         // One rendered frame's interval since the previous one. Returns true when
         // the target changed.
@@ -49,18 +55,36 @@ namespace TheosRenderPipeline
             } else {
                 // Each decision uses only the frames since the last one.
                 if (fresh_ < kEvaluateEvery) { return false; }
-                if (Mean(kEvaluateEvery) > targetUs_ * kSlowTolerance) {
-                    targetUs_ = Clamp(targetUs_ * kBackOff);
+                const bool slow = Mean(kEvaluateEvery) > targetUs_ * kSlowTolerance;
+                if (slow && probing_) {
+                    // The faster cap did not hold: back to the one that did, and wait longer.
+                    targetUs_ = heldUs_;
+                    probeAfter_ = (std::min)(probeAfter_ * 2, kProbeAfterMaximum);
                     stableFrames_ = 0;
-                } else if ((stableFrames_ += kEvaluateEvery) >= 300) {
+                } else if (slow) {
+                    // The scene got heavier.
+                    targetUs_ = Clamp(targetUs_ * kBackOff);
+                    probeAfter_ = kProbeAfter;
+                    stableFrames_ = 0;
+                } else if (probing_) {
+                    probeAfter_ = kProbeAfter;  // the faster cap holds; keep looking
+                } else if ((stableFrames_ += kEvaluateEvery) >= probeAfter_) {
+                    heldUs_ = targetUs_;
                     targetUs_ = Clamp(targetUs_ * kProbe);
                     stableFrames_ = 0;
                 }
+                probing_ = targetUs_ != before && !slow;
             }
             fresh_ = 0;
             return targetUs_ != before;
         }
-        void Reset() { count_ = next_ = fresh_ = stableFrames_ = 0; targetUs_ = 0; }
+        void Reset()
+        {
+            count_ = next_ = fresh_ = stableFrames_ = 0;
+            targetUs_ = heldUs_ = 0;
+            probing_ = false;
+            probeAfter_ = kProbeAfter;
+        }
         // 0 until the first full window has been measured.
         double TargetUs() const { return targetUs_; }
         double TargetFPS() const { return targetUs_ > 0 ? 1000000.0 / targetUs_ : 0; }
@@ -82,8 +106,9 @@ namespace TheosRenderPipeline
             return sum / n;
         }
         std::array<double, kWindow> intervals_{};
-        std::size_t next_{}, count_{}, fresh_{}, stableFrames_{};
-        double targetUs_{};
+        std::size_t next_{}, count_{}, fresh_{}, stableFrames_{}, probeAfter_{ kProbeAfter };
+        double targetUs_{}, heldUs_{};
+        bool probing_{};  // the last decision tried a faster cap
     };
 
     // The output cap that holds rendered frames to a steady interval: frame

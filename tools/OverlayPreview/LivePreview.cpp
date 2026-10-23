@@ -2,6 +2,7 @@
 // ImGui context at the chosen game output size, and a sidebar switches
 // scenarios, output sizes and renderer state. See README.md.
 
+#include "Localization.h"
 #include "OverlayPreview.h"
 #include "OverlayUIStyle.h"
 #include "ScreenshotFile.h"
@@ -263,6 +264,8 @@ public:
     bool Init()
     {
         dpi_ = ImGui_ImplWin32_GetDpiScaleForHwnd(window_.hwnd);
+        // As OverlayUI::Init does in game, before either atlas is built.
+        TheosRenderPipeline::Localization::Activate(options_.language);
         host_ = ImGui::CreateContext();
         ImGui::SetCurrentContext(host_);
         ImGui::GetIO().IniFilename = nullptr;

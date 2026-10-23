@@ -1,3 +1,32 @@
+# 0.5.3
+
+Game-tested on an RTX 4080 SUPER with DLSS-G and XeFG frame generation: the Simplified
+Chinese menu and Save as default, and PrintScreen at 5120x1440.
+
+- The menu can be translated without rebuilding the DLL. Its text is read from a
+  language file, `SKSE/Plugins/TheosRenderPipeline/Lang/<code>.ini`; anything a
+  file does not translate stays English. Simplified Chinese ships as `zh-CN.ini`.
+  Choose the language with the button next to Zoom at the top of the menu, which
+  lists each language under its own name; it applies at once and **Save as
+  default** keeps it (`[Overlay] Language`: `auto` follows the Windows display
+  language, `en` keeps English). Settings files, weather overrides and the log
+  stay English. A translation whose `%` placeholders differ from the English
+  keeps the English, so a typo cannot crash the game. `LOCALIZATION.md` describes
+  the file format and `tools/lang/audit.py` lists what a file still lacks. Thanks
+  to lin-414, who built it (#116).
+- Skyrim's own screenshots (PrintScreen) now contain TRP's finished frame at the
+  output resolution, with DLSS and NR, from a real rather than generated frame,
+  instead of the game's render-size image. Skyrim's file is written as before and
+  then replaced from the same frame; if that fails, Skyrim's file stays. A visible
+  HUD is included, as on screen. Photo Mode saves its photos itself and is not
+  covered yet: they stay at the render size.
+- Steady frame limit: a faster cap that does not hold now returns to the cap that
+  held, and the next try waits twice as long (up to about a minute). Before, it
+  dropped 3% below the working cap and tried again every few seconds.
+- NR Model rate no longer recommends the Steady frame limit. With Every other
+  frame, Steady capped below what the game could manage without evening out the
+  frames; Off played better in testing.
+
 # 0.5.2
 
 Game-tested on an RTX 4080 SUPER with XeFG and DLSS-G frame generation, including

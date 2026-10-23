@@ -1,6 +1,7 @@
 // Draws the in-game menu offline and writes PNGs, so menu changes can be
 // reviewed without launching Skyrim. See README.md.
 
+#include "Localization.h"
 #include "OverlayPreview.h"
 #include "OverlayUIStyle.h"
 #include "ScreenshotFile.h"
@@ -48,6 +49,10 @@ struct Options
     std::optional<float> zoom; // Percent; empty selects automatic zoom.
     std::optional<Size> menu;  // Menu window in 100% units.
     std::filesystem::path ini;
+    std::string language{"auto"}; // As [Overlay] Language: auto, en or a dictionary code.
+    // The shipped language files in this checkout, read in place: an edit shows on
+    // the next language pick, without a rebuild.
+    std::filesystem::path languages{TRP_PREVIEW_LANG_DIR};
     bool full{}, warp{}, list{}, live{};
     std::vector<LivePreviewOptions::Step> script;
     std::filesystem::path save;
@@ -89,6 +94,10 @@ void PrintUsage()
         "  --zoom PERCENT      Menu zoom; default is automatic, as in game\n"
         "  --menu WxH          Menu window size at 100% zoom (default from the layout)\n"
         "  --ini PATH          Read the [Overlay] layout from a TheosRenderPipeline.ini\n"
+        "  --language CODE     Overlay language: auto (default, follows Windows), en or a\n"
+        "                      dictionary code from TheosRenderPipeline\\Lang\n"
+        "  --lang-dir DIR      Read language files from DIR (default: this checkout's\n"
+        "                      package/SKSE/Plugins/TheosRenderPipeline/Lang)\n"
         "  --full              Keep the whole output instead of cropping to the menu\n"
         "  --warp              Draw with the WARP software rasterizer\n"
         "  --list              List scenarios and exit\n"
@@ -152,6 +161,10 @@ std::optional<Options> ParseOptions(int argc, char** argv)
             options.tabs = SplitList(*text);
         else if (arg == "--ini")
             options.ini = *text;
+        else if (arg == "--language")
+            options.language = *text;
+        else if (arg == "--lang-dir")
+            options.languages = *text;
         else if (arg == "--zoom")
         {
             float percent{};
@@ -262,7 +275,7 @@ namespace
 {
 // Draws kFrames frames of the menu at the given output size and returns the last.
 std::optional<PreviewImage> DrawMenu(ID3D11Device* device, ID3D11DeviceContext* context, PreviewScenario& scenario,
-    const Layout& layout, SettingsPage page, Size size, bool crop)
+    const Layout& layout, SettingsPage page, Size size, bool crop, std::string_view language)
 {
     D3D11_TEXTURE2D_DESC desc{};
     desc.Width = size.width;
@@ -283,6 +296,9 @@ std::optional<PreviewImage> DrawMenu(ID3D11Device* device, ID3D11DeviceContext* 
     io.IniFilename = nullptr;
     io.DisplaySize = ImVec2(static_cast<float>(size.width), static_cast<float>(size.height));
     io.DeltaTime = 1.0f / 60.0f;
+    // In game the language is chosen before the atlas is built, so the preview
+    // takes the same route and merges the dictionary's glyphs into the font.
+    TheosRenderPipeline::Localization::Activate(language);
     // As UpdateUIScale does in game: the style and font follow the zoom.
     const float scale = ResolveUIScale(layout.uiScale, io.DisplaySize.x, io.DisplaySize.y);
     ApplyRendererStyle(scale);
@@ -321,6 +337,7 @@ int main(int argc, char** argv)
         PrintUsage();
         return 2;
     }
+    TheosRenderPipeline::Localization::SetDirectory(options->languages);
     auto scenarios = PreviewScenarios();
     if (options->list)
     {
@@ -376,6 +393,7 @@ int main(int argc, char** argv)
         live.out = options->out;
         live.warp = options->warp;
         live.script = options->script;
+        live.language = options->language;
         live.save = options->save;
         live.full = options->full;
         if (options->tabs.size() > 1)
@@ -415,7 +433,8 @@ int main(int argc, char** argv)
                     name += std::format("-zoom{:.0f}", *options->zoom);
                 const auto path = std::filesystem::absolute(options->out / (name + ".png"));
                 auto sized = AtOutputSize(scenario, size.width, size.height);
-                const auto image = DrawMenu(device.Get(), context.Get(), sized, layout, tab.page, size, !options->full);
+                const auto image =
+                    DrawMenu(device.Get(), context.Get(), sized, layout, tab.page, size, !options->full, options->language);
                 const auto result = image ? TheosRenderPipeline::ScreenshotFile::Replace(path, image->width,
                                                 image->height, image->bgr, 0)
                                           : E_FAIL;

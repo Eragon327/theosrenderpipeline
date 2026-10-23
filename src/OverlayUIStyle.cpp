@@ -1,4 +1,5 @@
 #include "OverlayUIStyle.h"
+#include "Localization.h"
 #include "UpscaleType.h"
 
 namespace TheosRenderPipeline::Overlay
@@ -30,6 +31,110 @@ namespace TheosRenderPipeline::Overlay
 		return g_uiScale;
 	}
 
+	namespace
+	{
+		// %WINDIR%\Fonts as UTF-8: Dear ImGui opens font files by UTF-8 path.
+		std::string WindowsFontDirectory()
+		{
+			std::wstring buffer(MAX_PATH + 1, L'\0');
+			const UINT length = ::GetWindowsDirectoryW(buffer.data(), static_cast<UINT>(buffer.size()));
+			if (length == 0 || length >= buffer.size()) {
+				return {};
+			}
+			buffer.resize(length);
+			const auto length32 = static_cast<int>(buffer.size());
+			const int bytes = ::WideCharToMultiByte(CP_UTF8, 0, buffer.data(), length32, nullptr, 0, nullptr, nullptr);
+			if (bytes <= 0) {
+				return {};
+			}
+			std::string text(static_cast<std::size_t>(bytes), '\0');
+			::WideCharToMultiByte(CP_UTF8, 0, buffer.data(), length32, text.data(), bytes, nullptr, nullptr);
+			return text + "\\Fonts";
+		}
+
+		// The atlas copies only the pointer, and it reads the list when the font
+		// texture is created, long after the merge call. A function-local list
+		// would dangle there, so this one outlives every merge and is rebuilt on
+		// each atlas rebuild (Clear() has already dropped the fonts that used it).
+		ImVector<ImWchar> g_glyphRanges;
+
+		// The embedded font covers Latin only, so the dictionary's extra glyphs come
+		// from a system font. Merge that font instead of replacing the primary so
+		// Latin text keeps the embedded metrics and layout. The language button
+		// lists every installed language in its own name, so their names' glyphs
+		// are merged whichever language is active.
+		void AddLocalizedGlyphs(ImFontAtlas& a_fonts, float a_sizePixels)
+		{
+			namespace Localization = TheosRenderPipeline::Localization;
+			const auto table = Localization::Active();
+			std::vector<char32_t> codepoints;
+			if (table) {
+				codepoints = table->Codepoints();
+			}
+			for (const auto& language : Localization::Catalog()) {
+				const auto name = Localization::Codepoints(language.name);
+				codepoints.insert(codepoints.end(), name.begin(), name.end());
+			}
+			if (codepoints.empty()) {
+				// English labels are already covered by the embedded font.
+				return;
+			}
+
+			ImFontGlyphRangesBuilder builder;
+			builder.AddRanges(a_fonts.GetGlyphRangesDefault());
+			for (const char32_t codepoint : codepoints) {
+				if (codepoint > 0x20 && codepoint <= 0xFFFF) {
+					// This build's ImWchar is 16 bit, so the atlas cannot address
+					// code points above the basic multilingual plane.
+					builder.AddChar(static_cast<ImWchar>(codepoint));
+				} else if (codepoint > 0xFFFF) {
+					logger::warn("[Overlay] dictionary glyph U+{:05X} is outside the 16-bit range; skipped",
+						static_cast<unsigned>(codepoint));
+				}
+			}
+			g_glyphRanges.clear();
+			builder.BuildRanges(&g_glyphRanges);
+
+			ImFontConfig config{};
+			config.MergeMode = true;
+			config.GlyphRanges = g_glyphRanges.Data;
+
+			// The active dictionary names the fonts it wants; a bare file name is
+			// resolved inside the Windows font directory. Every candidate is tried in
+			// order, so a font that Windows does not ship only costs one failed open.
+			const auto fontDirectory = WindowsFontDirectory();
+			std::vector<std::string> candidates;
+			const auto add = [&](std::string_view a_name) {
+				if (a_name.empty()) {
+					return;
+				}
+				const bool absolute = a_name.find_first_of("\\/:") != std::string_view::npos;
+				if (absolute || fontDirectory.empty()) {
+					candidates.emplace_back(a_name);
+				} else {
+					candidates.push_back(fontDirectory + "\\" + std::string(a_name));
+				}
+			};
+			if (table) {
+				for (const auto& font : table->Description().fonts) {
+					add(font);
+				}
+			}
+			// Fonts Windows ships for the UI languages this plugin runs with:
+			// Simplified Chinese, Japanese, Korean, then a pan-CJK fallback.
+			for (const auto* font : { "msyh.ttc", "msyh.ttf", "simhei.ttf", "YuGothM.ttc", "meiryo.ttc", "malgun.ttf",
+				     "arialuni.ttf" }) {
+				add(font);
+			}
+			for (const auto& candidate : candidates) {
+				if (a_fonts.AddFontFromFileTTF(candidate.c_str(), a_sizePixels, &config)) {
+					return;
+				}
+			}
+			logger::warn("[Overlay] no system font covers the dictionary's glyphs; localized labels will render as '?'");
+		}
+	} // namespace
+
 	bool BuildRendererFont(float a_scale)
 	{
 		auto& fonts = *ImGui::GetIO().Fonts;
@@ -40,11 +145,13 @@ namespace TheosRenderPipeline::Overlay
 		const auto font = EmbeddedFont();
 		if (!font.empty() && fonts.AddFontFromMemoryTTF(const_cast<std::byte*>(font.data()),
 				static_cast<int>(font.size()), std::round(kBaseFontPixels * a_scale), &config)) {
+			AddLocalizedGlyphs(fonts, std::round(kBaseFontPixels * a_scale));
 			return true;
 		}
 		config = {};
 		config.SizePixels = std::round(13.0f * a_scale);
 		fonts.AddFontDefault(&config);
+		AddLocalizedGlyphs(fonts, config.SizePixels);
 		return false;
 	}
 

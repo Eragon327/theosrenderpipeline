@@ -58,6 +58,25 @@ int main()
         // Probing may dip a few percent under the 34 ms frames before the average notices.
         Require(low >= 32500 && high <= 36500, "limiter wobble does not walk the cap away");
     }
+    // 2026-10-22 game test (C7): the cap tried 1% faster, missed, backed off 3%
+    // below the cap that had held, and tried again every few seconds. A failed
+    // try now returns to the cap that held and waits longer before the next.
+    // 14 ms and 34 ms frames: caps below about 33.5 ms cannot hold.
+    {
+        SteadyPacing pacing;
+        for (int frame = 0; frame < 3000; ++frame) { pacing.Observe(Paced(pacing, frame % 2 ? 34000 : 14000)); }
+        int changes = 0;
+        double low = 1e9, high = 0;
+        for (int frame = 0; frame < 12000; ++frame) {
+            changes += pacing.Observe(Paced(pacing, frame % 2 ? 34000 : 14000)) ? 1 : 0;
+            low = (std::min)(low, pacing.TargetUs());
+            high = (std::max)(high, pacing.TargetUs());
+        }
+        // Each failed try is two changes (down and back); the waits double from 300 frames.
+        Require(changes <= 8, "failed tries back off instead of repeating every few seconds");
+        // A try dips 1% below the cap that held; the old back-off then rose 3% above it.
+        Require(low >= 32500 && high <= 33500, "a failed try returns to the cap that held, not 3% above it");
+    }
     // Lighter scenes are found by probing, slowly.
     {
         SteadyPacing pacing;
