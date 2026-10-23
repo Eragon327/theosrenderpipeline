@@ -1,3 +1,11 @@
+# Unreleased
+
+- Screenshots Skyrim saves (PrintScreen, and Photo Mode if it saves through the
+  game) now contain TRP's finished frame at the output resolution, with DLSS, NR
+  and frame-generation-free real frames, instead of the game's render-size image.
+  Skyrim's file is written as before and then replaced from the same frame; if
+  that fails, Skyrim's file stays. A visible HUD is included, as on screen.
+
 # 0.5.2
 
 Game-tested on an RTX 4080 SUPER with XeFG and DLSS-G frame generation, including
